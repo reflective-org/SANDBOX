@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tuvx_photolysis"
+version = "0.1.0"
+description = "TUV-x photolysis (JAX) coupled with a gas-phase chemistry box model, in one place"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+# core: the TUV-x photolysis port + the gas-phase chemistry box model (NumPy/SciPy) it drives
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "jax>=0.4.20",
+    "jaxlib>=0.4.20",
+    "netCDF4>=1.6",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "matplotlib>=3.7",
+]
+# the chemistry model's optional differentiable (Diffrax) Phase-B solver (gas_phase_chemistry/jaxmodel)
+jax-chemistry = [
+    "diffrax>=0.5",
+    "equinox>=0.11",
+    "optax>=0.2",
+    "optimistix>=0.0.6",
+    "lineax>=0.0.4",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tuvx_photolysis*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

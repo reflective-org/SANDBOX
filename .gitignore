@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+# NOTE: unlike the in-repo version, the bundled data/ and the reference NetCDF
+# fixtures (tests/fixtures/*.nc) ARE committed here so the package is fully
+# self-contained and self-validating on clone.

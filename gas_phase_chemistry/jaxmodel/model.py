@@ -1,0 +1,123 @@
+"""Diffrax integration of the JAX chemistry.
+
+``integrate_segment`` integrates dC/dt over one time interval on a fixed output grid, using
+a stiff implicit solver (Kvaerno5) -- the Diffrax analogue of MATLAB's ode15s / SciPy's BDF.
+This is the building block the day/night and SZA drivers (B4) are built from.
+
+The physical scenario enters as ``params`` (a dict of scalars, which may be traced for
+grad/vmap); ``opt`` is a static int (the O3-photolysis mode). The aerosol gammas are
+recomputed from the state inside the vector field every step (as in Phase A).
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import jax.numpy as jnp
+import lineax as lx
+import optimistix as optx
+from diffrax import Kvaerno5, ODETerm, PIDController, SaveAt, diffeqsolve
+
+from jaxmodel.chem import build_params, dCdt
+from jaxmodel.solar import cos_solar_zenith, photolysis_scale
+
+# Kvaerno5's implicit step uses a Newton root find. The default linear solver assumes a
+# well-posed (nonsingular) Jacobian, which can fail when DIFFERENTIATING through the stiff
+# solve (the chemistry Jacobian is near-singular for the fast/slow species split). A
+# least-squares-capable linear solver keeps both the forward solve and its gradients robust.
+_ROOT_FINDER = optx.Newton(rtol=1e-3, atol=1e-6,
+                           linear_solver=lx.AutoLinearSolver(well_posed=False))
+
+
+def _stiff_solver():
+    return Kvaerno5(root_finder=_ROOT_FINDER)
+
+
+def make_vector_field(opt):
+    """Build the dC/dt vector field for a static O3-photolysis mode ``opt``."""
+    def vf(t, y, params):
+        p = build_params(params["T"], params["M"], params["P"], params["SA"],
+                         params["WTR"], params["Yn2o5"], y, params["j_scale"])
+        return dCdt(y, p, opt)
+    return vf
+
+
+def integrate_segment(y0, t0, t1, params, opt, grid, rtol=1e-3, atol=1e-6,
+                      first_step=1e-10, max_steps=200_000):
+    """Integrate from ``t0`` to ``t1``, saving at the times in ``grid``.
+
+    Returns ``(ts, ys)`` with ys shaped (len(grid), n_species). ``atol`` may be a scalar or a
+    length-34 array (matching the per-species tolerance vector used in Phase A).
+    """
+    term = ODETerm(make_vector_field(opt))
+    solver = _stiff_solver()
+    controller = PIDController(rtol=rtol, atol=atol)
+    sol = diffeqsolve(
+        term, solver, t0=t0, t1=t1, dt0=first_step, y0=y0, args=params,
+        stepsize_controller=controller, saveat=SaveAt(ts=grid), max_steps=max_steps,
+    )
+    return sol.ts, sol.ys
+
+
+def output_grid(t0, t1, DT):
+    """Fixed output grid on [t0, t1] at spacing DT, always including the endpoint.
+
+    Returns a plain NumPy array (concrete times); pass it as ``grid`` to integrate_segment.
+    """
+    grid = np.arange(t0, t1, DT, dtype=float)
+    if grid.size == 0 or grid[-1] != t1:
+        grid = np.append(grid, t1)
+    return grid
+
+
+# ---------------------------------------------------------------------------------------
+# Reference mode: prescribed day/night schedule (matches Phase A driver.integrate).
+# ---------------------------------------------------------------------------------------
+def run_reference(y0, params, opt, td=14.0, tn=10.0, days=5, DT=600.0, atol=1e-6):
+    """Day/night driver. ``params`` has T, M, P, SA, WTR, Yn2o5 (j_scale set per segment)."""
+    def seg(t0, t1, y, j_scale):
+        grid = output_grid(t0, t1, DT)
+        ts, ys = integrate_segment(jnp.asarray(y), t0, t1, {**params, "j_scale": j_scale},
+                                   opt, grid, atol=atol)
+        return ts, ys
+
+    t_all, x_all = seg(0.0, td * 3600.0, y0, 1.0)   # first daytime
+    for _ in range(days):
+        t0 = float(t_all[-1])
+        ts, ys = seg(t0, t0 + tn * 3600.0, x_all[-1], 0.0)   # night
+        t_all = jnp.concatenate([t_all, ts[1:]])
+        x_all = jnp.concatenate([x_all, ys[1:]])
+        t0 = float(t_all[-1])
+        ts, ys = seg(t0, t0 + td * 3600.0, x_all[-1], 1.0)   # day
+        t_all = jnp.concatenate([t_all, ts[1:]])
+        x_all = jnp.concatenate([x_all, ys[1:]])
+    return t_all, x_all
+
+
+# ---------------------------------------------------------------------------------------
+# SZA mode: photolysis follows the real sun (continuous), J(t) from solar geometry.
+# ---------------------------------------------------------------------------------------
+def make_sza_vector_field(opt, latitude, longitude, day_of_year, start_utc_hour):
+    """dC/dt vector field whose photolysis scaling tracks the sun at integration time t."""
+    def vf(t, y, params):
+        total_hours = start_utc_hour + t / 3600.0
+        doy = day_of_year + total_hours / 24.0
+        utc = jnp.mod(total_hours, 24.0)
+        j_scale = photolysis_scale(cos_solar_zenith(latitude, longitude, doy, utc))
+        p = build_params(params["T"], params["M"], params["P"], params["SA"],
+                         params["WTR"], params["Yn2o5"], y, j_scale)
+        return dCdt(y, p, opt)
+    return vf
+
+
+def run_sza(y0, params, opt, latitude, longitude, day_of_year, start_utc_hour,
+            days=5, DT=600.0, atol=1e-6, first_step=1e-10, max_steps=2_000_000):
+    """Continuous SZA-driven run over ``days`` x 24 h (matches Phase A driver.integrate_sza)."""
+    total = days * 24.0 * 3600.0
+    grid = output_grid(0.0, total, DT)
+    term = ODETerm(make_sza_vector_field(opt, latitude, longitude, day_of_year, start_utc_hour))
+    sol = diffeqsolve(
+        term, _stiff_solver(), t0=0.0, t1=total, dt0=first_step, y0=jnp.asarray(y0), args=params,
+        stepsize_controller=PIDController(rtol=1e-3, atol=atol),
+        saveat=SaveAt(ts=grid), max_steps=max_steps,
+    )
+    return sol.ts, sol.ys

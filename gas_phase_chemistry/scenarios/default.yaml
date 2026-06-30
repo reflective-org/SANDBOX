@@ -1,0 +1,27 @@
+# Default scenario: reproduces the MATLAB default run (lowermost stratosphere, ~19 km).
+# Edit this file to set up a run, then:  python3 src-python/run_example.py --config scenarios/default.yaml
+# (or load it in code: Scenario.load("scenarios/default.yaml"))
+
+T: 210            # temperature (K)
+P: 68             # pressure (mbar); also selects the initial-condition preset
+SA: 2             # aerosol surface area (um^2/cm^3)
+WTR: 5            # water vapour (ppm)
+Yn2o5: 0.1        # N2O5 + H2O uptake coefficient (gamma)
+opt: 1            # O3-photolysis mode (1 = Science-paper O1D workaround)
+
+latitude: 20      # deg North (used once photolysis: sza is enabled)
+longitude: 0      # deg East
+day_of_year: 80   # ~equinox
+
+td: 14            # daytime length (hours)
+tn: 10            # nighttime length (hours)
+days: 5           # number of day/night cycles
+DT: 600           # output time step (seconds)
+
+photolysis: reference   # 'reference' = fixed 45-deg J, day/night switch (SZA mode comes in M5)
+
+# Optional initial-condition overrides in pptv, merged onto the P-level preset, e.g.:
+# initial_overrides:
+#   HNO3: 3470
+#   BrO: 3
+initial_overrides: {}
