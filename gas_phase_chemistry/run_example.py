@@ -15,6 +15,7 @@ import argparse
 from config import IDX
 from driver import integrate, integrate_sza
 from scenario import Scenario
+from species_plots import write_species_plots
 
 
 def main():
@@ -46,6 +47,13 @@ def main():
     for name in ["ClO", "ClONO2", "HCl", "Cl2", "ClOOCl", "NO", "NO2",
                  "OH", "HO2", "BrO", "HOCl", "N2O5"]:
         print(f"  {name:8s} {states[-1, IDX[name]] / cfg.M * 1e12:12.3f}")
+
+    # per-species trend plots -> the folder named in the input file (refreshed each run)
+    folder, written = write_species_plots(
+        scenario.output_dir, t, states, cfg,
+        title=f"{scenario.photolysis}, P={scenario.P} mbar, lat {scenario.latitude}, doy {scenario.day_of_year}",
+    )
+    print(f"\nWrote {len(written)} per-species plots to {folder}/")
 
 
 if __name__ == "__main__":

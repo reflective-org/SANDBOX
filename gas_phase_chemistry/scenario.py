@@ -69,6 +69,9 @@ class Scenario:
 
     photolysis: str = _REFERENCE
 
+    # --- output ---
+    output_dir: str = "output"  # folder for the per-species trend plots (created/overwritten each run)
+
     # --- initial conditions ---
     # Two ways to set the initial state, both in pptv (parts per trillion by volume):
     #   * initial_overrides: a few species merged onto the built-in pressure-level preset.

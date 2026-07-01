@@ -26,10 +26,13 @@ day_of_year:     80     # 1..365   (time of year; 80 ~ equinox)
 start_utc_hour:  6.0    # UTC hour at model time t = 0   (time of day at the start)
 
 # --- run schedule ---
-td:    14      # daytime segment length (hours)
-tn:    10      # nighttime segment length (hours)
-days:  5       # number of day/night cycles after the first daytime segment
+td:    14      # daytime segment length (hours)  [used only in 'reference' mode]
+tn:    10      # nighttime segment length (hours) [used only in 'reference' mode]
+days:  10      # number of days to simulate
 DT:    600     # output time step (seconds)
+
+# --- output ---
+output_dir: plots           # folder for the per-species trend plots (refreshed on every run)
 
 # --- photolysis driver ---
 #   reference : fixed 45-deg J-values, on by day / off by night (MATLAB-faithful)
