@@ -8,3 +8,4 @@ dist/
 # NOTE: unlike the in-repo version, the bundled data/ and the reference NetCDF
 # fixtures (tests/fixtures/*.nc) ARE committed here so the package is fully
 # self-contained and self-validating on clone.
+.DS_Store
