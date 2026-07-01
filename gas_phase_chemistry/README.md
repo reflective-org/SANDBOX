@@ -56,14 +56,20 @@ Octave). **Phase A (the plain-Python port) is complete.**
 - `driver.py` — initial-condition presets, the day/night loop and the SZA continuous loop
   (SciPy `BDF`), unit conversion (← numeric core of `runconcs_het.m`).
 - `scenario.py` — `Scenario`: one editable object (environment + location/date + run controls
-  + initial-condition overrides) loadable from YAML/JSON (`scenarios/*.yaml`).
-- `run_example.py` — runs a scenario and prints a summary; `--config <file>` to load one.
+  + initial conditions) loadable from YAML/JSON (`scenarios/*.yaml`). Initial conditions can be a
+  few `initial_overrides` on the built-in preset, or a full explicit `concentrations` block.
+- `run_example.py` — runs a scenario and prints a summary; `--config <file>` to load one. Uses the
+  day/night integrator for `reference` mode and the continuous integrator for `sza`/`tuvx`.
+- `scenarios/model_input.yaml` — a complete, self-contained input file (all controls + the full
+  34-species initial composition in pptv); the intended starting point for a run.
 - `plotting.py` — Python versions of the active figures; `python3 src-python/plotting.py`
   writes `figures/overview.png`.
 
 **Photolysis modes:** `reference` reproduces the MATLAB behaviour (fixed 45° J-values, on by
 day / off by night); `sza` scales J by the real solar zenith angle (normalized cosine),
-driven by the location/date and a continuous timeline.
+driven by the location/date and a continuous timeline; **`tuvx`** supplies absolute per-reaction
+J-values from the validated TUV-x (JAX) radiation port at the box altitude (see
+`tuvx_photolysis_adapter.py`) — the physically-resolved diurnal/seasonal photolysis driver.
 
 The Python driver (reference mode) reproduces the MATLAB/Octave reference trajectory to
 within ~0.2% (see `figures/trajectory_validation.png`).

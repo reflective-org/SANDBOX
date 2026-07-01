@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 
 from config import IDX
-from driver import integrate
+from driver import integrate, integrate_sza
 from scenario import Scenario
 
 
@@ -24,8 +24,14 @@ def main():
 
     scenario = Scenario.load(args.config) if args.config else Scenario()
     cfg = scenario.to_config()
-    t, states = integrate(cfg, scenario.initial_state(), td=scenario.td, tn=scenario.tn,
-                          days=scenario.days, DT=scenario.DT)
+    x0 = scenario.initial_state()
+    if scenario.photolysis == "reference":
+        # prescribed day/night schedule (photolysis on by day / off by night)
+        t, states = integrate(cfg, x0, td=scenario.td, tn=scenario.tn,
+                              days=scenario.days, DT=scenario.DT)
+    else:
+        # 'sza'/'tuvx': the real sun drives photolysis, so integrate continuously
+        t, states = integrate_sza(cfg, x0, days=scenario.days, DT=scenario.DT)
 
     hours = t / 3600.0
     o3 = states[:, IDX["O3"]] / cfg.M * 1e12

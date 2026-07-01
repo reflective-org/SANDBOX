@@ -40,7 +40,9 @@ from driver import initial_concentrations
 
 # Photolysis modes understood by the model.
 _REFERENCE = "reference"   # fixed 45-deg daytime J-values, on by day / off by night
-_SZA = "sza"               # SZA-dependent J-values (implemented in M5)
+_SZA = "sza"               # SZA-dependent scaling of the reference J-values
+_TUVX = "tuvx"             # absolute per-reaction J from the TUV-x (JAX) port at the box altitude
+_MODES = (_REFERENCE, _SZA, _TUVX)
 
 
 @dataclass
@@ -67,16 +69,22 @@ class Scenario:
 
     photolysis: str = _REFERENCE
 
-    # --- initial-condition overrides (pptv), merged onto the pressure-level preset ---
+    # --- initial conditions ---
+    # Two ways to set the initial state, both in pptv (parts per trillion by volume):
+    #   * initial_overrides: a few species merged onto the built-in pressure-level preset.
+    #   * concentrations:    the FULL initial state, species -> pptv; species omitted start at 0.
+    #                        If non-empty, this takes precedence over the preset + overrides,
+    #                        making the file completely self-contained.
     initial_overrides: dict = field(default_factory=dict)
+    concentrations: dict = field(default_factory=dict)
 
     def __post_init__(self):
-        if self.photolysis not in (_REFERENCE, _SZA):
-            raise ValueError(f"photolysis must be '{_REFERENCE}' or '{_SZA}', "
-                             f"got {self.photolysis!r}")
-        for name in self.initial_overrides:
-            if name not in IDX:
-                raise ValueError(f"initial_overrides has unknown species {name!r}")
+        if self.photolysis not in _MODES:
+            raise ValueError(f"photolysis must be one of {_MODES}, got {self.photolysis!r}")
+        for src in (self.initial_overrides, self.concentrations):
+            for name in src:
+                if name not in IDX:
+                    raise ValueError(f"unknown species {name!r} in initial conditions")
 
     # ----------------------------------------------------------------------------------
     def to_config(self) -> ModelConfig:
@@ -88,11 +96,21 @@ class Scenario:
                            start_utc_hour=self.start_utc_hour)
 
     def initial_state(self) -> np.ndarray:
-        """Initial concentrations (molec/cm^3), preset for ``P`` with overrides applied."""
+        """Initial concentrations (molec/cm^3).
+
+        If ``concentrations`` is given it defines the full state directly (pptv; omitted species = 0);
+        otherwise the built-in pressure-level preset is used with ``initial_overrides`` merged in.
+        """
         M = air_number_density(self.P, self.T)
+        if self.concentrations:
+            x0 = np.zeros(len(IDX))
+            for name, ppt in self.concentrations.items():
+                x0[IDX[name]] = float(ppt) * 1e-12 * M   # pptv -> molec/cm^3 (float() is robust
+                #                                          to YAML unsigned-exponent strings)
+            return x0
         x0 = initial_concentrations(self.P, M, self.WTR)
         for name, ppt in self.initial_overrides.items():
-            x0[IDX[name]] = ppt * 1e-12 * M   # pptv -> molec/cm^3
+            x0[IDX[name]] = float(ppt) * 1e-12 * M   # pptv -> molec/cm^3
         return x0
 
     # ----------------------------------------------------------------------------------

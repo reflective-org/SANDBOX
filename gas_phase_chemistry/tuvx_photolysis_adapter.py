@@ -96,10 +96,12 @@ def _earth_sun_distance(day_of_year: float) -> float:
 
 
 # J-values depend only on time (not the chemical state), and a stiff solver evaluates the RHS many
-# times at clustered t. Cache the (relatively expensive) radiation-field solve on a quantized time
-# so an integration does ~one solve per TIME_QUANTUM_S instead of one per RHS evaluation. J changes
-# slowly over a minute, so this is accurate; raise the quantum for speed or lower it for fidelity.
-TIME_QUANTUM_S = 60.0
+# times at clustered t. Rather than solve the radiation field on every call, solve it on a fixed
+# time grid (nodes every TIME_QUANTUM_S) and LINEARLY INTERPOLATE between nodes. Interpolation
+# matters: a piecewise-*constant* cache makes J(t) jump every quantum, and the stiff BDF solver's
+# step control collapses on those discontinuities (it fails a multi-day run); a continuous
+# (piecewise-linear) J(t) integrates cleanly while still costing only ~one solve per quantum.
+TIME_QUANTUM_S = 120.0
 _J_CACHE: dict = {}
 
 
@@ -132,21 +134,34 @@ def _compute_j_values(cfg, t_seconds: float) -> dict:
     return out
 
 
+def _j_at_node(cfg, node: int) -> dict:
+    """J-values at grid node ``node`` (absolute time = node * TIME_QUANTUM_S), cached."""
+    key = (node, round(float(cfg.latitude), 4), round(float(cfg.longitude), 4),
+           round(float(cfg.day_of_year), 6), round(float(cfg.P), 4))
+    cached = _J_CACHE.get(key)
+    if cached is None:
+        # model time whose absolute time is node*Q:  t = node*Q - start_utc_hour*3600
+        t_model = node * TIME_QUANTUM_S - cfg.start_utc_hour * 3600.0
+        cached = _compute_j_values(cfg, t_model)
+        _J_CACHE[key] = cached
+    return cached
+
+
 def j_values_for(cfg, t_seconds: float) -> dict:
     """Absolute J-values [1/s] keyed by frank-model equation, for scenario ``cfg`` at time ``t``.
 
     Solar zenith angle uses frank-model's own ``solar.py`` (keeping the box model self-consistent);
     the radiation field / cross sections / quantum yields come from the validated TUV-x port. Only
     reactions in :data:`REACTION_MAP` are returned; the rest fall through to ``j45 * j_scale``.
-    Results are cached on a quantized time (:data:`TIME_QUANTUM_S`) to keep stiff integrations fast.
+    J is solved on a fixed time grid (nodes every :data:`TIME_QUANTUM_S`) and linearly interpolated
+    between the two bracketing nodes, so J(t) is continuous (stiff-solver friendly) and cheap.
     """
-    key = (
-        round((cfg.start_utc_hour * 3600.0 + t_seconds) / TIME_QUANTUM_S),
-        round(float(cfg.latitude), 4), round(float(cfg.longitude), 4),
-        round(float(cfg.day_of_year), 6), round(float(cfg.P), 4),
-    )
-    cached = _J_CACHE.get(key)
-    if cached is None:
-        cached = _compute_j_values(cfg, t_seconds)
-        _J_CACHE[key] = cached
-    return cached
+    abs_t = cfg.start_utc_hour * 3600.0 + t_seconds
+    n0 = int(math.floor(abs_t / TIME_QUANTUM_S))
+    w = (abs_t - n0 * TIME_QUANTUM_S) / TIME_QUANTUM_S  # in [0, 1)
+    j0 = _j_at_node(cfg, n0)
+    if w == 0.0:
+        return j0
+    j1 = _j_at_node(cfg, n0 + 1)
+    keys = j0.keys() | j1.keys()
+    return {k: (1.0 - w) * j0.get(k, 0.0) + w * j1.get(k, 0.0) for k in keys}
