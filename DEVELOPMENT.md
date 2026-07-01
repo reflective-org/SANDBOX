@@ -93,18 +93,46 @@ precomputed:
 - Previously-approximate deep-UV reactions: N2O5, HNO4 → **1.75e-8**; HNO3 improved from ~2.1e-2 to
   ~6e-4.
 
+## JPL product-branching quantum yields (HNO4, ClOOCl)
+
+**The problem.** A molecule has one absorption cross section σ(λ) but can dissociate into several
+product *channels*, each with a quantum yield φ_channel(λ) that sum to 1:
+`J(channel) = ∫ F·σ·φ_channel dλ`. TUV-x's mechanism carries only *one* channel each for HNO4
+(`HO2+NO2`, with φ=1) and ClOOCl (`Cl+ClOO`, with φ=1), so it reports the *total* absorption as that
+single channel. The chemistry model also needs the second channels (`HNO4→OH+NO3`, `ClOOCl→2ClO`),
+which have no TUV-x counterpart.
+
+**What was implemented** (`quantum_yield.hno4_branching_quantum_yield`,
+`clooocl_branching_quantum_yield`), using the JPL 19-5 recommendations verified in the handbook:
+- HNO4: Φ(HO2+NO2) = 0.8 (λ > 200 nm) / 0.7 (λ ≤ 200 nm); Φ(OH+NO3) = 1 − that (Table 4C-9-2).
+- ClOOCl: Φ(Cl+ClOO) = 0.8; Φ(2ClO) = 0.2 at all λ (Section F7).
+
+Because both reactions use a unit-quantum-yield base cross section in the config, their `xsqy` entry
+IS the shared σ; the branching yields are applied to it inside the wavelength integral (so HNO4's
+wavelength-dependent split is exact, not a scalar). This is exposed as an **opt-in** flag
+`rate_constants_profile(..., branching=True)` — the default stays faithful to the Fortran (φ=1) so
+all Fortran validation still holds. `branching=True`:
+- corrects the primary channels (`HNO4→HO2+NO2`, `ClOOCl→Cl+ClOO`) — previously overstated by ~1/0.8
+  because they used φ=1 (the whole absorption);
+- adds the secondary channels (`HNO4→OH+NO3`, `ClOOCl→ClO+ClO`).
+
+**Validation** (invariants, since these channels are not Fortran-comparable): the channel J-values
+partition the faithful single-channel total (Σ channels = total, to 1e-12, since the yields sum to
+1), the primary channel is scaled below the total, and ClOOCl splits exactly 0.8/0.2. See
+`tests/test_branching.py`.
+
 ## Coupling status (`gas_phase_chemistry/tuvx_photolysis_adapter.py`)
 
-Of the chemistry model's 22 photolysis reactions, 19 now use the validated TUV-x J directly
-(including O2). The only fallbacks to the reference scaling are two product *branches* with no TUV-x
-counterpart — `ClOOCl → 2 ClO` and `HNO4 → NO3 + OH` — which need the JPL branching quantum yields
-(HNO4: Φ=0.8/0.2 for HO2+NO2 / OH+NO3 above 200 nm, Table 4C-9-2; ClOOCl: Φ=0.8 for Cl+ClOO,
-Section F7) applied to the covered cross sections. A time-quantized cache keeps stiff runs fast.
+**All 21 of the chemistry model's photolysis reactions now use the validated TUV-x port** (the
+adapter calls `rate_constants_profile(branching=True)`); there are **no fallbacks** to the reference
+scaling. O2 comes from the LA/SR parameterization; HNO4 and ClOOCl come from the JPL-branched
+channels; everything else matches the Fortran to ~1.8e-8. A time-quantized cache keeps stiff runs
+fast.
 
 ## Remaining follow-ups
 
-1. JPL branching quantum yields for `ClOOCl → 2 ClO` and `HNO4 → NO3 + OH` (removes the last 2
-   fallbacks; also corrects the primary-branch over-count).
-2. Exact `aerosol.F90` radiator port (enables validation against the full `tuv_5_4` with aerosol).
-3. Remaining reaction-specific QY modules (O3 quantum yields, RONO2/PAN/ketone families) for full
+1. Exact `aerosol.F90` radiator port (enables validation against the full `tuv_5_4` with aerosol).
+2. Remaining reaction-specific QY modules (O3 quantum yields, RONO2/PAN/ketone families) for full
    coverage of TUV-x's ~130 reactions.
+3. Trace the uniform ~1.8e-8 residual in the extraterrestrial-flux normalization (negligible; the
+   field itself matches to ~1e-12 and esd/hc are identical).

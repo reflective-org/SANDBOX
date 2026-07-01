@@ -46,17 +46,21 @@ REACTION_MAP = {
     "BrCl -> Br + Cl": "BrCl+hv->Br+Cl",
     "HONO -> OH + NO": "HNO2+hv->OH+NO",
     "HOBr -> OH + Br": "HOBr+hv->OH+Br",
-    # O2 photolysis is now handled via the Lyman-alpha/Schumann-Runge band parameterization
+    # O2 photolysis is handled via the Lyman-alpha/Schumann-Runge band parameterization
     "O2 -> 2 O": "O2+hv->O+O",
+    # HNO4 and ClOOCl product channels, resolved via JPL branching quantum yields (branching=True):
+    # the primary channels are corrected (scaled by ~0.8) and the secondary channels are added.
+    "HNO4 -> NO3 + OH": "HNO4+hv->OH+NO3",       # secondary branch (Phi ~0.2)
+    "ClOOCl -> 2 ClO": "ClOOCl+hv->ClO+ClO",     # secondary branch (Phi ~0.2)
 }
 
-# frank-model reactions with no TUV-x counterpart *branch* -> keep the reference j45 * j_scale
-# scaling. These are product channels absent from the TUV-x mechanism; they need JPL branching
-# quantum yields applied to the (covered) ClOOCl / HNO4 cross sections to be resolved.
-FALLBACK_REACTIONS = {"ClOOCl -> 2 ClO", "HNO4 -> NO3 + OH"}
+# Every frank-model photolysis reaction now maps to a covered TUV-x channel; nothing falls back to
+# the reference j45 * j_scale scaling.
+FALLBACK_REACTIONS = set()
 
-# All covered reactions now validate against the Fortran (LA/SR bands included), so none are
-# left in the "approximate pending LA/SR" category.
+# All covered reactions validate against the Fortran (LA/SR bands included); the HNO4/ClOOCl
+# branches rest on the JPL branching quantum yields (not Fortran-comparable) times the validated
+# cross sections.
 APPROXIMATE_REACTIONS = set()
 
 # the no-aerosol config validates 1:1 against the Fortran; the full tuv_5_4 config (with aerosol)
@@ -117,7 +121,8 @@ def _compute_j_values(cfg, t_seconds: float) -> dict:
     altitude = _box_altitude_km(float(cfg.P), data_root)
     esd = _earth_sun_distance(day_of_year)
 
-    profile = calc.rate_constants_profile(sza, esd)  # {tuvx_name: J[n_levels]}
+    # branching=True applies the JPL product-branching quantum yields for HNO4 and ClOOCl
+    profile = calc.rate_constants_profile(sza, esd, branching=True)  # {tuvx_name: J[n_levels]}
     import numpy as np
 
     out = {}

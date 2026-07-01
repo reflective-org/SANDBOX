@@ -75,8 +75,9 @@ configuration: geometry, O3 cross section, the **full radiation field across the
 (the Lyman-α/Schumann-Runge band parameterization is ported — see `tuvx_photolysis/la_sr_bands.py`),
 O2 photolysis, and per-reaction J. See `validation/` and `DEVELOPMENT.md`.
 
-Deferred follow-ups: JPL branching quantum yields for the `ClOOCl → 2ClO` and `HNO4 → NO3+OH`
-product channels, and an exact port of the TUV-x aerosol radiator.
+The chemistry model's photolysis reactions are **all** covered: O2 via the LA/SR bands, and the
+HNO4/ClOOCl product channels via the JPL branching quantum yields (`branching=True`; Table 4C-9-2 and
+Section F7). Deferred follow-up: an exact port of the TUV-x aerosol radiator.
 
 Apache-2.0. `tuvx_photolysis` derives from NCAR TUV-x (Copyright UCAR); `gas_phase_chemistry` is the
 box model it is coupled to.
