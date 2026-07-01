@@ -77,13 +77,33 @@ def _k70(e):  # HO2 + HO2 -> H2O2 : JPL 19-5 B13, bimolecular + termolecular[M] 
 
 
 # O3 photolysis branches depend on the `opt` mode (the Science-paper O1D workaround) and on
-# water vapour; the SZA/day-night scaling enters through e.j_scale.
-def _k20a(e):  # O3 -> O2 + O
-    return (4.7e-5 * (1.0 - 6.4e-6 * e.WTR) if e.opt == 1 else 0.0) * e.j_scale
+# water vapour. The model treats O3 as photolyzing 100% to O(1D) (concs_het.m L145-152), so the
+# total O3 photolysis rate constant is the O(1D)-*channel* value: reference 4.7e-5 (at 45 deg SZA).
+#
+# J-source: in 'tuvx' mode the adapter injects the absolute, SZA-resolved TUV-x O(1D)-channel J
+# under the key _O3_J_O1D (Matsumi-2002 quantum yield x the O3 cross section); we use it directly
+# (it already includes the diurnal factor, so NO extra * e.j_scale). Otherwise (reference/sza
+# modes, or the O1D J unavailable) we fall back to the historical 4.7e-5 * e.j_scale scaling.
+# The opt-mode split (below) is applied identically to whichever total is used, so switching the
+# J source changes only the O3-photolysis *magnitude/spectral response*, not the mechanism.
+_O3_J_O1D = "O3 -> O2 + O1D"  # adapter key carrying the TUV-x O(1D)-channel J (see tuvx_photolysis_adapter)
+
+
+def _o3_total_j(e):
+    """Total O3 photolysis rate constant (= the O(1D)-channel J), before the opt water split."""
+    if e.j_values is not None:
+        j = e.j_values.get(_O3_J_O1D)
+        if j is not None:
+            return j            # absolute TUV-x J (diurnal factor already included)
+    return 4.7e-5 * e.j_scale   # reference 45-deg value, scaled by day/night or cos(SZA)
+
+
+def _k20a(e):  # O3 -> O2 + O   (quenched O(1D), only in the opt=1 workaround)
+    return _o3_total_j(e) * (1.0 - 6.4e-6 * e.WTR) if e.opt == 1 else 0.0
 
 
 def _k20b(e):  # O3 -> O2 + O1D
-    return (4.7e-5 * (6.4e-6 * e.WTR) if e.opt == 1 else 4.7e-5) * e.j_scale
+    return _o3_total_j(e) * (6.4e-6 * e.WTR) if e.opt == 1 else _o3_total_j(e)
 
 
 # O1D quenching by O2/N2 is switched off when opt==1 (folded into the O3 workaround).

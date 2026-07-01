@@ -48,6 +48,11 @@ REACTION_MAP = {
     "HOBr -> OH + Br": "HOBr+hv->OH+Br",
     # O2 photolysis is handled via the Lyman-alpha/Schumann-Runge band parameterization
     "O2 -> 2 O": "O2+hv->O+O",
+    # O3 photolysis: the model treats O3 as photolyzing 100% to O(1D) (concs_het.m L145-152),
+    # so its single O3 rate maps to the TUV-x O(1D) *channel* J (Matsumi-2002 quantum yield).
+    # reactions.py's _k20a/_k20b read this key and apply the opt-mode water split themselves;
+    # the direct O(3P) channel is intentionally omitted (a null O3<->O cycle).
+    "O3 -> O2 + O1D": "O3+hv->O2+O(1D)",
     # HNO4 and ClOOCl product channels, resolved via JPL branching quantum yields (branching=True):
     # the primary channels are corrected (scaled by ~0.8) and the secondary channels are added.
     "HNO4 -> NO3 + OH": "HNO4+hv->OH+NO3",       # secondary branch (Phi ~0.2)
