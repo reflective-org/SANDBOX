@@ -50,6 +50,11 @@ def all_coefficients(p, opt):
 
     The Nth entry corresponds to reaction R<N> (see reactions.BY_RNUMBER and REACTIONS.md for
     the R-number / MATLAB k-label of each).
+
+    LIMITATION: photolysis here uses only ``j_scale`` (the reference/sza path: j45 * j_scale, and O3
+    -> 4.7e-5 * j_scale). It does NOT implement the absolute TUV-x J path (``j_values``) that
+    ``rhs.concs_het`` uses in ``photolysis="tuvx"`` mode. The JAX Phase-B model therefore matches
+    Phase A in reference/sza modes only; it is not valid for tuvx-coupled scenarios. See REVIEW_FINDINGS.md.
     """
     T, M, P, SA, WTR, H2O = p["T"], p["M"], p["P"], p["SA"], p["WTR"], p["H2O"]
     j = p["j_scale"]

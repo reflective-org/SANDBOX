@@ -13,10 +13,13 @@ Conventions (see mechanism.py for detail):
 Rate-constant references are kept as notes.
 
 RATE CONSTANTS: JPL 19-5 (this branch). Gas-phase bimolecular + termolecular rates have been
-updated from the original MATLAB ("JPL-11") set to JPL Publication 19-5; see updates.md for
-the full change list. Termolecular reactions use the 298 K reference (falloff298). Photolysis
-J-values and the heterogeneous gammas are unchanged. Two reactions use the JPL chemical-
-activation form (OH+HNO3, O+NO2): total = k_f + k_int*(1 - k_f/kinf) (JPL Table 2-2, Eq 2.6).
+updated from the original MATLAB ("JPL-11") set to JPL Publication 19-5 (NASA/JPL Panel for Data
+Evaluation, Evaluation No. 19). Termolecular reactions use the evaluation's **298 K reference**
+(falloff298 / troe298) -- JPL 19-5 Sec. 2, Eqs. (2.1)-(2.3); this is a change from the 300 K
+reference of JPL-11 (the MATLAB set). See ``frank-model/references/NASA-JPL_Evaluation_19-5.pdf``
+(p. 2-1) and the reference-temperature note in ``mechanism.py``. Photolysis J-values and the
+heterogeneous gammas are unchanged from the MATLAB. Two reactions use the JPL chemical-activation
+form (OH+HNO3, O+NO2): total = k_f + k_int*(1 - k_f/kinf) (JPL 19-5 Table 2-2).
 """
 
 from __future__ import annotations

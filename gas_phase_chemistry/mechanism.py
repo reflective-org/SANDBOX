@@ -70,12 +70,24 @@ class Env:
 # ---------------------------------------------------------------------------------------
 # Shared rate-constant helpers
 # ---------------------------------------------------------------------------------------
+# Reference-temperature convention for the termolecular (fall-off) rate constants
+# ------------------------------------------------------------------------------
+# NASA/JPL Panel for Data Evaluation, Evaluation No. 19 (JPL Publication 19-5),
+# Section 2 "Termolecular Reactions", Eqs. (2.1)-(2.3):
+#       k0(T)    = k0^298   * (298/T)^n   [cm^6 molecule^-2 s^-1]        (2.1)
+#       kinf(T)  = kinf^298 * (298/T)^m   [cm^3 molecule^-1 s^-1]        (2.2)
+#       kf(T,M)  = [kinf*k0*M / (kinf + k0*M)] * 0.6^{1/(1+(log10(k0*M/kinf))^2)}  (2.3)
+# The tabulated parameters are k0(298), n, kinf(298), m -- i.e. Evaluation 19 uses a
+# **298 K reference temperature**. This is a change from a 300 K reference used in
+# JPL-11 and earlier evaluations (which the original MATLAB `concs_het.m` followed).
+# Source PDF (bundled): frank-model/references/NASA-JPL_Evaluation_19-5.pdf, page 2-1.
 def troe(e: Env, k0_300: float, n0: float, kinf_300: float, ninf: float, Fc: float = 0.6) -> float:
-    """JPL pressure-dependent (Troe / fall-off) rate constant; includes M. 300 K reference.
+    """JPL-11 (300 K reference) pressure-dependent (Troe / fall-off) rate constant; includes M.
 
     k0 = k0_300 * (T/300)^n0 ;  kinf = kinf_300 * (T/300)^ninf
     k  = (k0*M / (1 + k0*M/kinf)) * Fc^( 1 / (1 + (log10(k0*M/kinf))^2) )
-    (Original MATLAB / JPL-11 convention; JPL 19-5 uses falloff298 below.)
+    This is the original MATLAB / JPL-11 convention (300 K). This branch uses JPL 19-5, which
+    moved the reference to 298 K -- use ``troe298`` / ``falloff298`` below. Kept for reference.
     """
     k0 = k0_300 * (e.T / 300.0) ** n0
     kinf = kinf_300 * (e.T / 300.0) ** ninf
@@ -85,11 +97,15 @@ def troe(e: Env, k0_300: float, n0: float, kinf_300: float, ninf: float, Fc: flo
 
 def falloff298(e: Env, k0_298: float, n0: float, kinf_298: float, ninf: float,
                Fc: float = 0.6):
-    """JPL 19-5 fall-off, **298 K reference**. Returns ``(k_f, kinf)``.
+    """JPL 19-5 fall-off with the evaluation's **298 K reference**. Returns ``(k_f, kinf)``.
 
-    k0(T) = k0_298*(T/298)^n0, kinf(T) = kinf_298*(T/298)^ninf (pass n0 = -n, ninf = -m for
-    the JPL table's n, m). ``k_f`` is the association rate constant; ``kinf`` is returned too
-    because the chemical-activation reactions (Table 2-2) need it for k_int*(1 - k_f/kinf).
+    k0(T) = k0_298*(T/298)^n0, kinf(T) = kinf_298*(T/298)^ninf, i.e. JPL 19-5 Eqs. (2.1)-(2.2)
+    written with (T/298)^n0 == (298/T)^n (pass n0 = -n, ninf = -m for the JPL table's n, m).
+    The 298 K reference is per NASA/JPL Evaluation No. 19 (JPL Pub. 19-5), Sec. 2 -- see the
+    module note above and frank-model/references/NASA-JPL_Evaluation_19-5.pdf (p. 2-1). NOTE:
+    JPL-11 (and the original MATLAB) used a 300 K reference; do NOT "correct" this to 300 K.
+    ``k_f`` is the association rate constant; ``kinf`` is returned too because the chemical-
+    activation reactions (Table 2-2) need it for k_int*(1 - k_f/kinf).
     """
     k0 = k0_298 * (e.T / 298.0) ** n0
     kinf = kinf_298 * (e.T / 298.0) ** ninf
@@ -99,7 +115,7 @@ def falloff298(e: Env, k0_298: float, n0: float, kinf_298: float, ninf: float,
 
 
 def troe298(e: Env, k0_298: float, n0: float, kinf_298: float, ninf: float, Fc: float = 0.6) -> float:
-    """JPL 19-5 association (Troe) rate constant, 298 K reference (just ``k_f``)."""
+    """JPL 19-5 association (Troe) rate constant, 298 K reference (just ``k_f``); see ``falloff298``."""
     return falloff298(e, k0_298, n0, kinf_298, ninf, Fc)[0]
 
 
