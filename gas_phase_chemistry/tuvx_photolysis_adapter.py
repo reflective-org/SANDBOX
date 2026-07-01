@@ -9,11 +9,11 @@ Install the port (editable) into the same environment, e.g.::
 
     pip install -e ..       # from gas_phase_chemistry/, installs this standalone package
 
-Reactions frank-model needs that the port does not yet cover accurately fall back to the existing
-``j45 * j_scale`` scaling (see ``FALLBACK_REACTIONS``): O2 -> 2 O (needs the Lyman-alpha/Schumann-
-Runge bands), and the ClOOCl -> 2 ClO and HNO4 -> NO3 + OH branches (no TUV-x counterpart). A few
-deep-UV-weighted reactions (HNO3, N2O5, HNO4 -> NO2 + HO2) are covered but remain approximate until
-the LA/SR bands are added; they are listed in ``APPROXIMATE_REACTIONS`` for transparency.
+With the Lyman-alpha/Schumann-Runge band parameterization ported, O2 photolysis and the deep-UV
+reactions (HNO3, N2O5, HNO4) now validate against the Fortran. The only reactions that still fall
+back to the reference ``j45 * j_scale`` scaling (see ``FALLBACK_REACTIONS``) are product *branches*
+with no TUV-x counterpart -- ClOOCl -> 2 ClO and HNO4 -> NO3 + OH -- which require applying the JPL
+branching quantum yields to the (covered) ClOOCl / HNO4 cross sections.
 """
 
 from __future__ import annotations
@@ -46,13 +46,18 @@ REACTION_MAP = {
     "BrCl -> Br + Cl": "BrCl+hv->Br+Cl",
     "HONO -> OH + NO": "HNO2+hv->OH+NO",
     "HOBr -> OH + Br": "HOBr+hv->OH+Br",
+    # O2 photolysis is now handled via the Lyman-alpha/Schumann-Runge band parameterization
+    "O2 -> 2 O": "O2+hv->O+O",
 }
 
-# frank-model reactions with no accurate TUV-x J yet -> keep the reference j45 * j_scale scaling
-FALLBACK_REACTIONS = {"O2 -> 2 O", "ClOOCl -> 2 ClO", "HNO4 -> NO3 + OH"}
+# frank-model reactions with no TUV-x counterpart *branch* -> keep the reference j45 * j_scale
+# scaling. These are product channels absent from the TUV-x mechanism; they need JPL branching
+# quantum yields applied to the (covered) ClOOCl / HNO4 cross sections to be resolved.
+FALLBACK_REACTIONS = {"ClOOCl -> 2 ClO", "HNO4 -> NO3 + OH"}
 
-# covered, but with a meaningful deep-UV (<206 nm) contribution -> approximate until LA/SR is added
-APPROXIMATE_REACTIONS = {"HNO3 -> OH + NO2", "N2O5 -> NO2 + NO3", "HNO4 -> NO2 + HO2"}
+# All covered reactions now validate against the Fortran (LA/SR bands included), so none are
+# left in the "approximate pending LA/SR" category.
+APPROXIMATE_REACTIONS = set()
 
 # the no-aerosol config validates 1:1 against the Fortran; the full tuv_5_4 config (with aerosol)
 # can be used instead once the aerosol radiator is ported exactly. Paths resolve to the data and

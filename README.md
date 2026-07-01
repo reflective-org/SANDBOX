@@ -71,9 +71,12 @@ J = calc.rate_constants(latitude=0, longitude=0, year=2002, month=3, day=21,
 ## Validation & known follow-ups
 
 Photolysis is validated to machine precision vs the Fortran TUV-x for the bundled no-aerosol
-configuration (geometry, O3 cross section, full radiation field, and per-reaction J for λ ≥ ~206 nm);
-see `validation/`. Deferred: the Lyman-α/Schumann-Runge bands (unlocks O2 and improves deep-UV
-reactions) and an exact port of the TUV-x aerosol radiator.
+configuration: geometry, O3 cross section, the **full radiation field across the entire spectrum**
+(the Lyman-α/Schumann-Runge band parameterization is ported — see `tuvx_photolysis/la_sr_bands.py`),
+O2 photolysis, and per-reaction J. See `validation/` and `DEVELOPMENT.md`.
+
+Deferred follow-ups: JPL branching quantum yields for the `ClOOCl → 2ClO` and `HNO4 → NO3+OH`
+product channels, and an exact port of the TUV-x aerosol radiator.
 
 Apache-2.0. `tuvx_photolysis` derives from NCAR TUV-x (Copyright UCAR); `gas_phase_chemistry` is the
 box model it is coupled to.
