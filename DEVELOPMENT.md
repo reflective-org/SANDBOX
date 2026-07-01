@@ -129,10 +129,47 @@ scaling. O2 comes from the LA/SR parameterization; HNO4 and ClOOCl come from the
 channels; everything else matches the Fortran to ~1.8e-8. A time-quantized cache keeps stiff runs
 fast.
 
+## O3 photolysis driven by the TUV-x O(1D) channel (branch `o3-tuvx-photolysis`)
+
+Previously the two O3 photolysis channels were the only chemistry-model photolysis reactions **not**
+taken from the port: `reactions.py`'s `_k20a`/`_k20b` used a fixed reference rate `4.7e-5 * j_scale`
+(cosine-of-SZA scaling), because the port did not implement the O3 quantum yields. This branch closes
+that gap.
+
+**Port side.** Added `o3_o1d_quantum_yield` / `o3_o3p_quantum_yield` to `quantum_yield.py` — a faithful
+port of `src/quantum_yields/o3-o2_o1d.F90` and `o3-o2_o3p.F90` (Matsumi et al. 2002, JGR 107,
+10.1029/2001JD000510). Temperature-dependent, evaluated per height interface. Four wavelength regimes:
+λ≤305 nm → 0.90; 305<λ≤328 → the Matsumi analytic form; 328<λ≤340 → 0.08; λ>340 → 0. O(3P) = 1 − O(1D).
+`api.py` now dispatches the `O3+hv->O2+O(1D)` / `O3+hv->O2+O(3P)` quantum-yield types, so the port
+computes both channels (`tests/test_o3_quantum_yield.py`).
+
+**Which J the model uses.** The chemistry model treats O3 as photolyzing **100% to O(1D)**
+(`src-matlab/concs_het.m` L145–152: `k20a=0`, `k20b=4.7e-5`), the direct O(3P) channel being an inert
+O3↔O null cycle. So its single O3 rate constant is the **O(1D)-channel** value, not the total. This is
+confirmed numerically: at 20 km / 45° the port gives J(O1D)=5.2e-5 s⁻¹ (next to the reference 4.7e-5),
+while J(O3P)=4.7e-4 (10× larger) — using the total would be ~10× too big. The adapter therefore maps
+`"O3 -> O2 + O1D"` → `"O3+hv->O2+O(1D)"` only.
+
+**Wiring.** `_k20a`/`_k20b` now read the absolute, SZA-resolved TUV-x O(1D)-channel J from
+`env.j_values` (helper `_o3_total_j`) when present — it already includes the diurnal factor, so it is
+**not** multiplied by `j_scale` again — and still apply the `opt`-mode water split
+(`k20b = J·6.4e-6·WTR`, `k20a = J·(1−6.4e-6·WTR)` for opt=1). Reference/sza modes (where `j_values` is
+`None`) keep the historical `4.7e-5 * j_scale` fallback, so **all 60 MATLAB-validated chemistry tests
+are unchanged**. Only the O3-photolysis magnitude and spectral/diurnal response change in `tuvx` mode;
+the mechanism is identical.
+
+**Effect (10-day equatorial run, `model_input.yaml`, 68 mbar/210 K/5 ppm).** Switching O3 photolysis
+from `4.7e-5·cos(SZA)` to the TUV-x O(1D) J raises primary HOx by ~20% (OH +20.6%, HO2 +20.7%), with
+knock-on ClO +24%, NO2 −4.7%, N2O5 −3.6%, HNO3 −1.0%; O3 itself moves +0.06%. The rise is because the
+`4.7e-5` reference was set at 45° SZA whereas the equatorial overhead sun gives a larger O(1D) J. See
+`gas_phase_chemistry/compare_o3_tuvx.py` and the overlay plots in `o3_tuvx_comparison*/`.
+
 ## Remaining follow-ups
 
 1. Exact `aerosol.F90` radiator port (enables validation against the full `tuv_5_4` with aerosol).
-2. Remaining reaction-specific QY modules (O3 quantum yields, RONO2/PAN/ketone families) for full
-   coverage of TUV-x's ~130 reactions.
+2. Remaining reaction-specific QY modules (RONO2/PAN/ketone families) for full coverage of TUV-x's
+   ~130 reactions. **O3 quantum yields: done** (see above).
 3. Trace the uniform ~1.8e-8 residual in the extraterrestrial-flux normalization (negligible; the
    field itself matches to ~1e-12 and esd/hc are identical).
+4. Validate the ported O3 quantum yields 1:1 against a Fortran diagnostic dump (currently validated
+   against the analytic Matsumi recommendation, which the module reproduces exactly).
