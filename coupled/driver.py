@@ -183,15 +183,18 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
     return tstate._replace(Nk=Nk, Mk=Mk, Gc=Gc), removal_kg, max(dt, floor), n_micro
 
 
-def _envelope_grid(t0, t1, spacing=2.0, min_pts=65, max_pts=1025):
-    """Times [t0..t1] (inclusive) to save the gas H2SO4 envelope on for the micro-loop's host interp.
+#: number of points the gas H2SO4 envelope is saved on per outer step. FIXED (not proportional to the
+#: interval length) so the jitted grid-save solve keeps a constant input shape and compiles ONCE. The
+#: envelope is smooth/monotone, so ~2 s spacing over a 600 s step interpolates it well within micro_eps;
+#: shorter (terminator-snapped) intervals just get a denser grid at no extra cost.
+_ENVELOPE_GRID_PTS = 301
 
-    The envelope (cumulative gas H2SO4 production, no aerosol sink) is smooth and monotone, so a uniform
-    ~``spacing``-second grid interpolates it to well within the micro_eps coupling tolerance -- the fine
-    (down to micro_floor_s) resolution is needed for the TOMAS handoff, NOT for the envelope shape.
-    """
-    n = int(np.clip(round((t1 - t0) / spacing) + 1, min_pts, max_pts))
-    return np.linspace(t0, t1, n)
+
+def _envelope_grid(t0, t1):
+    """Times [t0..t1] (inclusive, fixed length ``_ENVELOPE_GRID_PTS``) to save the gas H2SO4 envelope on
+    for the micro-loop's host interpolation (the fine down-to-micro_floor_s resolution is needed for the
+    TOMAS handoff, NOT for the smooth envelope shape)."""
+    return np.linspace(t0, t1, _ENVELOPE_GRID_PTS)
 
 
 def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_dist=False):
@@ -217,7 +220,11 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     # Two-level integration: the gas ODE is solved ONCE per outer step. With TOMAS active we need a
     # DENSE solution so the adaptive micro-loop can query the gas H2SO4 envelope at sub-interval times
     # while TOMAS consumes it (approach B). Without TOMAS, just the endpoint (Phase-2 gas-only path).
-    step = make_frozen_step(cfg.opt, atol=jnp.asarray(_abstol(cfg.opt)))
+    # jit_grid + forward_only make the per-outer-step gas solve ~85x faster (eager diffeqsolve ~1.2 s
+    # -> jitted+LU ~15 ms): the coupled forward run takes no gradients through the solve, and the
+    # envelope grid has a fixed length so the jit compiles once. Bit-identical to the eager solve.
+    step = make_frozen_step(cfg.opt, atol=jnp.asarray(_abstol(cfg.opt)),
+                            jit_grid=True, forward_only=True)
 
     nuc_scale = float(scenario.nucleation_rate_scale)   # Phase 7 knob -> TOMAS nucleation fn_scale
     # Phase 6: dilution -> relaxation toward a background (AD-6.3). Background gas = initial state with

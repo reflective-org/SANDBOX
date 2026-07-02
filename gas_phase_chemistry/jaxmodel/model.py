@@ -12,6 +12,7 @@ recomputed from the state inside the vector field every step (as in Phase A).
 from __future__ import annotations
 
 import numpy as np
+import jax
 import jax.numpy as jnp
 import lineax as lx
 import optimistix as optx
@@ -32,9 +33,14 @@ _SULFUR_SZA = float(sulfur_chain_active("sza"))              # 1.0
 _ROOT_FINDER = optx.Newton(rtol=1e-3, atol=1e-6,
                            linear_solver=lx.AutoLinearSolver(well_posed=False))
 
+# Forward-only root finder: a plain LU linear solve (well-posed). ~3x faster than the least-squares
+# solver above and, for the FORWARD coupled run (no differentiation through the solve), bit-identical
+# (profiled: max relative diff ~1e-18 on a 600 s step). Use ONLY where gradients are not taken.
+_ROOT_FINDER_FWD = optx.Newton(rtol=1e-3, atol=1e-6, linear_solver=lx.LU())
 
-def _stiff_solver():
-    return Kvaerno5(root_finder=_ROOT_FINDER)
+
+def _stiff_solver(forward_only=False):
+    return Kvaerno5(root_finder=_ROOT_FINDER_FWD if forward_only else _ROOT_FINDER)
 
 
 def make_vector_field(opt):
@@ -154,7 +160,8 @@ def make_frozen_vf(opt):
     return vf
 
 
-def make_frozen_step(opt, atol=1e-6, rtol=1e-3, first_step=1e-10, max_steps=1_000_000, dense=False):
+def make_frozen_step(opt, atol=1e-6, rtol=1e-3, first_step=1e-10, max_steps=1_000_000, dense=False,
+                     jit_grid=False, forward_only=False):
     """Build ``step(y0, t0, t1, args) -> y(t1)`` for one operator-split sub-step.
 
     The integrator is RE-INITIALIZED per call (a fresh diffeqsolve on [t0,t1]) so it never steps
@@ -167,21 +174,33 @@ def make_frozen_step(opt, atol=1e-6, rtol=1e-3, first_step=1e-10, max_steps=1_00
     ``step(..., save_ts=grid)``: save the solution at the times in ``grid`` (which must include t1) and
     return the ``sol`` (use ``sol.ys``). This is how the two-level coupled driver gets the gas H2SO4
     envelope for approach B: ONE gas solve saving H2SO4 on a fine grid, then the (smooth, monotone)
-    envelope is interpolated on the HOST inside the micro-loop -- far cheaper than a per-micro-step
-    ``sol.evaluate`` (which is a device call + sync each time; profiled at ~40 ms/step vs ~1.6 ms for the
-    TOMAS step itself). ``save_ts`` takes precedence over ``dense``.
+    envelope is interpolated on the HOST inside the micro-loop. ``save_ts`` takes precedence over dense.
+
+    Performance (``jit_grid`` + ``forward_only``): an EAGER ``diffeqsolve`` re-traces its Python wrapper
+    every call (~1.2 s/call for this mechanism); wrapping the grid-save solve in ``jax.jit`` drops that
+    to ~40 ms after the first (shape-cached) call. ``forward_only`` additionally uses an LU root finder
+    (~3x faster than the gradient-safe least-squares default; bit-identical for a forward run) -> ~15 ms
+    /call. Use ``jit_grid``/``forward_only`` ONLY when the ``save_ts`` grid has a FIXED length across
+    calls (so jit compiles once) and no gradients are taken through the solve -- exactly the coupled
+    driver's case. The eager dense/final paths are unchanged (gradient-safe default root finder).
     """
     term = ODETerm(make_frozen_vf(opt))
-    solver = _stiff_solver()
+    solver = _stiff_solver(forward_only=forward_only)
+    solver_grad = _stiff_solver(forward_only=False)   # gradient-safe for the dense/final eager paths
     ctrl = PIDController(rtol=rtol, atol=atol)
     dense_saveat = SaveAt(t1=True, dense=True) if dense else SaveAt(t1=True)
 
+    def _grid_solve(y0, t0, t1, args, save_ts):
+        return diffeqsolve(term, solver, t0=t0, t1=t1, dt0=first_step, y0=y0, args=args,
+                           stepsize_controller=ctrl, saveat=SaveAt(ts=save_ts), max_steps=max_steps)
+    if jit_grid:
+        _grid_solve = jax.jit(_grid_solve)
+
     def step(y0, t0, t1, args, save_ts=None):
-        saveat = SaveAt(ts=save_ts) if save_ts is not None else dense_saveat
-        sol = diffeqsolve(term, solver, t0=t0, t1=t1, dt0=first_step, y0=jnp.asarray(y0),
-                          args=args, stepsize_controller=ctrl, saveat=saveat,
-                          max_steps=max_steps)
-        if save_ts is not None or dense:
-            return sol
-        return sol.ys[-1]
+        y0 = jnp.asarray(y0)
+        if save_ts is not None:                       # coupled driver's envelope path (jit + LU capable)
+            return _grid_solve(y0, t0, t1, args, jnp.asarray(save_ts))
+        sol = diffeqsolve(term, solver_grad, t0=t0, t1=t1, dt0=first_step, y0=y0, args=args,
+                          stepsize_controller=ctrl, saveat=dense_saveat, max_steps=max_steps)
+        return sol if dense else sol.ys[-1]
     return step
