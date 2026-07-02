@@ -203,9 +203,16 @@ Single-layer placement is the degenerate case (band = one layer).
 **Rationale:** J at the box altitude responds to aerosol ABOVE it (attenuation of incoming sunlight),
 so putting all aerosol only in the box layer would show almost no J effect — physically the SAI aerosol
 is a vertically-extended layer. A uniform slab with the box's concentration is the standard box-model
-"uniform aerosol layer" assumption and makes the aerosol→J feedback meaningful. **FLAGGED OPEN**: the
-slab depth/bounds materially set the feedback magnitude — the user should confirm the intended layer
-geometry (single point, fixed band, or a scaled background profile).
+"uniform aerosol layer" assumption and makes the aerosol→J feedback meaningful.
+
+**RESOLVED (user review):** the absolute `(15,25)` km band was decoupled from the input pressure (the
+box location is P-derived, so an absolute km window didn't track it). Now **pressure-anchored**: a
+plume of vertical extent `aerosol_thickness_km` (default 1 km) centered on the box altitude (the same
+USSA P→z the J interpolation uses), so it tracks P. The column OD is `b_ext·thickness` distributed over
+the in-band layers (grid-independent) with a nearest-layer guard, so a sub-grid-thin plume lands in the
+box layer rather than silently vanishing. `aerosol_band_km` remains as an optional absolute override,
+and `switches.aerosol_to_j=False` disables the feedback. The plume *thickness* (its real vertical
+extent) — not an absolute km window — is now the single knob that sets the feedback magnitude.
 
 ### AD-4.3 — Per-wavelength aerosol radiator
 **Q:** The existing `radiators.aerosol_radiator` broadcasts a per-layer OD across wavelengths with

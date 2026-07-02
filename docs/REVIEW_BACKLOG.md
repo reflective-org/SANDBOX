@@ -13,7 +13,7 @@ Current: spectral Mie (per wavelength, not Ångström — good) over TOMAS bins,
 - **Mie uses DRY geometric-mean bin radii, not WET radii** (`aerosol_optics.py:37-41` →
   `radiative_forcing.py:271-274`, density 1770 kg/m3 = ammonium sulfate). Water uptake is absent from
   the optics (though the het-chem diagnostics DO use wet radii) → scattering underestimated ~10-50%.
-- Vertical placement = uniform slab over `aerosol_band_km` (AD-4.2, flagged open).
+- Vertical placement (AD-4.2) — RESOLVED: pressure-anchored plume (`aerosol_thickness_km` centered on the box altitude).
 To improve: composition/λ-dependent refractive index; feed WET radii into the Mie table; revisit the
 slab profile. Biggest levers: wet radii + a realistic Im(n) for heating.
 

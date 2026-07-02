@@ -40,9 +40,13 @@
 - **Aerosol→photolysis optics use a fixed refractive index (AD-4.1).** No wavelength-dependent n(λ)
   for sulfate in the UV; the Mie table uses a constant 1.4+1e-8j and the fixed dry geometric-mean bin
   radii (matching TOMAS's own RF), so wet-growth optical effects are not captured. DEFERRED fidelity.
-- **Aerosol vertical placement = uniform slab (AD-4.2, OPEN).** The box aerosol is spread uniformly
-  over `aerosol_band_km`; the band depth materially sets the aerosol→J feedback magnitude. Flagged for
-  user (single point vs fixed band vs scaled background profile).
+- **Aerosol vertical placement = pressure-anchored plume (AD-4.2, resolved).** The box aerosol fills a
+  plume of thickness `aerosol_thickness_km` (default 1 km) centered on the box altitude (derived from
+  P), so it tracks the pressure. The thickness — not an absolute km window — sets the feedback
+  magnitude, so choose it as the plume's real vertical extent. `aerosol_band_km` overrides with an
+  absolute band; `aerosol_to_j=False` turns the feedback off. NOTE: the box's own aerosol is a thin
+  perturbation — it does NOT represent the full overhead background (Junge) layer, so the radiative
+  self-feedback is modest by design; don't read the box-altitude J change as the total aerosol effect.
 - **Aerosol→J is non-monotonic in loading.** A scattering sulfate aerosol ENHANCES J at low-moderate
   optical depth (added diffuse actinic flux) and only SHIELDS at high loading — physically correct, but
   do not expect "more aerosol ⇒ less J" at all loadings (see coupled/validation/phase4_j_vs_od.png).

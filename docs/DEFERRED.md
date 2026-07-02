@@ -56,8 +56,9 @@
   n=1.4+1e-8j; add tabulated n(λ) for sulfate (and optionally the wet-solution index) for UV fidelity.
 - **Wet-radius aerosol optics (Phase 4).** Optics use the dry geometric-mean bin radii (TOMAS RF
   convention); using the water-uptake (wet) radius would grow the scattering cross-section.
-- **Aerosol vertical placement (Phase 4, AD-4.2, OPEN for user).** Currently a uniform slab over
-  `aerosol_band_km`; consider a scaled background profile or a single-layer option.
+- ~~**Aerosol vertical placement (Phase 4, AD-4.2).**~~ **RESOLVED:** pressure-anchored plume of
+  `aerosol_thickness_km` centered on the box altitude (`aerosol_band_km` optional absolute override;
+  `aerosol_to_j=False` to disable). A scaled background (Junge) profile is a possible future refinement.
 - **Exact `aerosol.F90` port** (fractional-source OD interpolation + Ångström scaling). Not needed for
   the coupling (TOMAS supplies spectral optics directly), but required for config-static aerosol
   parity with Fortran TUV-x.

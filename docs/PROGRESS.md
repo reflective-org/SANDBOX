@@ -34,8 +34,8 @@ Phases from `docs/master-plan.md`. Status updated each phase gate.
   via per-wavelength Mie on the fixed bin radii (`aerosol_optics.py`, 4.1); dynamic aerosol radiator
   injected into the TUV-x port `_solve` (4.2); wired through the adapter + coupled driver behind
   `switches.aerosol_to_j` with a configurable altitude band (4.3); validation sweep + plot (4.4). J
-  responds correctly (scattering enhancement then shielding). `aerosol_band_km` placement flagged OPEN
-  (AD-4.2). NumPy mirror kept in parity.
+  responds correctly (scattering enhancement then shielding). Aerosol placement is pressure-anchored
+  (`aerosol_thickness_km` centered on the box altitude; AD-4.2 resolved). NumPy mirror kept in parity.
 
 - **Phase 5 — Radiative heating → temperature — COMPLETE.** Ported the `heating_rates.F90` kernel into
   the port (O3 both channels; O2 deferred) reusing actinic flux + xsqy (5.1); `coupled/heating.py`
@@ -61,7 +61,7 @@ Phases from `docs/master-plan.md`. Status updated each phase gate.
 
 ## OPEN for the user (see docs/AUTONOMOUS_DECISIONS.md)
 - Phase 3: TOMAS internal sulfur loss (AD-3.10) + runaway nucleation (default nucleation off?).
-- Phase 4: aerosol vertical placement / `aerosol_band_km` (AD-4.2).
+- Phase 4: aerosol vertical placement (AD-4.2) — RESOLVED: pressure-anchored plume (`aerosol_thickness_km`).
 - Phase 5: heating is SW-only, NO longwave cooling / no LW aerosol heating (AD-5.4) -- biggest one.
 - Recurring: gammas divide-by-zero at HCl=0 (keep HCl>0); package gas_phase_chemistry + tomas_jax.
 

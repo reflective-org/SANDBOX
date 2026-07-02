@@ -46,8 +46,11 @@ if it's not obvious from first principles or the reference, it belongs here.
 - **Spectral optics via per-wavelength Mie on fixed dry geometric-mean bin radii** + a **fixed complex
   refractive index 1.4+1e-8j** (AD-4.1). No n(λ); the Mie table is precomputed once and Nk-weighted
   each step. Bulk SSA = b_sca/b_ext, bulk g scattering-weighted.
-- **Aerosol vertical placement = uniform slab over `aerosol_band_km`** (default (15,25) km), OD per
-  layer = b_ext(λ)·Δz (AD-4.2, FLAGGED OPEN — sets feedback magnitude).
+- **Aerosol vertical placement = pressure-anchored plume** (AD-4.2, RESOLVED). A plume of vertical
+  extent `aerosol_thickness_km` (default 1 km) centered on the box altitude derived from the input P;
+  column OD = b_ext(λ)·thickness distributed over the in-band layers (grid-independent) with a
+  nearest-layer guard. `aerosol_band_km` (optional) overrides with an absolute band; `aerosol_to_j=False`
+  disables the feedback. The plume thickness (not an absolute km window) sets the feedback magnitude.
 
 ## Radiative heating -> T (Phase 5) -- see AUTONOMOUS_DECISIONS.md AD-5.x
 - **Gas photochemical heating = O3 only** (both channels; O2 deferred, AD-5.1), ported from
