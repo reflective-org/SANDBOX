@@ -172,3 +172,44 @@ _(further Phase-3 decisions appended as they arise)_
   ~0.1 µm)? (b) or use a much smaller dt_couple / an internal TOMAS sub-step schedule to tame the
   burst? (c) or a different nucleation scheme? I proceeded with all three microphysics ON in the
   validation for completeness, and documented the artifact; the coupling machinery itself is correct.
+
+---
+
+## Phase 4 — Aerosol → photolysis radiation
+
+### AD-4.1 — Spectral aerosol optics via per-wavelength Mie on fixed bin radii
+**Q:** TOMAS's `precompute_mie_properties` returns only broadband/single-λ optics, but the photolysis
+solver needs OD/SSA/g across its ~230-bin UV-vis wavelength grid. How to get spectral optics?
+**Decision:** Call tomas-jax's `bhmie_qsca_jax(x, refindex)` per TUV-x wavelength × per TOMAS bin
+(size parameter x=2πr/λ) to build a **precomputed Mie table** Qext/Qsca/gsca of shape
+(n_wavelengths, n_bins), using the **fixed dry geometric-mean bin radii** (from `xk`, TOMAS's own RF
+radius convention) and a **fixed refractive index 1.4+1e-8j**. The table depends only on the (fixed)
+bin radii + refractive index, so it is computed ONCE and reused every step; per step only the cheap
+Σ over bins (weighted by the evolving `Nk`) is done.
+**Rationale:** avoids the lossy single-λ Ångström extrapolation (the master-plan fallback) — we get
+genuine spectral Mie. Using the fixed geometric-mean bin radii (not the wet radius) matches TOMAS's own
+radiative-forcing code so optics are consistent with it, and makes the table precomputable (huge speed
+win in the coupled loop). **Approximation flagged:** the refractive index is λ-independent (no n(λ)
+data for sulfate in the UV; real n varies mildly). Tracked in DEFERRED as a fidelity improvement.
+
+### AD-4.2 — Aerosol vertical placement in the RT column (OPEN — flagged for user)
+**Q:** The box is one altitude; the RT solver needs a per-layer aerosol OD profile. Where does the
+box's aerosol go in the ~120-layer column?
+**Decision (default, reversible):** distribute the box's aerosol **uniformly over a configurable
+stratospheric slab** (an altitude band on the CoupledScenario, default centered on the box altitude),
+i.e. every layer in the band gets OD = b_ext(λ)·Δz with the box's extinction coefficient b_ext; layers
+outside the band get 0. Single-layer placement is the degenerate case (band = one layer).
+**Rationale:** J at the box altitude responds to aerosol ABOVE it (attenuation of incoming sunlight),
+so putting all aerosol only in the box layer would show almost no J effect — physically the SAI aerosol
+is a vertically-extended layer. A uniform slab with the box's concentration is the standard box-model
+"uniform aerosol layer" assumption and makes the aerosol→J feedback meaningful. **FLAGGED OPEN**: the
+slab depth/bounds materially set the feedback magnitude — the user should confirm the intended layer
+geometry (single point, fixed band, or a scaled background profile).
+
+### AD-4.3 — Per-wavelength aerosol radiator
+**Q:** The existing `radiators.aerosol_radiator` broadcasts a per-layer OD across wavelengths with
+scalar SSA/g. TOMAS optics are per-wavelength.
+**Decision:** build the aerosol `RadiatorOpticalProps` directly with per-(layer,wavelength) OD/SSA/g
+arrays (the dataclass already supports (n_layers, n_wl) arrays), rather than the scalar broadcast form.
+Inject it per-solve in `api._solve` (programmatic, like the LA/SR O2 in-place mod), NOT via the JSON
+config path — the coupled aerosol is dynamic.
