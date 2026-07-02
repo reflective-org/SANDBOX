@@ -355,7 +355,7 @@ def build_env(cfg, conc, j_scale: float, j_values: dict | None = None,
     H2O_ppm = conc[IDX["H2O"]] / M * 1e6
 
     # Composition + radius for the uptake gammas. Default to the thermodynamic weight percent and the
-    # legacy 1-um radius; the coupled driver overrides both with TOMAS-derived values (a_W always stays
+    # legacy 0.1-um radius (0.1e-4 cm); the coupled driver overrides both with TOMAS-derived values (a_W always stays
     # from the gas-phase water thermodynamics -- it is a water activity, not a bulk-composition term;
     # see docs/AUTONOMOUS_DECISIONS.md AD-3.3/3.4).
     h2so4wp_thermo, _ml, a_W = h2so4wp_at(cfg.T, cfg.P, H2O_ppm)
