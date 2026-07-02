@@ -74,5 +74,5 @@ Phases from `docs/master-plan.md`. Status updated each phase gate.
 | 4 | Aerosol→photolysis radiation | ✅ done (pending 3-agent) |
 | 5 | Radiative heating→T | ✅ done (pending 3-agent) |
 | 6 | Dilution (gas+aerosol, entrainment) | ✅ done (verified) |
-| 7 | Single unified input + validation + plots | ✅ done (pending 3-agent) |
+| 7 | Single unified input + validation + plots | ✅ done (verified; fixed 1 bug) |
 | 8 | Sensitivity sweeps (coag/nucleation/condensation) | not started |

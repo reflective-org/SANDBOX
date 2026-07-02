@@ -194,6 +194,26 @@ pptv). Plots `coupled/validation/phase6_*.png`.
 
 ---
 
+### Phase 7 — Single unified input + sensitivity knobs (2026-07-02) — **PASS (after fixing a found bug)**
+Independent verification initially returned **FAIL** and caught a real defect, now fixed + covered.
+- **Bug found:** `nucleation_rate_scale` was threaded to the TOMAS step (`fn_scale`) in the JAX driver
+  but NOT in the NumPy mirror (`reference_numpy.py`) — a silent no-op there — and no test threaded the
+  knob through either driver (the unit test called the TOMAS step directly). **Fixed:** the mirror now
+  passes `fn_scale=nuc_scale`; added `test_nucleation_knob_threaded_to_tomas_step_in_both_drivers` (a
+  recording stub asserting BOTH drivers pass `fn_scale`; fast+stable, would fail without the fix).
+- **Otherwise PASS:** `condensation_alpha`→`TomasState.alpha` correct; `coag_kernel_scale` RAISES if
+  ≠1.0 (honest fail-loud — tomas-jax has no such knob); `coupled_full.yaml` loads/validates/round-trips
+  and exercises the full coupling (16 tests green); the sub-case demo (`validate_phase7.py`) drives one
+  scenario through gas-only→+microphysics→+aerosol→J→+heating→+dilution via switches; no try/except
+  swallowing; OPEN items summarized for the user. Confirmed `git diff` clean after the (reverted) agent
+  bug-injection.
+
+**End-to-end** (`validate_phase7.py`): one input, progressive physics — gas-only H2SO4 240 pptv →
++microphysics 14.7 (condensation sink) → +heating T 210.1 K → +dilution 8.1 pptv / SA 0.55. Plot
+`coupled/validation/phase7_subcases.png`.
+
+---
+
 **What is CI-enforced vs. a committed artifact** (PR#35 review): the automated test
 (`test_coupled_parity.py`) proves **solver parity under matched J** using a *stubbed* adapter (fast) —
 that is the regression gate. The **real-port** 1.2e-6 agreement above comes from `validate_coupled.py`,
