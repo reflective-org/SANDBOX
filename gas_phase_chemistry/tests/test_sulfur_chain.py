@@ -82,15 +82,20 @@ def test_so2_to_so3_production_rate_matches_k68():
 
 
 def test_sulfur_gate_single_source_all_modes():
-    # NumPy and JAX derive the gate from the SAME helper -> they cannot silently disagree in any mode
-    # (the tuvx case was previously chain-ON in NumPy but chain-OFF in the JAX default).
+    # Scope (precise): this proves the gate VALUE per mode is single-sourced -- the NumPy gate and the
+    # two existing JAX driver constants all come from reactions.sulfur_chain_active, for
+    # reference/sza/tuvx. It does NOT prove end-to-end tuvx cross-backend parity: there is no JAX tuvx
+    # driver yet, and the drivers still bind mode->driver implicitly (run_reference/run_sza), so calling
+    # the wrong driver for a scenario could still mis-gate. Closing that is a Phase 2.4 item (feed the
+    # gate from CoupledScenario.switches.sulfur via the same helper; add a real integrate-and-compare
+    # tuvx parity test).
     from jaxmodel.model import _SULFUR_REFERENCE, _SULFUR_SZA
     for mode in ("reference", "sza", "tuvx"):
         env = build_env(_cfg(mode), _state(_cfg(mode)), 1.0)
         assert env.sulfur_chain == sulfur_chain_active(mode)
     assert _SULFUR_REFERENCE == float(sulfur_chain_active("reference")) == 0.0
     assert _SULFUR_SZA == float(sulfur_chain_active("sza")) == 1.0
-    assert sulfur_chain_active("tuvx") is True   # chain ON in tuvx on both backends
+    assert sulfur_chain_active("tuvx") is True   # gate value is chain-ON for tuvx on both backends
 
 
 def test_chain_on_numpy_jax_parity():

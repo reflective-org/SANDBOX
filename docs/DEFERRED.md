@@ -1,9 +1,15 @@
 # Deferred / follow-ups (SANDBOX)
 
-- **Phase 2.4 — feed the gate from `switches.sulfur`.** Phase 2.2 made `sulfur_chain_active(photolysis)`
-  the single source of truth shared by NumPy and JAX. The coupled driver should map
-  `CoupledScenario.switches.sulfur` onto that (so the switch, not just the photolysis string, controls
-  the gate) when `CoupledScenario -> ModelConfig` is wired.
+- **Phase 2.4 — feed the gate from `switches.sulfur` + real tuvx parity.** Phase 2.2 made
+  `sulfur_chain_active(photolysis)` the single source of truth shared by NumPy and JAX (value only).
+  Remaining end-to-end work (from the #30 review):
+  - The coupled driver maps `CoupledScenario.switches.sulfur` onto the gate (so the switch, not just the
+    photolysis string, controls it) via `CoupledScenario -> ModelConfig`.
+  - The new JAX **tuvx driver must derive its gate from `cfg.photolysis`/`switches.sulfur` via the same
+    helper** — never hardcode a mode. (Today drivers bind mode->driver implicitly: `run_reference`/
+    `run_sza`; calling the wrong one would mis-gate.)
+  - Replace the helper-equality tuvx stand-in with a **genuine cross-backend parity test** for tuvx
+    (integrate NumPy and JAX, compare species).
 - **Phase 2.4 — CoupledScenario integration debts** (from the #29 review):
   - Validate `concentrations` species keys against `config.SPECIES` when the driver wires composition
     (currently a typo'd species is silently accepted — the exact silent-assumption we want to avoid).
