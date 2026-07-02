@@ -295,3 +295,28 @@ reversible.
 **Decision:** dilution acts on every gas species (and aerosol), not a subset. With background = initial,
 unchanged species are unaffected (C≈C_bg) and only enhancements/depletions relax — automatically
 correct without special-casing.
+
+---
+
+## Phase 7 — Single unified input + end-to-end + sensitivity knobs
+
+### AD-7.1 — CoupledScenario IS the single input (already load/save YAML+JSON)
+**Decision:** treat the existing `CoupledScenario` (loadable from one YAML/JSON, all switches +
+dilution_rate + aerosol_band_km + concentrations) as the single unified input; Phase 7 adds the three
+Phase-8 sensitivity knobs and a shippable full-physics example, rather than a new config type.
+**Rationale:** the single-input requirement was met in Phase 2.1; no reason to duplicate it.
+
+### AD-7.2 — Sensitivity knobs: wire the two TOMAS supports; RAISE on the unsupported one
+**Decision:** add free-multiplier knobs to the scenario:
+- `nucleation_rate_scale` (default 1.0) → threaded to TOMAS `make_step` nucleation as `fn_scale`.
+- `condensation_alpha` (default 1.0) → TomasState `alpha` (Fuchs accommodation coefficient).
+- `coag_kernel_scale` (default 1.0) → **NOT wired** (tomas-jax has no coagulation-kernel scale knob).
+  Accepting it silently would be a no-op trap, so the scenario **RAISES** if it is set to anything
+  other than 1.0, naming that it needs a tomas-jax change (Phase 8). Fail loud, don't silently ignore.
+**Rationale:** exposes all three knobs in the single input for Phase-8 sweeps; the two that TOMAS
+supports actually take effect; the unsupported one can't be silently mistaken for working.
+
+### AD-7.3 — End-to-end sub-case demonstration via switches
+**Decision:** a `validate_phase7.py` runs the SAME scenario with progressively more physics enabled
+(gas-only → +microphysics → +aerosol→J → +heating → +dilution) by toggling switches, and plots the key
+responses, demonstrating the single input reproduces every sub-case. No new coupling code.
