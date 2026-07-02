@@ -61,6 +61,6 @@ Phases from `docs/master-plan.md`. Status updated each phase gate.
 | 3 | Couple TOMAS microphysics (H2SO4 handoff; SA→chem) | ✅ done (3-agent verified) |
 | 4 | Aerosol→photolysis radiation | ✅ done (pending 3-agent) |
 | 5 | Radiative heating→T | ✅ done (pending 3-agent) |
-| 6 | Dilution (gas+aerosol, entrainment) | ✅ done (pending 3-agent) |
+| 6 | Dilution (gas+aerosol, entrainment) | ✅ done (verified) |
 | 7 | Single unified input + validation + plots | not started |
 | 8 | Sensitivity sweeps (coag/nucleation/condensation) | not started |

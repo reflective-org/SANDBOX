@@ -170,6 +170,30 @@ formula text no longer reads as if etfl is applied twice; code applies it once, 
 
 ---
 
+### Phase 6 — Dilution (2026-07-02) — **PASS (independent verification)**
+An independent agent re-derived the formula vs TOMAS, checked the wiring in both backends, ran the
+targeted tests, and did bug-injection.
+- **Formula:** `dilute_gas = conc_bg + (conc−conc_bg)·exp(−k·dt)` is byte-for-byte TOMAS's
+  `dilution_step` exponential; `dilute_aerosol` calls the actual `tomas_jax` `dilution_step` on
+  Nk/Mk/Gc toward the background TomasState. Exact for constant k over the interval.
+- **Wiring:** both backends capture background = the INITIAL state before the loop and apply dilution
+  LAST each interval behind `switches.dilution` (het inputs refreshed from the diluted aerosol);
+  structural mirrors. `dilution_rate` validated ≥0; all 7 switches now implemented.
+- **Tests:** 19 passed (dilution 5, driver_dilution 3, scenario 11). Genuine: dilution-off is
+  byte-identical to no-switch; strong dilution suppresses H2SO4 to <1e-3 of no-dilution; passive tracer
+  matches `exp(−k t)` to rtol 1e-12. **Bug-injection** (flip `−k`→`+k`) makes the decay + monotonic
+  tests fail; reverted, `git diff` clean.
+- **No silent assumptions:** no try/except; background=initial, constant rate (V(t) deferred), no
+  temperature dilution — all documented (AD-6.x, CAVEATS, DEFERRED).
+- Coverage gaps (minor): no JAX↔NumPy parity test with dilution ON; `dilute_aerosol` not exercised
+  through a full TOMAS-active `run_coupled`.
+
+**End-to-end** (`validate_phase6.py`): passive-tracer relaxation matches the analytic `exp(−k t)` to
+5e-14; a 3-day coupled run with dilution keeps SO2 near background and suppresses H2SO4 (13947→3679
+pptv). Plots `coupled/validation/phase6_*.png`.
+
+---
+
 **What is CI-enforced vs. a committed artifact** (PR#35 review): the automated test
 (`test_coupled_parity.py`) proves **solver parity under matched J** using a *stubbed* adapter (fast) —
 that is the regression gate. The **real-port** 1.2e-6 agreement above comes from `validate_coupled.py`,
