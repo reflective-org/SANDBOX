@@ -58,8 +58,13 @@
 - **Exact `aerosol.F90` port** (fractional-source OD interpolation + Ångström scaling). Not needed for
   the coupling (TOMAS supplies spectral optics directly), but required for config-static aerosol
   parity with Fortran TUV-x.
-- **Longwave aerosol heating** fidelity (Phase 5) — dominant stratospheric aerosol heating term;
-  outside any shortwave actinic code. Decide parameterization.
+- **Longwave radiative terms (Phase 5, AD-5.4, OPEN).** No LW cooling (so box T rises monotonically —
+  not a closed energy balance) and no LW aerosol heating (the dominant strat-sulfate term). Both need a
+  LW scheme outside the SW actinic-flux code. Decide parameterization with the user.
+- **O2 photochemical heating (Phase 5, AD-5.1).** Add the O2 (Schumann-Runge/Lyman-α) heating with the
+  LA/SR-corrected cross section; minor at ~19 km but needed higher up.
+- **Unify J + heating into one radiation solve (Phase 5).** With heating_to_t on, the driver does an
+  extra radiation solve per interval; fold heating into the J solve to halve the cost.
 - **Trace the uniform ~1.8e-8 residual** in the extraterrestrial-flux normalization (negligible).
 - **O3 QY 1:1 Fortran diagnostic** (currently validated against the analytic Matsumi recommendation).
 - Remaining reaction-specific QY modules (RONO2/PAN/ketone families) for full TUV-x coverage.

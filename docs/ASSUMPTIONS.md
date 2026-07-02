@@ -49,6 +49,14 @@ if it's not obvious from first principles or the reference, it belongs here.
 - **Aerosol vertical placement = uniform slab over `aerosol_band_km`** (default (15,25) km), OD per
   layer = b_ext(λ)·Δz (AD-4.2, FLAGGED OPEN — sets feedback magnitude).
 
+## Radiative heating -> T (Phase 5) -- see AUTONOMOUS_DECISIONS.md AD-5.x
+- **Gas photochemical heating = O3 only** (both channels; O2 deferred, AD-5.1), ported from
+  heating_rates.F90: energy(lambda)=hc(1/lambda-1/lambda_thr), thresholds 310.32/1179.87 nm.
+- **dT/dt = H/(n_air*cp_molec)**, cp_molec = 7/2 kB (diatomic air, const pressure, AD-5.3); T updated
+  by forward-Euler between intervals; M recomputed at fixed P (fixed-volume box; species densities kept).
+- **Aerosol heating = shortwave absorption only** (Mie b_abs); **NO longwave** (AD-5.4) -> no cooling,
+  T monotonic. Sensitivity/relative use only, not absolute equilibrium T.
+
 ## Planned (to be recorded/confirmed as implemented)
 - **Condensation "sticking" knob = accommodation coefficient `alpha`** (TOMAS) — confirm this is the
   intended variable for the sensitivity sweep (Phase 8).

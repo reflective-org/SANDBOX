@@ -22,6 +22,13 @@
 - **Heterogeneous radius = effective radius (AD-3.4).** A single scalar radius (the surface-area-
   weighted r_eff) represents the whole distribution in `hetgammas_jpl00`; the per-bin size dependence
   of uptake is not resolved. Under heavy nucleation r_eff is pulled toward the fine mode.
+- **Heating→T is SW-only, NO radiative cooling (Phase 5, AD-5.4).** The box gains heat from O3
+  photochemical + aerosol shortwave absorption but has NO longwave cooling term, so T rises
+  monotonically in daylight and never relaxes — this is NOT a closed energy balance. Longwave aerosol
+  heating (the DOMINANT stratospheric-sulfate term) is also not modeled. Both OPEN for the user. Use
+  `heating_to_t` for sensitivity/relative studies, not absolute equilibrium temperatures.
+- **O2 photochemical heating deferred (Phase 5, AD-5.1).** Only O3 heating is ported (dominant at
+  ~19 km); O2 Schumann-Runge/Lyman-α heating (needs the LA/SR-corrected σ) is not included.
 - **γ water activity a_W stays thermodynamic (AD-3.3).** Composition (H2SO4 wt%) comes from TOMAS but
   a_W is still the gas-phase `pH2O/p0` value; a fully self-consistent aerosol-water reconciliation is
   deferred.

@@ -37,9 +37,16 @@ Phases from `docs/master-plan.md`. Status updated each phase gate.
   responds correctly (scattering enhancement then shielding). `aerosol_band_km` placement flagged OPEN
   (AD-4.2). NumPy mirror kept in parity.
 
+- **Phase 5 — Radiative heating → temperature — COMPLETE.** Ported the `heating_rates.F90` kernel into
+  the port (O3 both channels; O2 deferred) reusing actinic flux + xsqy (5.1); `coupled/heating.py`
+  box dT/dt = O3 photochemical + aerosol SW absorption / (n_air·cp) (5.2); driver evolves box T behind
+  `heating_to_t` (5.3); validation (5.4). **Caveat:** SW heating only, NO longwave cooling (AD-5.4,
+  OPEN) — T rises monotonically; not a closed energy balance. Aerosol LW heating (the dominant
+  strat-sulfate term) also OPEN.
+
 ## Next
-- **Phase 5** — Radiative heating → temperature (switchable). Port `heating_rates.F90` (gas
-  photochemical heating) + decide aerosol direct SW/LW heating fidelity. Gets its own sub-plan + tasks.
+- **Phase 6** — Dilution: port `V_ratio`/`build_kdil` + `dilution_step` to all gas + aerosol behind
+  `switches.dilution`. Gets its own sub-plan + tasks.
 
 ## Phase status
 | Phase | Title | Status |
@@ -48,7 +55,7 @@ Phases from `docs/master-plan.md`. Status updated each phase gate.
 | 2 | JAX operator-split coupling skeleton + single config | ✅ done (3-agent verified) |
 | 3 | Couple TOMAS microphysics (H2SO4 handoff; SA→chem) | ✅ done (3-agent verified) |
 | 4 | Aerosol→photolysis radiation | ✅ done (pending 3-agent) |
-| 5 | Radiative heating→T | not started |
+| 5 | Radiative heating→T | ✅ done (pending 3-agent) |
 | 6 | Dilution (gas+aerosol, entrainment) | not started |
 | 7 | Single unified input + validation + plots | not started |
 | 8 | Sensitivity sweeps (coag/nucleation/condensation) | not started |

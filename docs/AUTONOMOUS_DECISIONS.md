@@ -255,3 +255,11 @@ heating term. Inventing an LW scheme autonomously would be an unvetted modeling 
 **FLAGGED OPEN for user:** confirm whether/how to add LW aerosol heating (e.g. a gray-body LW
 parameterization vs a full LW band model). Until then, aerosol heating is SW-only and will UNDERESTIMATE
 the true sulfate heating. Documented in CAVEATS + DEFERRED.
+
+- **[Phase 5] No longwave radiation (cooling + aerosol LW heating).** (AD-5.4) The heating->T coupling
+  is shortwave-only: the box gains heat (O3 photochemical + aerosol SW absorption) but has no LW cooling
+  and no LW aerosol heating (the dominant strat-sulfate term). So T rises monotonically and is not a
+  closed energy balance. **Questions for you:** add a LW scheme? Options: (a) a gray-body Newtonian
+  relaxation cooling to a reference T; (b) a simple broadband LW aerosol heating parameterization;
+  (c) leave SW-only and use heating_to_t for relative sensitivity only. I proceeded with SW-only,
+  documented; heating_to_t defaults OFF so nothing silently uses it.
