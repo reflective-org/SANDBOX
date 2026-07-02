@@ -14,3 +14,5 @@ dist/
 gas_phase_chemistry/plots/
 gas_phase_chemistry/output/
 gas_phase_chemistry/tuvx_10day.png
+# per-run text logs (e.g. sulfur_budget/run.log) — regenerated every run
+*.log
