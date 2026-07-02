@@ -145,8 +145,13 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
         Nk2, Mk2, Gc2 = tomas_step(Nk, Mk, Gc_in, tstate.xk, tstate.temp, tstate.pres,
                                    tstate.boxvol, tstate.rh, tstate.alpha, float(dt),
                                    fn_scale=nuc_scale)
-        finite = bool(jnp.all(jnp.isfinite(Nk2)) & jnp.all(jnp.isfinite(Mk2))
-                      & jnp.all(jnp.isfinite(Gc2)))
+        # ONE device->host transfer for the two scalars the loop needs (finite flag + leftover H2SO4),
+        # instead of ~4 separate .item() syncs -- the per-step sync/dispatch was ~40 ms (vs ~1.6 ms for
+        # the TOMAS step itself), so batching + the host-interpolated envelope is the whole speedup.
+        _finite_flag = (jnp.all(jnp.isfinite(Nk2)) & jnp.all(jnp.isfinite(Mk2))
+                        & jnp.all(jnp.isfinite(Gc2))).astype(jnp.float64)
+        _flag, _gc_so4 = (float(v) for v in np.asarray(jnp.stack([_finite_flag, Gc2[SRTSO4]])))
+        finite = _flag > 0.5
         at_floor = dt <= floor * (1.0 + 1e-9)
         if not finite:
             if at_floor:
@@ -167,7 +172,7 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
                   f"accepting -- microphysics finite but the gas->TOMAS coupling is under-resolved "
                   f"here. Lower micro_floor_s for a tighter split.")
         Nk, Mk, Gc = Nk2, Mk2, Gc2                                    # accept
-        removal_kg += max(avail_kg - float(Gc2[SRTSO4]), 0.0)
+        removal_kg += max(avail_kg - _gc_so4, 0.0)                     # leftover H2SO4 pulled above
         if on_accept is not None:                                     # diagnostics hook (t, dt, frac)
             on_accept(t, dt, frac_prod)
         t = t_end
@@ -176,6 +181,17 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
         if frac_prod < 0.5 * eps:                                     # relax when comfortably under eps
             dt = min(dt * 2.0, cap)
     return tstate._replace(Nk=Nk, Mk=Mk, Gc=Gc), removal_kg, max(dt, floor), n_micro
+
+
+def _envelope_grid(t0, t1, spacing=2.0, min_pts=65, max_pts=1025):
+    """Times [t0..t1] (inclusive) to save the gas H2SO4 envelope on for the micro-loop's host interp.
+
+    The envelope (cumulative gas H2SO4 production, no aerosol sink) is smooth and monotone, so a uniform
+    ~``spacing``-second grid interpolates it to well within the micro_eps coupling tolerance -- the fine
+    (down to micro_floor_s) resolution is needed for the TOMAS handoff, NOT for the envelope shape.
+    """
+    n = int(np.clip(round((t1 - t0) / spacing) + 1, min_pts, max_pts))
+    return np.linspace(t0, t1, n)
 
 
 def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_dist=False):
@@ -201,7 +217,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     # Two-level integration: the gas ODE is solved ONCE per outer step. With TOMAS active we need a
     # DENSE solution so the adaptive micro-loop can query the gas H2SO4 envelope at sub-interval times
     # while TOMAS consumes it (approach B). Without TOMAS, just the endpoint (Phase-2 gas-only path).
-    step = make_frozen_step(cfg.opt, atol=jnp.asarray(_abstol(cfg.opt)), dense=tomas_active)
+    step = make_frozen_step(cfg.opt, atol=jnp.asarray(_abstol(cfg.opt)))
 
     nuc_scale = float(scenario.nucleation_rate_scale)   # Phase 7 knob -> TOMAS nucleation fn_scale
     # Phase 6: dilution -> relaxation toward a background (AD-6.3). Background gas = initial state with
@@ -276,17 +292,20 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
             args = {**args, "SA": het["SA"], "particle_radius": het["radius_cm"],
                     "h2so4wp": het["h2so4wp"]}
         if tomas_active:
-            # ONE dense gas solve over the outer interval (H2SO4 accumulates, no aerosol sink); TOMAS
-            # then consumes that H2SO4 envelope in adaptive micro-steps (fine early). Final gas H2SO4 =
-            # envelope(t1) minus the cumulative TOMAS removal. This is the two-level operator split that
-            # keeps nucleation from seeing a whole interval's H2SO4 at once (docs/time-integration-plan).
-            sol = step(yc, t0, t1, args)
+            # ONE gas solve over the outer interval (H2SO4 accumulates, no aerosol sink), SAVED on a
+            # fine grid; TOMAS then consumes that H2SO4 envelope in adaptive micro-steps (fine early),
+            # interpolating the envelope on the HOST (np.interp) -- no per-micro-step device call. Final
+            # gas H2SO4 = envelope(t1) minus cumulative TOMAS removal. Two-level split that keeps
+            # nucleation from seeing a whole interval's H2SO4 at once (docs/time-integration-plan).
+            ts_grid = _envelope_grid(t0, t1)
+            sol = step(yc, t0, t1, args, save_ts=ts_grid)
+            env_grid = np.asarray(sol.ys[:, h2so4_idx])       # smooth H2SO4 envelope [molec/cm^3]
             tstate, removal_kg, dt_micro, n_micro = micro_consume(
-                lambda tt: float(sol.evaluate(tt)[h2so4_idx]), t0, t1, tstate, tomas_step,
+                lambda tt: float(np.interp(tt, ts_grid, env_grid)), t0, t1, tstate, tomas_step,
                 nuc_scale, eps, floor, cap, dt_micro)
             micro_total += n_micro
             yc = sol.ys[-1]
-            env_end_kg = conc_to_mass(float(yc[h2so4_idx]), BOXVOL_CM3, MW_H2SO4)
+            env_end_kg = conc_to_mass(float(env_grid[-1]), BOXVOL_CM3, MW_H2SO4)   # envelope(t1)
             yc = yc.at[h2so4_idx].set(
                 mass_to_conc(max(env_end_kg - removal_kg, 0.0), BOXVOL_CM3, MW_H2SO4))
             het = het_inputs(tstate)                          # for the next interval

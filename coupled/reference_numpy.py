@@ -98,12 +98,16 @@ def run_coupled_numpy(scenario):
 
         if tomas_active:
             # one dense gas solve above; TOMAS consumes the H2SO4 envelope in adaptive micro-steps via
-            # the SAME shared micro_consume the JAX driver uses (identical stepping across backends).
+            # the SAME shared micro_consume the JAX driver uses. Mirror the JAX driver's host-interpolated
+            # envelope: sample H2SO4 on the same fine grid ONCE, then np.interp in the loop (identical
+            # stepping across backends; also avoids a per-micro-step SciPy dense-eval call).
+            ts_grid = cd._envelope_grid(t0, t1)
+            env_grid = np.asarray(sol.sol(ts_grid))[h2so4_idx]
             tstate, removal_kg, dt_micro, _n = cd.micro_consume(
-                lambda tt: float(sol.sol(tt)[h2so4_idx]), t0, t1, tstate, tomas_step,
+                lambda tt: float(np.interp(tt, ts_grid, env_grid)), t0, t1, tstate, tomas_step,
                 nuc_scale, eps, floor, cap, dt_micro)
             yc = yc.copy()
-            env_end_kg = conc_to_mass(float(yc[h2so4_idx]), BOXVOL_CM3, MW_H2SO4)
+            env_end_kg = conc_to_mass(float(env_grid[-1]), BOXVOL_CM3, MW_H2SO4)   # envelope(t1)
             yc[h2so4_idx] = mass_to_conc(max(env_end_kg - removal_kg, 0.0), BOXVOL_CM3, MW_H2SO4)
             het = het_inputs(tstate)
 

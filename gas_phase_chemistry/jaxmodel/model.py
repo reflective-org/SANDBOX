@@ -162,19 +162,26 @@ def make_frozen_step(opt, atol=1e-6, rtol=1e-3, first_step=1e-10, max_steps=1_00
     are built once (``opt`` static) so repeated calls reuse the compiled computation.
 
     ``dense=True``: the returned ``step`` yields the full diffrax ``sol`` (with ``sol.ys[-1]`` = y(t1)
-    AND a continuous interpolant ``sol.evaluate(t)``) instead of just y(t1). The two-level coupled
-    driver uses this to query the gas H2SO4 envelope at adaptive sub-interval (micro-step) times while
-    TOMAS consumes it, without re-solving the gas ODE per micro-step (approach B, see
-    docs/time-integration-plan.md).
+    AND a continuous interpolant ``sol.evaluate(t)``) instead of just y(t1).
+
+    ``step(..., save_ts=grid)``: save the solution at the times in ``grid`` (which must include t1) and
+    return the ``sol`` (use ``sol.ys``). This is how the two-level coupled driver gets the gas H2SO4
+    envelope for approach B: ONE gas solve saving H2SO4 on a fine grid, then the (smooth, monotone)
+    envelope is interpolated on the HOST inside the micro-loop -- far cheaper than a per-micro-step
+    ``sol.evaluate`` (which is a device call + sync each time; profiled at ~40 ms/step vs ~1.6 ms for the
+    TOMAS step itself). ``save_ts`` takes precedence over ``dense``.
     """
     term = ODETerm(make_frozen_vf(opt))
     solver = _stiff_solver()
     ctrl = PIDController(rtol=rtol, atol=atol)
-    saveat = SaveAt(t1=True, dense=True) if dense else SaveAt(t1=True)
+    dense_saveat = SaveAt(t1=True, dense=True) if dense else SaveAt(t1=True)
 
-    def step(y0, t0, t1, args):
+    def step(y0, t0, t1, args, save_ts=None):
+        saveat = SaveAt(ts=save_ts) if save_ts is not None else dense_saveat
         sol = diffeqsolve(term, solver, t0=t0, t1=t1, dt0=first_step, y0=jnp.asarray(y0),
                           args=args, stepsize_controller=ctrl, saveat=saveat,
                           max_steps=max_steps)
-        return sol if dense else sol.ys[-1]
+        if save_ts is not None or dense:
+            return sol
+        return sol.ys[-1]
     return step
