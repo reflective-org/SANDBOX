@@ -58,6 +58,9 @@
 - **Exact `aerosol.F90` port** (fractional-source OD interpolation + Ångström scaling). Not needed for
   the coupling (TOMAS supplies spectral optics directly), but required for config-static aerosol
   parity with Fortran TUV-x.
+- **Dilution refinements (Phase 6).** (a) V(t)/build_kdil time-varying rate from volume expansion
+  (run_marianna_dilution); (b) dilution of box temperature toward background-air T; (c) configurable
+  background (clean-air zero, or a separate spec) instead of the initial state.
 - **Longwave radiative terms (Phase 5, AD-5.4, OPEN).** No LW cooling (so box T rises monotonically —
   not a closed energy balance) and no LW aerosol heating (the dominant strat-sulfate term). Both need a
   LW scheme outside the SW actinic-flux code. Decide parameterization with the user.

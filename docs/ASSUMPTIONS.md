@@ -57,6 +57,11 @@ if it's not obvious from first principles or the reference, it belongs here.
 - **Aerosol heating = shortwave absorption only** (Mie b_abs); **NO longwave** (AD-5.4) -> no cooling,
   T monotonic. Sensitivity/relative use only, not absolute equilibrium T.
 
+## Dilution (Phase 6) -- see AUTONOMOUS_DECISIONS.md AD-6.x
+- **First-order relaxation to background** `C_bg+(C-C_bg)exp(-k*dt)` (TOMAS dilution_step) on all gas
+  + aerosol; **background = initial box state**; **constant** dilution_rate (V(t) deferred); box T NOT
+  diluted (heating owns T).
+
 ## Planned (to be recorded/confirmed as implemented)
 - **Condensation "sticking" knob = accommodation coefficient `alpha`** (TOMAS) — confirm this is the
   intended variable for the sensitivity sweep (Phase 8).

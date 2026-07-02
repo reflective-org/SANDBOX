@@ -44,9 +44,14 @@ Phases from `docs/master-plan.md`. Status updated each phase gate.
   OPEN) — T rises monotonically; not a closed energy balance. Aerosol LW heating (the dominant
   strat-sulfate term) also OPEN.
 
+- **Phase 6 — Dilution — COMPLETE.** coupled/dilution.py (first-order relaxation to the initial
+  background, gas + aerosol via TOMAS dilution_step, 6.1); wired into driver + NumPy mirror behind
+  switches.dilution (6.2); validation (6.3). All process switches now implemented. Constant rate;
+  V(t) schedule + temperature dilution deferred.
+
 ## Next
-- **Phase 6** — Dilution: port `V_ratio`/`build_kdil` + `dilution_step` to all gas + aerosol behind
-  `switches.dilution`. Gets its own sub-plan + tasks.
+- **Phase 7** — Single unified input + end-to-end validation: one YAML drives everything; switches
+  reproduce each sub-case; the 3 sensitivity knobs (coag/nucleation/alpha) as free multipliers.
 
 ## Phase status
 | Phase | Title | Status |
@@ -56,6 +61,6 @@ Phases from `docs/master-plan.md`. Status updated each phase gate.
 | 3 | Couple TOMAS microphysics (H2SO4 handoff; SA→chem) | ✅ done (3-agent verified) |
 | 4 | Aerosol→photolysis radiation | ✅ done (pending 3-agent) |
 | 5 | Radiative heating→T | ✅ done (pending 3-agent) |
-| 6 | Dilution (gas+aerosol, entrainment) | not started |
+| 6 | Dilution (gas+aerosol, entrainment) | ✅ done (pending 3-agent) |
 | 7 | Single unified input + validation + plots | not started |
 | 8 | Sensitivity sweeps (coag/nucleation/condensation) | not started |

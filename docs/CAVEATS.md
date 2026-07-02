@@ -22,6 +22,10 @@
 - **Heterogeneous radius = effective radius (AD-3.4).** A single scalar radius (the surface-area-
   weighted r_eff) represents the whole distribution in `hetgammas_jpl00`; the per-bin size dependence
   of uptake is not resolved. Under heavy nucleation r_eff is pulled toward the fine mode.
+- **Dilution (Phase 6):** constant first-order relaxation to the INITIAL box state at
+  `dilution_rate` [1/s]; the V(t)/volume-expansion time-varying rate is deferred. Box TEMPERATURE is
+  NOT diluted (heating owns T); entrainment of background-temperature air is not modeled (AD-6.x,
+  DEFERRED). Background = initial state (a plume-into-ambient assumption).
 - **Heating→T is SW-only, NO radiative cooling (Phase 5, AD-5.4).** The box gains heat from O3
   photochemical + aerosol shortwave absorption but has NO longwave cooling term, so T rises
   monotonically in daylight and never relaxes — this is NOT a closed energy balance. Longwave aerosol

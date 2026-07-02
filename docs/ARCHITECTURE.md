@@ -50,7 +50,7 @@ TomasState (per-wavelength Mie on fixed bin radii) over the `aerosol_band_km` sl
 it into the TUV-x port `_solve` via the adapter behind `switches.aerosol_to_j`, so J responds to the
 aerosol (scattering enhancement then shielding).
 
-Steps 5 (heating), 6 (dilution) are Phases 5-6. TOMAS is active iff any of
+Steps 5 (heating, Phase 5) and 6 (dilution, Phase 6 -- `coupled/dilution.py`, relax gas+aerosol to the initial background) are live. TOMAS is active iff any of
 `switches.{nucleation,condensation,coagulation}` is on; else the Phase-2 gas-only path (prescribed
 `cfg.SA`) runs. Phase-3 design calls: `DECISIONS.md` + `AUTONOMOUS_DECISIONS.md` (AD-3.x).
 
