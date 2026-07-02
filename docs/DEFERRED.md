@@ -41,6 +41,13 @@
   with the gas-phase water activity `a_W` used in `hetgammas_jpl00` (currently a_W stays thermodynamic).
 - **Het-uptake radius weighting (Phase 3, AD-3.4).** Effective (surface-area-weighted) radius is used;
   a size-resolved uptake (sum over bins) or an alternate weighting is a sensitivity to revisit.
+- **gammas divide-by-zero at HCl=0 (Phase 3, pre-existing gas-model).** `hetgammas_jpl00` computes
+  `l_hocl = sqrt(D_hocl/k_hocl)` and `_coth(...)` which divide by zero when HCl==0 (k_hocl∝M_hcl=0).
+  Realistic stratospheric runs always have HCl, but a coupled run with HCl omitted crashes cryptically
+  (ZeroDivisionError in NumPy, NaN in JAX). Make the ported gammas robust to HCl→0.
+- **96/98 nucleation clamp loss (Phase 3, tomas-jax).** In the coupled regime gas H2SO4 fully depletes
+  each daytime step, firing tomas-jax's nucleation clamp (`nucleation.py:521-539`) which loses 2/98 of
+  the clamped mass every step (~4e-4/day total-S drift). Fix belongs in tomas-jax. See AD-3.10.
 - **Package tomas_jax** (like gas_phase_chemistry) to remove the `coupled/tomas_bridge` sys.path insert.
 - **Exact `aerosol.F90` port** (fractional-source OD interpolation + Ångström scaling). Not needed for
   the coupling (TOMAS supplies spectral optics directly), but required for config-static aerosol

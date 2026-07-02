@@ -81,6 +81,40 @@ H2SO4 0 → 7.35e3 pptv, SO2 −0.77 %, sulfur drift +1.3e-15, and JAX-vs-NumPy 
 diff **1.2e-6 (SO2)** under matched J (isolates the solver difference). Plots in `coupled/validation/`
 (`coupled_sulfur.png`, `coupled_conservation.png`, `coupled_jax_vs_numpy.png`).
 
+### Phase 3 — TOMAS microphysics coupling (2026-07-02) — **PASS (3/3)**
+Three independent agents, one per lens, each re-deriving from the code + the TOMAS/gas sources (not the
+implementer's summary). All three returned PASS; two found real issues that were fixed before the gate.
+
+- **Lens 1 — correctness vs TOMAS: PASS (bug found + fixed).** Verified make_step is called with
+  'so2_chemistry' OMITTED (the only internal H2SO4 source, `so2_chemistry.py:245`, never runs); the
+  units handoff is exact (Avogadro/MW match TOMAS; `.set` write-back, no double-count); `Mk[:,SRTSO4]`
+  is H2SO4-equiv mass (1:1 condensation transfer, AD-3.8); SA/r_eff formulas match a hand recompute
+  exactly; NumPy↔JAX het-seam parity holds; rh = a_W. **Found a real bug:** the diagnostics recomputed
+  wet water with the ISORROPIA scheme while the step used Tabazadeh (1.3-1.8× SA error) → **fixed** to
+  `calc_equilibrium_water_h2so4` (AD-3.11).
+- **Lens 2 — tests & coverage: PASS.** Re-ran suites: coupled 47 passed (incl. slow real-TOMAS), gas
+  100 passed, no regression. Confirmed the coupling-conservation test is genuine by injecting
+  drop/double-count stubs (both drift 2.6e-2 → fail as they should); het-seam parity has ~4 orders of
+  headroom and catches a 2× radius mismatch; TOMAS-on cross-backend parity tolerances are honest
+  (tightest headroom 3.8×, ClOOCl). Flagged coverage gaps → **closed** with `test_phase3_coverage.py`
+  (NaN guard both backends, pinned RH, run-level SO2-off, NumPy switch-off).
+- **Lens 3 — physical & conservation: PASS (doc corrections).** Independently: sulfur budget drift
+  −4.3e-4/day (bounded); H2SO4 is terminal in the gas mechanism with TOMAS its sole sink (no
+  double-count); NaN guard verified firing (5.9e10 slug → clear RuntimeError); no try/except bypass;
+  boxvol invariance exact for conc/radius/wt%, ~1e-4 for SA (TOMAS floor). **Corrected two doc claims:**
+  the drift is the 96/98 nucleation clamp firing *every daytime step* (not generic MNFIX, not an edge
+  case — AD-3.10/3.8 fixed), and r_eff *collapses to ~5 nm* under a runaway nucleation burst (N≈1.6e10
+  cm⁻³, AD-3.4 fixed + flagged OPEN for user).
+
+**End-to-end run** (`validate_phase3.py`, 2 d, dt_couple=3600 s, SO2=1e4 pptv, all microphysics on):
+SO2 2.34e10→2.22e10, particulate S ×12, SA 0.39→30.8 µm²/cm³, max gas H2SO4 6.6e6 (stable), total-S
+drift −8.9e-4 (TOMAS clamp, coupling handoff exact). Plots in `coupled/validation/phase3_*.png`.
+**Two items flagged OPEN for the user** in AUTONOMOUS_DECISIONS.md: (1) TOMAS's every-step clamp
+sulfur loss, (2) the runaway homogeneous nucleation (implausible N) — both tomas-jax behaviors, not
+coupling bugs.
+
+---
+
 **What is CI-enforced vs. a committed artifact** (PR#35 review): the automated test
 (`test_coupled_parity.py`) proves **solver parity under matched J** using a *stubbed* adapter (fast) —
 that is the regression gate. The **real-port** 1.2e-6 agreement above comes from `validate_coupled.py`,
