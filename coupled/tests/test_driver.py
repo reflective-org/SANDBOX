@@ -51,7 +51,7 @@ def test_run_coupled_tuvx_wires_absolute_J(monkeypatch):
     from reactions import MECHANISM
     photo = [r.equation for r in MECHANISM.active if r.kind == "photo"]
     monkeypatch.setattr(cd, "_compute_j_values",
-                        lambda cfg, t: {eq: 1.0e-4 for eq in photo})
+                        lambda cfg, t, aerosol_props=None: {eq: 1.0e-4 for eq in photo})
     from config import IDX
     sc = _scn(photolysis="tuvx", start_utc_hour=6.0)          # daytime start so J is on
     t, x = cd.run_coupled(sc)
@@ -67,7 +67,7 @@ def test_switches_sulfur_false_disables_chain(monkeypatch):
     from coupled import Switches
     photo = [r.equation for r in MECHANISM.active if r.kind == "photo"]
     monkeypatch.setattr(cd, "_compute_j_values",
-                        lambda cfg, t: {eq: 1.0e-4 for eq in photo})
+                        lambda cfg, t, aerosol_props=None: {eq: 1.0e-4 for eq in photo})
     from config import IDX
     sc = _scn(photolysis="tuvx", start_utc_hour=6.0, switches=Switches(sulfur=False))
     t, x = cd.run_coupled(sc)

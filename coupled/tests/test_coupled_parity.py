@@ -30,7 +30,7 @@ def test_coupled_tuvx_numpy_jax_parity(monkeypatch):
     photo = [r.equation for r in MECHANISM.active if r.kind == "photo"]
     # distinct positive absolute J per photolysis reaction; both backends read this same stub
     monkeypatch.setattr(cd, "_compute_j_values",
-                        lambda cfg, t: {eq: 1.0e-4 * (k + 1) for k, eq in enumerate(photo)})
+                        lambda cfg, t, aerosol_props=None: {eq: 1.0e-4 * (k + 1) for k, eq in enumerate(photo)})
 
     sc = CoupledScenario(P=68.0, T=210.0, WTR=5.0, latitude=0.0, longitude=0.0, day_of_year=80,
                          start_utc_hour=6.0, days=1, DT=21600.0, dt_couple=21600.0,
