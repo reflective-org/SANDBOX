@@ -53,7 +53,8 @@ from config import IDX, air_number_density                   # noqa: E402  (gas 
 from driver import _abstol                                   # noqa: E402  (gas model)
 from reactions import photolysis_coeffs                      # noqa: E402
 from solar import cos_solar_zenith, photolysis_scale         # noqa: E402  (single SZA source)
-from tuvx_photolysis_adapter import _compute_j_values, calculator_grids  # noqa: E402
+from tuvx_photolysis_adapter import (_compute_j_values, calculator_grids,  # noqa: E402
+                                     _box_altitude_km, _TUVX_ROOT)
 from jaxmodel.model import make_frozen_step                  # noqa: E402
 
 import jax.numpy as jnp                                      # noqa: E402
@@ -225,15 +226,18 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     heating_active = bool(scenario.switches.heating_to_t) and cfg.photolysis == "tuvx"
     mie_table = None
     if aerosol_to_j or (heating_active and tomas_active):   # mie needed for aerosol optics/absorption
-        from .aerosol_optics import MieTable, aerosol_optical_props
+        from .aerosol_optics import MieTable, aerosol_optical_props, placement_band_km
         _wl_nm, _height_edges = calculator_grids(cfg)
         mie_table = MieTable(_wl_nm)
+        # pressure-anchored plume: band centered on the box altitude (same USSA reference the J
+        # interpolation uses), thickness = scenario.aerosol_thickness_km -- or the absolute override.
+        _box_alt = _box_altitude_km(float(cfg.P), str(getattr(cfg, "tuvx_data_root", _TUVX_ROOT)))
+        _band_km = placement_band_km(_box_alt, scenario)
 
     def _aerosol_props():   # frozen per interval (from the end-of-previous-interval TOMAS state)
         if not aerosol_to_j:
             return None
-        return aerosol_optical_props(tstate, _wl_nm, _height_edges, scenario.aerosol_band_km,
-                                     mie=mie_table)
+        return aerosol_optical_props(tstate, _wl_nm, _height_edges, _band_km, mie=mie_table)
 
     def _particulate_S(state):
         # aerosol sulfate mass (H2SO4-equiv kg, AD-3.8) -> molec/cm^3 of sulfur

@@ -110,9 +110,12 @@ class CoupledScenario:
     coag_kernel_scale: float = 1.0       # NOT wired in tomas-jax yet (AD-7.2): must stay 1.0 (raises)
 
     # --- aerosol -> photolysis (Phase 4) ---
-    # Altitude band (km) over which the box aerosol is spread in the TUV-x radiative-transfer column
-    # when switches.aerosol_to_j is on (AD-4.2, FLAGGED OPEN -- the band sets the feedback magnitude).
-    aerosol_band_km: tuple = (15.0, 25.0)
+    # Where the box aerosol sits in the TUV-x RT column when switches.aerosol_to_j is on. By DEFAULT
+    # it is PRESSURE-ANCHORED: a plume of vertical extent ``aerosol_thickness_km`` centered on the box
+    # altitude (derived from the input pressure P), so it tracks P and doesn't need an absolute km
+    # window. ``aerosol_band_km`` (if set) overrides this with an ABSOLUTE (lo, hi) km band.
+    aerosol_thickness_km: float = 1.0          # plume vertical extent (km), anchored on the box altitude
+    aerosol_band_km: tuple | None = None       # optional ABSOLUTE (lo, hi) km override; None -> anchored
 
     # --- switches & output ---
     switches: Switches = field(default_factory=Switches)
@@ -146,10 +149,13 @@ class CoupledScenario:
                              f"({self.micro_floor_s})")
         if self.days < 1:
             raise ValueError(f"days must be >= 1, got {self.days}")
-        band = tuple(float(v) for v in self.aerosol_band_km)   # YAML/JSON give a list
-        if len(band) != 2 or band[0] >= band[1] or band[0] < 0.0:
-            raise ValueError(f"aerosol_band_km must be (lo, hi) km with 0 <= lo < hi, got {band}")
-        self.aerosol_band_km = band
+        if self.aerosol_thickness_km <= 0.0:
+            raise ValueError(f"aerosol_thickness_km must be > 0, got {self.aerosol_thickness_km}")
+        if self.aerosol_band_km is not None:   # optional absolute override -> validate if given
+            band = tuple(float(v) for v in self.aerosol_band_km)   # YAML/JSON give a list
+            if len(band) != 2 or band[0] >= band[1] or band[0] < 0.0:
+                raise ValueError(f"aerosol_band_km must be (lo, hi) km with 0 <= lo < hi, got {band}")
+            self.aerosol_band_km = band
         if self.dilution_rate < 0.0:
             raise ValueError(f"dilution_rate must be >= 0, got {self.dilution_rate}")
         self.dilution_zero_species = tuple(self.dilution_zero_species)   # YAML list -> tuple

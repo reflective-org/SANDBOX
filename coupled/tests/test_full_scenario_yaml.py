@@ -18,7 +18,7 @@ def test_full_yaml_loads_and_validates():
     assert sc.switches.nucleation and sc.switches.heating_to_t
     # knobs present, defaults 1.0; dilution + band parsed
     assert (sc.nucleation_rate_scale, sc.condensation_alpha, sc.coag_kernel_scale) == (1.0, 1.0, 1.0)
-    assert sc.aerosol_band_km == (15.0, 25.0)
+    assert sc.aerosol_thickness_km == 1.0 and sc.aerosol_band_km is None   # pressure-anchored plume
     assert sc.dilution_rate > 0.0
     assert sc.concentrations["NO"] == 450.0        # quoted NO parsed as a number
     assert sc.concentrations["HCl"] == 777.0       # present (gammas need it)

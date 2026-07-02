@@ -77,12 +77,31 @@ def bulk_optics(state, mie: MieTable):
     return b_ext, b_sca, ssa, g
 
 
+def placement_band_km(box_altitude_km, scenario):
+    """``(z_lo, z_hi)`` km altitude band the plume aerosol fills in the RT column.
+
+    Pressure-anchored by default: a band of thickness ``scenario.aerosol_thickness_km`` CENTERED on
+    the box altitude (which is itself derived from the input pressure), so the plume sits where the
+    pressure puts the box and tracks it if P changes. If ``scenario.aerosol_band_km`` is set (not
+    None), that ABSOLUTE band is used instead (explicit override / fallback).
+    """
+    band = getattr(scenario, "aerosol_band_km", None)
+    if band is not None:
+        return float(band[0]), float(band[1])
+    dz = float(scenario.aerosol_thickness_km)
+    return box_altitude_km - 0.5 * dz, box_altitude_km + 0.5 * dz
+
+
 def aerosol_optical_props(state, wavelength_nm, height_edges_km, band_km, mie: MieTable | None = None):
     """Per-(layer, wavelength) aerosol ``RadiatorOpticalProps`` for the TUV-x column.
 
-    The box extinction coefficient is spread uniformly over the altitude band ``band_km=(z_lo, z_hi)``
-    (AD-4.2): each layer whose center is in the band gets ``OD = b_ext(lambda) * dz``; layers outside
-    get 0. ``height_edges_km`` is the level grid (n_levels,), bottom-up; there are n_levels-1 layers.
+    The plume's TOTAL column optical depth is ``b_ext(lambda) * thickness`` where
+    ``thickness = band_km[1] - band_km[0]``, distributed over the model layers whose center falls in
+    the band, weighted by layer thickness so the column sum is EXACTLY ``b_ext * thickness``
+    regardless of the grid resolution. If the band is thinner than a grid layer and catches no layer
+    center, the plume is placed in the single NEAREST layer -- so a thin plume lands in the box layer
+    rather than silently contributing nothing. ``height_edges_km`` is the level grid (n_levels,),
+    bottom-up; there are n_levels-1 layers.
     """
     if mie is None:
         mie = MieTable(wavelength_nm)
@@ -92,8 +111,14 @@ def aerosol_optical_props(state, wavelength_nm, height_edges_km, band_km, mie: M
     z_center = 0.5 * (edges[:-1] + edges[1:])
     z_lo, z_hi = float(band_km[0]), float(band_km[1])
     in_band = (z_center >= z_lo) & (z_center <= z_hi)                  # (n_layers,)
-    # OD(layer, wl) = b_ext(wl) * dz(layer) for in-band layers, else 0
-    od = (in_band * dz_cm)[:, None] * b_ext[None, :]                  # (n_layers, n_wl)
+    if not in_band.any():   # band thinner than the grid -> place in the single nearest layer
+        in_band = np.zeros_like(in_band)
+        in_band[int(np.argmin(np.abs(z_center - 0.5 * (z_lo + z_hi))))] = True
+    thickness_cm = (z_hi - z_lo) * 1.0e5
+    weight = np.where(in_band, dz_cm, 0.0)
+    weight = weight / weight.sum()                                     # distribute over in-band layers
+    # column OD = b_ext * thickness, split by layer weight -> sum_layers OD == b_ext * thickness
+    od = (thickness_cm * weight)[:, None] * b_ext[None, :]            # (n_layers, n_wl)
     ssa_2d = np.broadcast_to(ssa[None, :], od.shape)
     g_2d = np.broadcast_to(g[None, :], od.shape)
     return RadiatorOpticalProps(od, ssa_2d, g_2d, is_air=False)

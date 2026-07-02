@@ -38,7 +38,8 @@ photolysis: tuvx
 dilution_rate: 1.157e-6      # 1/s  (~1/(10 days)) relaxation toward the initial background
 
 # --- aerosol -> photolysis (Phase 4) ---
-aerosol_band_km: [15.0, 25.0]   # stratospheric slab the box aerosol fills in the RT column
+aerosol_thickness_km: 1.0       # plume vertical extent (km), pressure-anchored on the box altitude
+# aerosol_band_km: [15.0, 25.0] # optional: an ABSOLUTE (lo, hi) km band overriding the anchoring
 
 # --- sensitivity knobs (Phase 7; free multipliers, default 1.0) ---
 nucleation_rate_scale: 1.0   # -> TOMAS nucleation fn_scale

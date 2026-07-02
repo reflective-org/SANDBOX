@@ -61,15 +61,16 @@ def run_coupled_numpy(scenario):
     heating_active = bool(scenario.switches.heating_to_t) and cfg.photolysis == "tuvx"
     mie_table = None
     if aerosol_to_j or (heating_active and tomas_active):
-        from .aerosol_optics import MieTable, aerosol_optical_props
+        from .aerosol_optics import MieTable, aerosol_optical_props, placement_band_km
         _wl_nm, _height_edges = cd.calculator_grids(cfg)
         mie_table = MieTable(_wl_nm)
+        _box_alt = cd._box_altitude_km(float(cfg.P), str(getattr(cfg, "tuvx_data_root", cd._TUVX_ROOT)))
+        _band_km = placement_band_km(_box_alt, scenario)   # same anchoring as the JAX driver
 
     def _aerosol_props():   # identical to the JAX driver's per-interval aerosol radiator
         if not aerosol_to_j:
             return None
-        return aerosol_optical_props(tstate, _wl_nm, _height_edges, scenario.aerosol_band_km,
-                                     mie=mie_table)
+        return aerosol_optical_props(tstate, _wl_nm, _height_edges, _band_km, mie=mie_table)
 
     t_list, x_list, yc = [0.0], [y.copy()], y.copy()
     for t0, t1 in intervals:
