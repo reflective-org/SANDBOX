@@ -47,7 +47,7 @@ from config import IDX                                       # noqa: E402  (gas 
 from driver import _abstol                                   # noqa: E402  (gas model)
 from reactions import photolysis_coeffs                      # noqa: E402
 from solar import cos_solar_zenith, photolysis_scale         # noqa: E402  (single SZA source)
-from tuvx_photolysis_adapter import _compute_j_values        # noqa: E402  (uncached J compute)
+from tuvx_photolysis_adapter import _compute_j_values, calculator_grids  # noqa: E402
 from jaxmodel.model import make_frozen_step                  # noqa: E402
 
 import jax.numpy as jnp                                      # noqa: E402
@@ -82,11 +82,12 @@ def _outer_intervals(cfg, days: int, dt_couple: float) -> list[tuple[float, floa
     return list(zip(E[:-1], E[1:]))
 
 
-def _frozen_j_values(cfg, t_mid: float):
+def _frozen_j_values(cfg, t_mid: float, aerosol_props=None):
     """Absolute per-reaction J at the interval midpoint (uncached -> dt_couple drives the recompute,
     bypassing the adapter's 120 s cache). ``None`` in non-tuvx modes (photolysis_coeffs then uses
-    j45*j_scale). The adapter returns zeros at night."""
-    return _compute_j_values(cfg, t_mid) if cfg.photolysis == "tuvx" else None
+    j45*j_scale). ``aerosol_props`` (Phase 4) injects the TOMAS aerosol radiator for this solve. The
+    adapter returns zeros at night."""
+    return _compute_j_values(cfg, t_mid, aerosol_props=aerosol_props) if cfg.photolysis == "tuvx" else None
 
 
 def run_coupled(scenario, return_aerosol=False, return_state=False):
@@ -110,6 +111,20 @@ def run_coupled(scenario, return_aerosol=False, return_state=False):
     het = het_inputs(tstate) if tomas_active else None
     h2so4_idx = IDX["H2SO4"]
 
+    # Phase 4: aerosol -> photolysis. Active only with TOMAS on, tuvx photolysis, and the switch.
+    aerosol_to_j = bool(scenario.switches.aerosol_to_j) and tomas_active and cfg.photolysis == "tuvx"
+    mie_table = None
+    if aerosol_to_j:
+        from .aerosol_optics import MieTable, aerosol_optical_props
+        _wl_nm, _height_edges = calculator_grids(cfg)
+        mie_table = MieTable(_wl_nm)
+
+    def _aerosol_props():   # frozen per interval (from the end-of-previous-interval TOMAS state)
+        if not aerosol_to_j:
+            return None
+        return aerosol_optical_props(tstate, _wl_nm, _height_edges, scenario.aerosol_band_km,
+                                     mie=mie_table)
+
     def _particulate_S(state):
         # aerosol sulfate mass (H2SO4-equiv kg, AD-3.8) -> molec/cm^3 of sulfur
         m_so4_kg = float(jnp.sum(state.Mk[:, SRTSO4]))
@@ -126,7 +141,8 @@ def run_coupled(scenario, return_aerosol=False, return_state=False):
     for t0, t1 in _outer_intervals(cfg, scenario.days, scenario.dt_couple):
         t_mid = 0.5 * (t0 + t1)
         j_scale = photolysis_scale(_cosz(cfg, t_mid))        # for fallbacks; 0 at night
-        override = jnp.asarray(photolysis_coeffs(cfg, j_scale, _frozen_j_values(cfg, t_mid)))
+        jv = _frozen_j_values(cfg, t_mid, aerosol_props=_aerosol_props())
+        override = jnp.asarray(photolysis_coeffs(cfg, j_scale, jv))
         args = {**params, "j_scale": j_scale, "sulfur_chain": sulfur, "photo_override": override}
         if tomas_active:   # freeze this interval's aerosol het inputs (end-of-previous-interval state)
             args = {**args, "SA": het["SA"], "particle_radius": het["radius_cm"],

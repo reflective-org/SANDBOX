@@ -22,9 +22,10 @@ from dataclasses import asdict, dataclass, field
 PHOTOLYSIS_MODES = ("reference", "sza", "tuvx")
 
 #: Process switches that are actually wired today. Others are accepted in the schema but must be
-#: False until their phase lands (Phase 4: aerosol_to_j; Phase 5: heating_to_t; Phase 6: dilution).
-#: Phase 3 wired the TOMAS microphysics trio (nucleation/condensation/coagulation).
-_IMPLEMENTED_SWITCHES = frozenset({"sulfur", "nucleation", "condensation", "coagulation"})
+#: False until their phase lands (Phase 5: heating_to_t; Phase 6: dilution). Phase 3 wired the TOMAS
+#: microphysics trio; Phase 4 wired aerosol_to_j (aerosol -> photolysis radiation).
+_IMPLEMENTED_SWITCHES = frozenset(
+    {"sulfur", "nucleation", "condensation", "coagulation", "aerosol_to_j"})
 
 
 @dataclass
@@ -76,6 +77,11 @@ class CoupledScenario:
     # --- photolysis ---
     photolysis: str = "tuvx"
 
+    # --- aerosol -> photolysis (Phase 4) ---
+    # Altitude band (km) over which the box aerosol is spread in the TUV-x radiative-transfer column
+    # when switches.aerosol_to_j is on (AD-4.2, FLAGGED OPEN -- the band sets the feedback magnitude).
+    aerosol_band_km: tuple = (15.0, 25.0)
+
     # --- switches & output ---
     switches: Switches = field(default_factory=Switches)
     output_dir: str = "coupled_output"
@@ -96,6 +102,10 @@ class CoupledScenario:
             raise ValueError(f"dt_couple must be > 0, got {self.dt_couple}")
         if self.days < 1:
             raise ValueError(f"days must be >= 1, got {self.days}")
+        band = tuple(float(v) for v in self.aerosol_band_km)   # YAML/JSON give a list
+        if len(band) != 2 or band[0] >= band[1] or band[0] < 0.0:
+            raise ValueError(f"aerosol_band_km must be (lo, hi) km with 0 <= lo < hi, got {band}")
+        self.aerosol_band_km = band
         if self.dt_couple > self.DT:
             raise ValueError(f"dt_couple ({self.dt_couple}) must be <= output step DT ({self.DT})")
         # dt_couple drives sub-stepping within an output interval, so DT must be a whole multiple of it

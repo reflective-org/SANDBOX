@@ -83,6 +83,16 @@ def _calculator(config_path: str, data_root: str):
     return PhotolysisCalculator.from_tuvx_json(config_path, data_root=data_root)
 
 
+def calculator_grids(cfg):
+    """(wavelength_centers_nm, height_edges_km) of the port's cached calculator, for aerosol optics."""
+    import numpy as np
+    config_path = str(getattr(cfg, "tuvx_config", _DEFAULT_CONFIG))
+    data_root = str(getattr(cfg, "tuvx_data_root", _TUVX_ROOT))
+    calc = _calculator(config_path, data_root)
+    wl = np.asarray(calc.wl_edges, dtype=float)
+    return 0.5 * (wl[:-1] + wl[1:]), np.asarray(calc.height_edges_km, dtype=float)
+
+
 @lru_cache(maxsize=1)
 def _box_altitude_km(pressure_mbar: float, data_root: str) -> float:
     from tuvx_photolysis import data, geometry
@@ -110,7 +120,7 @@ TIME_QUANTUM_S = 120.0
 _J_CACHE: dict = {}
 
 
-def _compute_j_values(cfg, t_seconds: float) -> dict:
+def _compute_j_values(cfg, t_seconds: float, aerosol_props=None) -> dict:
     from solar import solar_zenith_angle
 
     config_path = str(getattr(cfg, "tuvx_config", _DEFAULT_CONFIG))
@@ -128,8 +138,15 @@ def _compute_j_values(cfg, t_seconds: float) -> dict:
     altitude = _box_altitude_km(float(cfg.P), data_root)
     esd = _earth_sun_distance(day_of_year)
 
-    # branching=True applies the JPL product-branching quantum yields for HNO4 and ClOOCl
-    profile = calc.rate_constants_profile(sza, esd, branching=True)  # {tuvx_name: J[n_levels]}
+    # Phase 4: inject a dynamic aerosol radiator (from the TOMAS aerosol) for this solve. The
+    # calculator is cached/shared, so set it, solve, and ALWAYS clear it (try/finally re-raises --
+    # it does not swallow errors) so no stale aerosol leaks into a later no-aerosol solve.
+    calc.aerosol_props = aerosol_props
+    try:
+        # branching=True applies the JPL product-branching quantum yields for HNO4 and ClOOCl
+        profile = calc.rate_constants_profile(sza, esd, branching=True)  # {tuvx_name: J[n_levels]}
+    finally:
+        calc.aerosol_props = None
     import numpy as np
 
     out = {}

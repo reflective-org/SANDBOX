@@ -45,11 +45,24 @@ def run_coupled_numpy(scenario):
     het = het_inputs(tstate) if tomas_active else None
     h2so4_idx = IDX["H2SO4"]
 
+    aerosol_to_j = bool(scenario.switches.aerosol_to_j) and tomas_active and cfg.photolysis == "tuvx"
+    mie_table = None
+    if aerosol_to_j:
+        from .aerosol_optics import MieTable, aerosol_optical_props
+        _wl_nm, _height_edges = cd.calculator_grids(cfg)
+        mie_table = MieTable(_wl_nm)
+
+    def _aerosol_props():   # identical to the JAX driver's per-interval aerosol radiator
+        if not aerosol_to_j:
+            return None
+        return aerosol_optical_props(tstate, _wl_nm, _height_edges, scenario.aerosol_band_km,
+                                     mie=mie_table)
+
     t_list, x_list, yc = [0.0], [y.copy()], y.copy()
     for t0, t1 in intervals:
         t_mid = 0.5 * (t0 + t1)
         j_scale = cd.photolysis_scale(cd._cosz(cfg, t_mid))
-        jv = cd._frozen_j_values(cfg, t_mid)                 # identical to the JAX driver's J
+        jv = cd._frozen_j_values(cfg, t_mid, aerosol_props=_aerosol_props())   # same J as JAX driver
         # freeze this interval's aerosol het inputs on the ModelConfig (TOMAS-derived, or leave
         # cfg.SA / defaults when TOMAS is inactive) -- mirrors the JAX driver's args overrides.
         if tomas_active:
