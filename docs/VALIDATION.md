@@ -145,6 +145,31 @@ Phase-3 runaway nucleation (which, with aerosol_to_j on, further stresses the ga
 
 ---
 
+### Phase 5 — Radiative heating → temperature (2026-07-02) — **PASS (2 independent lenses)**
+Two independent agents each re-derived the kernel from `heating_rates.F90`, checked units, ran the 8
+targeted tests, and did bug-injection. Both PASS, no bugs. (Two earlier agent runs were killed by the
+harness exactly when they launched pytest — not a finding; re-run to completion.)
+
+- **Lens 1 — correctness vs Fortran: PASS.** The energy formula `max(0, hc(1/λ − 1/λ_thr))` and the
+  heating sum `Σ actinic·energy·σφ` are character-for-character the Fortran (`heating_rates.F90:224-226,
+  298-303`); `hc` matches `constants.F90`; **negative actinic flux is zeroed** (matches Fortran); O3
+  energy terms 310.32/1179.87 correct; both O3 channels used, O2 correctly deferred (AD-5.1).
+- **Lens 2 (consolidated) — units + tests + physical: PASS.** dT/dt units verified K/s
+  (H_gas=[O3]·Σheat, H_aer=Σflux·b_abs·E_photon, /(n_air·cp), cp=3.5kB correct); night gating via
+  `compute_box_heating→None` with a `try/finally` that re-raises (no swallow); T-update + M recompute
+  matched in the NumPy mirror. **8/8 targeted tests pass; bug-injection** (`box_dTdt→0`) makes the
+  "T rises" test FAIL (non-vacuous), reverted clean. Diurnal O3 heating ≈0.24 K/day at noon/19 km
+  (plausible); SW-only/no-LW-cooling/monotonic-T limitation prominently documented (CAVEATS + AD-5.4
+  OPEN); `heating_to_t` defaults OFF (surfaced, not hidden).
+
+**End-to-end** (`validate_phase5.py`): diurnal heating 0.24 K/day (0 at night); a 3-day coupled run
+with `heating_to_t` warms the box 210.00→210.30 K. Plots `coupled/validation/phase5_*.png`.
+**OPEN for the user (AD-5.4):** no longwave cooling (T not a closed energy balance) and no LW aerosol
+heating (dominant strat-sulfate term) — heating is shortwave-only. Doc-wording nit found + fixed (the
+formula text no longer reads as if etfl is applied twice; code applies it once, correctly).
+
+---
+
 **What is CI-enforced vs. a committed artifact** (PR#35 review): the automated test
 (`test_coupled_parity.py`) proves **solver parity under matched J** using a *stubbed* adapter (fast) —
 that is the regression gate. The **real-port** 1.2e-6 agreement above comes from `validate_coupled.py`,

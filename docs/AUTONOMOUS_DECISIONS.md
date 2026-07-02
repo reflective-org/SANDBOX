@@ -231,7 +231,7 @@ o3_o1d/o3_o3p QYs + actinic flux + etfl); energy terms are physical thresholds (
 ### AD-5.2 — Heating kernel reuses the port's actinic flux + xsqy (energy-term formula)
 **Q:** How to compute the heating rate?
 **Decision:** port the `heating_rates.F90` kernel exactly: `energy(λ)=hc·(1/λ − 1/λ_threshold)` (J,
-≥0), `heating_per_absorber(z)=Σ_λ actinic(λ,z)·etfl(λ)·energy(λ)·σφ(λ,z)·scaling` [J s⁻¹ per absorber
+≥0), `heating_per_absorber(z)=Σ_λ actinic(λ,z)·energy(λ)·σφ(λ,z)·scaling` (actinic already ×etfl) [J s⁻¹ per absorber
 molecule], reusing `RadiationField` (fdr+fdn+fup) and the channel σφ. Volumetric heating =
 `[O3]·heating_per_absorber`. Add a `PhotolysisCalculator.heating_rate_profile` alongside
 `rate_constants_profile`.
@@ -248,7 +248,7 @@ the frozen-J/frozen-aerosol treatment.
 ### AD-5.4 — Aerosol direct heating: SW absorption only; LW is OPEN (flagged for user)
 **Q:** Aerosol direct radiative heating — SW absorption (Mie Qabs×flux) and/or longwave?
 **Decision:** include **aerosol SW absorption heating** from the Mie optics already built
-(`b_abs = b_ext − b_sca`), `H_agg,SW = Σ_λ actinic(λ)·etfl(λ)·b_abs(λ)·(photon energy)`. **Do NOT
+(`b_abs = b_ext − b_sca`), `H_agg,SW = Σ_λ actinic(λ)·b_abs(λ)·(photon energy)` (actinic already ×etfl). **Do NOT
 implement longwave aerosol heating** — it is outside any shortwave actinic-flux code, requires a
 dedicated LW radiative-transfer/parameterization, and LW is the DOMINANT stratospheric sulfate-aerosol
 heating term. Inventing an LW scheme autonomously would be an unvetted modeling choice.
