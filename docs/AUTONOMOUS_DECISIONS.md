@@ -263,3 +263,35 @@ the true sulfate heating. Documented in CAVEATS + DEFERRED.
   relaxation cooling to a reference T; (b) a simple broadband LW aerosol heating parameterization;
   (c) leave SW-only and use heating_to_t for relative sensitivity only. I proceeded with SW-only,
   documented; heating_to_t defaults OFF so nothing silently uses it.
+
+---
+
+## Phase 6 — Dilution
+
+### AD-6.1 — Dilution = first-order relaxation to background (analytic, all gas + aerosol)
+**Decision:** apply TOMAS's `dilution_step` formulation — `C_new = C_bg + (C − C_bg)·exp(−k_dil·Δt)`
+(exact for constant k_dil over the interval) — to **all gas species** (frank's 36) AND the aerosol
+(`Nk`, `Mk`, `Gc` via `tomas_jax.physics.dilution.dilution_step`), applied once per outer interval
+(operator-split, LAST after chem/TOMAS/heating). Gas uses the identical analytic formula (a few lines,
+matching dilution_step's exponential).
+**Rationale:** master-plan decision (reuse TOMAS dilution); first-order relaxation is the standard
+plume-entrainment box formulation and is exactly conservative toward the background.
+
+### AD-6.2 — Constant dilution rate (V(t) schedule deferred)
+**Decision:** a scalar `CoupledScenario.dilution_rate` [1/s] (default 1.157e-6 ≈ 1/(10 days)). The
+Marianna `V(t)`/`build_kdil_array` time-varying rate (from volume expansion) is a refinement, DEFERRED.
+**Rationale:** a constant e-folding rate is the simplest defensible entrainment; the V(t) schedule adds
+a scenario-specific expansion history not needed to demonstrate the coupling.
+
+### AD-6.3 — Background = the initial box state
+**Decision:** the dilution background is the **initial** gas composition (`y0`) and the **initial**
+TomasState (Nk/Mk/Gc). Dilution relaxes the evolving plume back toward its starting (ambient)
+composition. Configurable alternatives (clean-air zero background; a separate background spec) DEFERRED.
+**Rationale:** for a plume diluting into background stratosphere, the entrained air ≈ the initial
+ambient state; enhancements (H2SO4, sulfate) relax toward their low initial values. Standard, simple,
+reversible.
+
+### AD-6.4 — Applied to ALL gas species including plume enhancements
+**Decision:** dilution acts on every gas species (and aerosol), not a subset. With background = initial,
+unchanged species are unaffected (C≈C_bg) and only enhancements/depletions relax — automatically
+correct without special-casing.
