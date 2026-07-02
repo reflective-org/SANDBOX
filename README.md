@@ -1,17 +1,43 @@
-# tuvx-photolysis + gas-phase chemistry (coupled, standalone)
+# SANDBOX — Stratospheric Aerosol-aNd-chemistry Differentiable BOX
 
-A single self-contained project that couples two things:
+**SANDBOX** is a single-input, fully-coupled stratospheric (SAI-relevant) box model built in JAX. It
+couples gas-phase photochemistry, TUV-x photolysis, TOMAS sectional aerosol microphysics, and dilution
+into one differentiable system, with two-way aerosol⇄radiation (including radiative heating) and
+on/off switches for every process — so sulfate evolution, its radiative effect, and dilution can be
+studied together and swept for sensitivity.
+
+It is assembled from validated components (this repo currently contains the first two; the aerosol and
+dilution coupling are in progress — see the roadmap):
 
 1. **`tuvx_photolysis/`** — a Python/JAX port of the TUV-x (NCAR) actinic-flux and
    photolysis-rate-constant pipeline. Given altitude / latitude / longitude / time-of-year and the
    JPL/IUPAC cross sections and quantum yields, it solves the radiation field (delta-Eddington
    two-stream) and integrates `J = ∫ F(λ,z)·σ(λ,T)·φ(λ) dλ` per reaction. Validated to machine
    precision against the Fortran TUV-x.
-2. **`gas_phase_chemistry/`** — a stratospheric gas-phase chemistry box model (NumPy/SciPy, with an
-   optional JAX/Diffrax solver). Its photolysis can be driven by the TUV-x port above.
+2. **`gas_phase_chemistry/`** — a stratospheric gas-phase chemistry box model (NumPy/SciPy reference
+   + a JAX/Diffrax backend). Its photolysis is driven by the TUV-x port above.
+3. *(in progress)* **TOMAS aerosol microphysics** (sectional, JAX; from `tomas-jax`) and **dilution**
+   with background entrainment — coupled via a single operator-split JAX driver.
 
-Everything needed to run and validate both — including the bundled TUV-x/JPL data — lives here; no
-dependence on the original TUV-x Fortran repo at runtime.
+Everything needed to run and validate the photolysis + chemistry — including the bundled TUV-x/JPL
+data — lives here; no dependence on the original TUV-x Fortran repo at runtime.
+
+## Roadmap & documentation
+
+The full build is planned in phases (sulfur→H₂SO₄ → JAX coupling skeleton → TOMAS microphysics →
+aerosol→photolysis → radiative heating → dilution → single input → sensitivity sweeps). Living
+documentation is kept under **`docs/`**:
+
+| File | Purpose |
+|---|---|
+| `docs/master-plan.md` | the phased build plan (architecture, decisions, phases, verification) |
+| `docs/CONTRIBUTING.md` | git/GitHub workflow (branch-per-task → PR → review; 3-agent verification) |
+| `docs/ARCHITECTURE.md` | coupling design + data flow + units bridge |
+| `docs/DECISIONS.md` | decision log (ADR-style) |
+| `docs/ASSUMPTIONS.md` | every modeling assumption + justification |
+| `docs/PROGRESS.md` | phase/task status |
+| `docs/VALIDATION.md` | what was checked against what (JPL 19-5, Fortran parity, conservation) |
+| `docs/DEFERRED.md`, `docs/CAVEATS.md`, `docs/NICE_TO_HAVE.md` | follow-ups, limitations, wishlist |
 
 ## Layout
 
