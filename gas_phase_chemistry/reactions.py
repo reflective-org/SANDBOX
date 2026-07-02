@@ -324,6 +324,9 @@ def photolysis_coeffs(cfg, j_scale: float, j_values: dict | None = None) -> np.n
     are concentration-independent, so this array is constant over an operator-split step ("frozen J");
     the JAX ``dCdt`` overrides its photolysis positions with it (``photo_override``).
     """
+    # Photolysis coeff_fns (photo() and the O3 _k20a/_k20b) depend ONLY on {j_values, j_scale, WTR,
+    # opt} -- not on P/SA/gammas/H2O -- so a partial Env is sufficient. If a future photolysis rate
+    # grows a new dependency, add it here (and it likely stops being a pure "frozen" photolysis coeff).
     env = Env(T=cfg.T, M=cfg.M, WTR=cfg.WTR, opt=cfg.opt, j_scale=j_scale, j_values=j_values)
     out = np.full(len(MECHANISM.active), np.nan)
     for i, rxn in enumerate(MECHANISM.active):

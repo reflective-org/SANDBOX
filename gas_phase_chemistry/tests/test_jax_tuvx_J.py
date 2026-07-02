@@ -51,3 +51,17 @@ def test_photolysis_coeffs_uses_absolute_J_and_nan_elsewhere():
     other = next(i for i, r in enumerate(active)
                  if r.kind == "photo" and r.equation != "HNO3 -> OH + NO2")
     assert np.isfinite(arr[other])
+
+
+def test_bad_upstream_J_propagates_not_swallowed():
+    # A NaN absolute J at a COVERED photolysis position must surface (NaN in dC/dt), not be silently
+    # replaced by the j45*j_scale fallback -- the override selects by position (PHOTO_MASK), not NaN.
+    cfg = ModelConfig(T=210.0, P=68.0, SA=2.0, WTR=5.0, Yn2o5=0.1, opt=1, photolysis="tuvx")
+    x = initial_concentrations(cfg.P, cfg.M, cfg.WTR)
+    j_values = _synthetic_j_values()
+    j_values["HNO3 -> OH + NO2"] = float("nan")          # simulate a bad upstream J
+    override = jnp.asarray(photolysis_coeffs(cfg, 0.5, j_values))
+    p = build_params(cfg.T, cfg.M, cfg.P, cfg.SA, cfg.WTR, cfg.Yn2o5, jnp.asarray(x), 0.5,
+                     sulfur_chain=1.0)
+    d = np.asarray(dCdt(jnp.asarray(x), p, cfg.opt, photo_override=override))
+    assert np.isnan(d).any()   # surfaces, not swallowed
