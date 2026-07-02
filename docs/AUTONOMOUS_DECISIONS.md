@@ -53,4 +53,32 @@ for a monodisperse 1 µm population. Wet (not dry) because uptake happens on the
 and the old hard-coded 0.1e-4 cm was a wet stratospheric-sulfate value. Alternatives (area- or
 volume-weighted) noted in DEFERRED as a sensitivity to revisit.
 
+### AD-3.5 — Relative humidity fed to TOMAS
+**Q:** TOMAS water uptake needs an RH (0-1). The gas model specifies water as WTR (ppm). What RH?
+**Decision:** `rh = a_W`, the gas-model **water activity** `pH2O/p0_liquid` from `aerosol.h2so4wp_at`,
+clipped to [1e-4, 0.99].
+**Rationale:** a particle in equilibrium sees the ambient water activity as its effective RH, and this
+makes TOMAS's water uptake consume the SAME water field the gas heterogeneous chemistry already uses
+(`p0h2o` in `aerosol.py` is the liquid-water saturation, so `a_W` is RH over liquid water — exactly
+what TOMAS's `water_uptake_sulfate(rh)` fit expects). Clip range matches the fit's validity (~1-99%).
+At T=210 K, P=68 mbar, WTR=5 ppm this gives a_W≈0.027 (2.7% RH), physically reasonable for the cold
+dry lower stratosphere. Single-sources water across both models.
+
+### AD-3.6 — TOMAS scheme choices
+**Q:** `make_step` takes `cond_method`, `nucl_scheme`, `water_scheme`. Which?
+**Decision:** `cond_method='ppm_jit'`, `nucl_scheme='ricco_dunne'`, `water_scheme='h2so4_tabazadeh'` —
+the exact combination used by the validated tomas-jax Marianna run
+(`experimental_case/run_marianna_dilution.py`).
+**Rationale:** reuse the settings TOMAS itself validated for this stratospheric regime rather than
+introduce an unvalidated combination. Any of these is a later sensitivity axis. `water_scheme=
+'h2so4_tabazadeh'` (vs 'isorropia') is the stratospheric-sulfate choice, consistent with the gas
+model's Tabazadeh-based `h2so4wp_at`.
+
+### AD-3.7 — TOMAS grid-cell volume (boxvol)
+**Q:** TOMAS's `Gc`/`Nk`/`Mk` are per grid cell; what boxvol?
+**Decision:** `BOXVOL_CM3 = 1.0e6` (1 m³), the tomas-jax canonical value.
+**Rationale:** boxvol is a reference volume that cancels for all intensive outputs (concentrations,
+surface area per cm³, weight-percent); the units bridge already matches TOMAS's constant. 1 m³ matches
+the tomas-jax examples so cross-checks against them are apples-to-apples.
+
 _(further Phase-3 decisions appended as they arise)_
