@@ -335,11 +335,17 @@ def photolysis_coeffs(cfg, j_scale: float, j_values: dict | None = None) -> np.n
     return out
 
 
-def build_env(cfg, conc, j_scale: float, j_values: dict | None = None) -> Env:
+def build_env(cfg, conc, j_scale: float, j_values: dict | None = None,
+              sulfur_chain: bool | None = None) -> Env:
     """Assemble the Env for one RHS evaluation, computing aerosol gammas from ``conc``.
 
     ``j_values`` (optional) is a dict of absolute per-reaction photolysis rate constants [1/s]
     (the TUV-x path); reactions present there bypass the ``j45 * j_scale`` scaling.
+
+    ``sulfur_chain`` (optional) sets the SO2->SO3->H2SO4 gate explicitly. ``None`` (default) derives it
+    from the photolysis mode via ``sulfur_chain_active`` -- the behavior for standalone NumPy runs. The
+    COUPLED driver passes ``CoupledScenario.switches.sulfur`` here so BOTH backends read the same gate
+    source (the switch), keeping the JAX and NumPy paths consistent for the 2.5 cross-backend parity.
     """
     M = cfg.M
     HCl_ppb = conc[IDX["HCl"]] / M * 1e9
@@ -355,8 +361,8 @@ def build_env(cfg, conc, j_scale: float, j_values: dict | None = None) -> Env:
         "Yn2o5": cfg.Yn2o5,   # set manually in the scenario
         "Ybrono2": 0.8,       # fixed (JPL)
     }
-    # sulfur chain active in non-reference photolysis modes (sza/tuvx); reference stays faithful
-    sulfur_chain = sulfur_chain_active(getattr(cfg, "photolysis", "reference"))
+    if sulfur_chain is None:  # default: derive from mode (sza/tuvx on, reference off)
+        sulfur_chain = sulfur_chain_active(getattr(cfg, "photolysis", "reference"))
     return Env(T=cfg.T, M=M, P=cfg.P, SA=cfg.SA, WTR=cfg.WTR, opt=cfg.opt,
                gammas=gammas, j_scale=j_scale, H2O=conc[IDX["H2O"]], j_values=j_values,
-               sulfur_chain=sulfur_chain)
+               sulfur_chain=bool(sulfur_chain))

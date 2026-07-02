@@ -129,3 +129,40 @@ def run_sza(y0, params, opt, latitude, longitude, day_of_year, start_utc_hour,
         saveat=SaveAt(ts=grid), max_steps=max_steps,
     )
     return sol.ts, sol.ys
+
+
+# ---------------------------------------------------------------------------------------
+# Operator-split coupling step: integrate one outer interval with FROZEN photolysis.
+# ---------------------------------------------------------------------------------------
+def make_frozen_vf(opt):
+    """Vector field for a frozen-J operator-split sub-step.
+
+    ``opt`` is static (closed over). Everything dynamic -- including the frozen photolysis
+    coefficients (``args['photo_override']``, from ``reactions.photolysis_coeffs``) and the sulfur
+    gate (``args['sulfur_chain']``) -- comes through ``args``, so the SAME traced computation is reused
+    across intervals (only the argument arrays change; no per-interval recompile).
+    """
+    def vf(t, y, args):
+        p = build_params(args["T"], args["M"], args["P"], args["SA"], args["WTR"], args["Yn2o5"],
+                         y, args["j_scale"], sulfur_chain=args["sulfur_chain"])
+        return dCdt(y, p, opt, photo_override=args["photo_override"])
+    return vf
+
+
+def make_frozen_step(opt, atol=1e-6, rtol=1e-3, first_step=1e-10, max_steps=1_000_000):
+    """Build ``step(y0, t0, t1, args) -> y(t1)`` for one operator-split sub-step.
+
+    The integrator is RE-INITIALIZED per call (a fresh diffeqsolve on [t0,t1]) so it never steps
+    across a photolysis discontinuity -- the whole point of freezing J per outer step. The term/solver
+    are built once (``opt`` static) so repeated calls reuse the compiled computation.
+    """
+    term = ODETerm(make_frozen_vf(opt))
+    solver = _stiff_solver()
+    ctrl = PIDController(rtol=rtol, atol=atol)
+
+    def step(y0, t0, t1, args):
+        sol = diffeqsolve(term, solver, t0=t0, t1=t1, dt0=first_step, y0=jnp.asarray(y0),
+                          args=args, stepsize_controller=ctrl, saveat=SaveAt(t1=True),
+                          max_steps=max_steps)
+        return sol.ys[-1]
+    return step
