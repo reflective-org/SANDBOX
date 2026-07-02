@@ -53,7 +53,7 @@ def test_enabling_unimplemented_switch_raises():
     with pytest.raises(NotImplementedError):
         CoupledScenario(switches=Switches(dilution=True))       # Phase 6, not yet wired
     with pytest.raises(NotImplementedError):
-        CoupledScenario(switches={"heating_to_t": True})        # Phase 5, not yet wired
+        CoupledScenario(switches={"dilution": True})            # the only remaining unwired switch
 
 
 def test_implemented_microphysics_switches_allowed():

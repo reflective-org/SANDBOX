@@ -20,7 +20,7 @@ from .tomas_bridge import (initial_tomas_state, make_microphysics_step, SRTSO4,
 from .aerosol_props import het_inputs
 from .units import conc_to_mass, mass_to_conc
 
-from config import IDX                           # noqa: E402  (gas model)
+from config import IDX, air_number_density       # noqa: E402  (gas model)
 from driver import _abstol                       # noqa: E402  (gas model)
 from reactions import MECHANISM, build_env       # noqa: E402
 
@@ -46,8 +46,9 @@ def run_coupled_numpy(scenario):
     h2so4_idx = IDX["H2SO4"]
 
     aerosol_to_j = bool(scenario.switches.aerosol_to_j) and tomas_active and cfg.photolysis == "tuvx"
+    heating_active = bool(scenario.switches.heating_to_t) and cfg.photolysis == "tuvx"
     mie_table = None
-    if aerosol_to_j:
+    if aerosol_to_j or (heating_active and tomas_active):
         from .aerosol_optics import MieTable, aerosol_optical_props
         _wl_nm, _height_edges = cd.calculator_grids(cfg)
         mie_table = MieTable(_wl_nm)
@@ -93,6 +94,15 @@ def run_coupled_numpy(scenario):
             yc = yc.copy()
             yc[h2so4_idx] = mass_to_conc(float(Gc[SRTSO4]), BOXVOL_CM3, MW_H2SO4)
             het = het_inputs(tstate)
+
+        if heating_active:   # mirror the JAX driver's radiative-heating -> box T update
+            from . import heating as _heating
+            aer = _aerosol_props() if aerosol_to_j else None
+            dTdt = _heating.box_dTdt(cfg, np.asarray(yc), t_mid, aerosol_props=aer,
+                                     tstate=(tstate if tomas_active else None),
+                                     mie=(mie_table if tomas_active else None))
+            cfg.T = float(cfg.T + dTdt * (t1 - t0))
+            cfg.M = air_number_density(cfg.P, cfg.T)
 
         t_list.append(t1)
         x_list.append(yc.copy())

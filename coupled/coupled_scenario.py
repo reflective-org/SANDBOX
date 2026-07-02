@@ -22,10 +22,10 @@ from dataclasses import asdict, dataclass, field
 PHOTOLYSIS_MODES = ("reference", "sza", "tuvx")
 
 #: Process switches that are actually wired today. Others are accepted in the schema but must be
-#: False until their phase lands (Phase 5: heating_to_t; Phase 6: dilution). Phase 3 wired the TOMAS
-#: microphysics trio; Phase 4 wired aerosol_to_j (aerosol -> photolysis radiation).
+#: False until their phase lands (Phase 6: dilution). Phase 3 wired the TOMAS microphysics trio;
+#: Phase 4 wired aerosol_to_j; Phase 5 wired heating_to_t (radiative heating -> box temperature).
 _IMPLEMENTED_SWITCHES = frozenset(
-    {"sulfur", "nucleation", "condensation", "coagulation", "aerosol_to_j"})
+    {"sulfur", "nucleation", "condensation", "coagulation", "aerosol_to_j", "heating_to_t"})
 
 
 @dataclass

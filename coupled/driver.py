@@ -41,9 +41,10 @@ from .model_bridge import initial_state, to_model_config
 from .tomas_bridge import (initial_tomas_state, make_microphysics_step, SRTSO4,
                            BOXVOL_CM3, MW_H2SO4)
 from .aerosol_props import het_inputs
+from . import heating as _heating
 from .units import conc_to_mass, mass_to_conc
 
-from config import IDX                                       # noqa: E402  (gas model)
+from config import IDX, air_number_density                   # noqa: E402  (gas model)
 from driver import _abstol                                   # noqa: E402  (gas model)
 from reactions import photolysis_coeffs                      # noqa: E402
 from solar import cos_solar_zenith, photolysis_scale         # noqa: E402  (single SZA source)
@@ -113,8 +114,10 @@ def run_coupled(scenario, return_aerosol=False, return_state=False):
 
     # Phase 4: aerosol -> photolysis. Active only with TOMAS on, tuvx photolysis, and the switch.
     aerosol_to_j = bool(scenario.switches.aerosol_to_j) and tomas_active and cfg.photolysis == "tuvx"
+    # Phase 5: radiative heating -> T. Requires tuvx (needs the real radiation solve).
+    heating_active = bool(scenario.switches.heating_to_t) and cfg.photolysis == "tuvx"
     mie_table = None
-    if aerosol_to_j:
+    if aerosol_to_j or (heating_active and tomas_active):   # mie needed for aerosol optics/absorption
         from .aerosol_optics import MieTable, aerosol_optical_props
         _wl_nm, _height_edges = calculator_grids(cfg)
         mie_table = MieTable(_wl_nm)
@@ -131,9 +134,9 @@ def run_coupled(scenario, return_aerosol=False, return_state=False):
         return mass_to_conc(m_so4_kg, BOXVOL_CM3, MW_H2SO4)
 
     def _aero_record():
-        if not tomas_active:
-            return (np.nan, np.nan, np.nan, np.nan)
-        return (het["SA"], het["radius_cm"], het["h2so4wp"], _particulate_S(tstate))
+        aero = (np.nan, np.nan, np.nan, np.nan) if not tomas_active else \
+            (het["SA"], het["radius_cm"], het["h2so4wp"], _particulate_S(tstate))
+        return aero + (cfg.T,)   # current box temperature (evolves when heating_to_t is on)
 
     t_list, x_list = [0.0], [np.asarray(y0)]
     aero_list = [_aero_record()]
@@ -165,6 +168,19 @@ def run_coupled(scenario, return_aerosol=False, return_state=False):
             yc = yc.at[h2so4_idx].set(mass_to_conc(float(Gc[SRTSO4]), BOXVOL_CM3, MW_H2SO4))
             het = het_inputs(tstate)                          # for the next interval
 
+        if heating_active:
+            # radiative heating -> box T (forward-Euler over the interval). The updated T feeds the
+            # NEXT interval's chemistry (rate constants) and M (ideal gas at fixed P; species number
+            # densities kept -- fixed-volume box, AD-5.3). Aerosol optics enter the heating solve iff
+            # aerosol_to_j; aerosol SW absorption (b_abs) is included whenever TOMAS is active.
+            aer = _aerosol_props() if aerosol_to_j else None
+            dTdt = _heating.box_dTdt(cfg, np.asarray(yc), t_mid, aerosol_props=aer,
+                                     tstate=(tstate if tomas_active else None),
+                                     mie=(mie_table if tomas_active else None))
+            cfg.T = float(cfg.T + dTdt * (t1 - t0))
+            cfg.M = air_number_density(cfg.P, cfg.T)
+            params["T"], params["M"] = cfg.T, cfg.M
+
         t_list.append(t1)
         x_list.append(np.asarray(yc))
         aero_list.append(_aero_record())
@@ -175,7 +191,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False):
     if return_aerosol:
         a = np.asarray(aero_list)
         out.append({"SA": a[:, 0], "radius_cm": a[:, 1], "h2so4wp": a[:, 2],
-                    "particulate_S": a[:, 3]})
+                    "particulate_S": a[:, 3], "T": a[:, 4]})
     if return_state:
         out.append(tstate)
     return tuple(out) if len(out) > 2 else (t, x)
