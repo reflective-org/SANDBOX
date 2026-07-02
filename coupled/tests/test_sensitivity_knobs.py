@@ -43,6 +43,43 @@ def _st_and_step(nuc_scale):
     return st, step, sc
 
 
+def _knob_sc(nuc_scale):
+    from coupled.coupled_scenario import Switches
+    return CoupledScenario(T=210.0, P=68.0, WTR=5.0, latitude=0.0, day_of_year=80, start_utc_hour=6.0,
+                           days=1, DT=7200.0, dt_couple=7200.0, photolysis="sza",
+                           nucleation_rate_scale=nuc_scale,
+                           switches=Switches(sulfur=True, condensation=True),
+                           concentrations={"O2": 2.1e11, "O3": 1.18e6, "SO2": 1.0e4, "OH": 0.5,
+                                           "HO2": 3.0, "NO": 450.0, "NO2": 450.0,
+                                           "HCl": 777.0, "ClONO2": 127.0})
+
+
+def test_nucleation_knob_threaded_to_tomas_step_in_both_drivers(monkeypatch):
+    # Directly verify BOTH drivers pass nucleation_rate_scale to the TOMAS step as fn_scale (a recording
+    # identity stub, so no unstable nucleation run). This catches a driver that forgets fn_scale -- the
+    # exact bug the Phase-7 verification found in the NumPy mirror. (An end-to-end nucleation-on run
+    # can't be used: 100x nucleation triggers the runaway-nucleation stiffness -- see CAVEATS.)
+    import coupled.driver as cd
+    import coupled.reference_numpy as rn
+
+    def make_recorder(seen):
+        def make(switches):
+            def step(Nk, Mk, Gc, xk, T, P, V, rh, a, dt, **kwargs):
+                seen.append(kwargs.get("fn_scale"))
+                return Nk, Mk, Gc            # identity -> no microphysics change, always stable
+            return step
+        return make
+
+    seen_jax, seen_np = [], []
+    monkeypatch.setattr(cd, "make_microphysics_step", make_recorder(seen_jax))
+    cd.run_coupled(_knob_sc(7.0))
+    monkeypatch.setattr(rn, "make_microphysics_step", make_recorder(seen_np))
+    rn.run_coupled_numpy(_knob_sc(7.0))
+
+    assert seen_jax and all(s == 7.0 for s in seen_jax), f"JAX driver fn_scale: {set(seen_jax)}"
+    assert seen_np and all(s == 7.0 for s in seen_np), f"NumPy mirror fn_scale: {set(seen_np)}"
+
+
 def test_nucleation_rate_scale_changes_particle_production():
     # more nucleation scale -> more new particles from the same H2SO4 slug
     st, step, _ = _st_and_step(1.0)

@@ -91,7 +91,8 @@ def run_coupled_numpy(scenario):
             gas_h2so4_kg = conc_to_mass(float(yc[h2so4_idx]), BOXVOL_CM3, MW_H2SO4)
             Gc = tstate.Gc.at[SRTSO4].set(gas_h2so4_kg)
             Nk, Mk, Gc = tomas_step(tstate.Nk, tstate.Mk, Gc, tstate.xk, tstate.temp, tstate.pres,
-                                    tstate.boxvol, tstate.rh, tstate.alpha, float(t1 - t0))
+                                    tstate.boxvol, tstate.rh, tstate.alpha, float(t1 - t0),
+                                    fn_scale=nuc_scale)   # Phase-7 knob (mirror of the JAX driver)
             if not (bool(np.all(np.isfinite(np.asarray(Nk)))) and
                     bool(np.all(np.isfinite(np.asarray(Mk))))):
                 raise RuntimeError(
