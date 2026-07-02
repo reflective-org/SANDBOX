@@ -20,24 +20,20 @@ _KB = 1.3807e-23
 _M_PER_AMU = 1.0 / 6.02e23 / 1000.0
 
 
-def troe(T, M, k0_300, n0, kinf_300, ninf):  # 300 K reference (JPL-11; kept for reference)
+def falloff(T, M, k0_300, n0, kinf_300, ninf):
+    """JPL 19-5 termolecular fall-off, **300 K reference**. Returns (k_f, kinf). Pass n0=-n, ninf=-m.
+
+    JPL 19-5 tabulates k0(300)/kinf(300) (Table 2-1); see docs/jpl19-5-sulfur-crosscheck.md.
+    """
     k0 = k0_300 * (T / 300.0) ** n0
     kinf = kinf_300 * (T / 300.0) ** ninf
-    ratio = k0 * M / kinf
-    return (k0 * M / (1.0 + ratio)) * 0.6 ** (1.0 / (1.0 + jnp.log10(ratio) ** 2))
-
-
-def falloff298(T, M, k0_298, n0, kinf_298, ninf):
-    """JPL 19-5 fall-off, 298 K reference. Returns (k_f, kinf). Pass n0=-n, ninf=-m."""
-    k0 = k0_298 * (T / 298.0) ** n0
-    kinf = kinf_298 * (T / 298.0) ** ninf
     ratio = k0 * M / kinf
     k_f = (k0 * M / (1.0 + ratio)) * 0.6 ** (1.0 / (1.0 + jnp.log10(ratio) ** 2))
     return k_f, kinf
 
 
-def troe298(T, M, k0_298, n0, kinf_298, ninf):
-    return falloff298(T, M, k0_298, n0, kinf_298, ninf)[0]
+def troe(T, M, k0_300, n0, kinf_300, ninf):  # JPL 19-5 termolecular association (300 K ref)
+    return falloff(T, M, k0_300, n0, kinf_300, ninf)[0]
 
 
 def khet(gamma, gasmass, T, SA):
@@ -74,20 +70,20 @@ def all_coefficients(p, opt):
         k41 = 2.15e-11 * exp(110.0 / T) * 0.79 * M
 
     # ClO+ClO+M association (reused for k2 and ClOOCl decomposition via Keq).
-    k2 = troe298(T, M, 1.9e-32, -3.6, 3.7e-12, -1.6)
+    k2 = troe(T, M, 1.9e-32, -3.6, 3.7e-12, -1.6)
     k3 = k2 / (2.16e-27 * exp(8537.0 / T))
 
     # OH + HNO3: JPL 19-5 chemical-activation form (Table 2-2, K2).
-    kf22, kinf22 = falloff298(T, M, 3.9e-31, -7.2, 1.5e-13, -4.8)
+    kf22, kinf22 = falloff(T, M, 3.9e-31, -7.2, 1.5e-13, -4.8)
     k22 = kf22 + (3.7e-14 * exp(240.0 / T)) * (1.0 - kf22 / kinf22)
 
     # O + NO2: chemical-activation system (Table 2-2, K1); shared fall-off.
-    kf_no2, kinf_no2 = falloff298(T, M, 3.4e-31, -1.6, 2.3e-11, -0.2)
+    kf_no2, kinf_no2 = falloff(T, M, 3.4e-31, -1.6, 2.3e-11, -0.2)
     k25 = kf_no2                                                   # -> NO3 (association)
     k26 = (5.3e-12 * exp(200.0 / T)) * (1.0 - kf_no2 / kinf_no2)   # -> NO + O2 (chem. activation)
 
-    # SO2 + OH (+M): JPL 19-5 termolecular (now T-dependent, 298 K ref).
-    k68 = troe298(T, M, 2.9e-31, -4.1, 1.7e-12, 0.2)
+    # SO2 + OH (+M): JPL 19-5 termolecular (now T-dependent, 300 K ref).
+    k68 = troe(T, M, 2.9e-31, -4.1, 1.7e-12, 0.2)
 
     # HO2 + HO2: bimolecular + termolecular[M] + H2O enhancement (JPL 19-5 B13).
     k70 = (3.0e-13 * exp(460.0 / T) + 2.1e-33 * M * exp(920.0 / T)) \
@@ -97,7 +93,7 @@ def all_coefficients(p, opt):
         6.4e-12 * exp(290.0 / T),                                  # ClO + NO
         k2,                                                        # ClO + ClO + M
         k3,                                                        # ClOOCl + M
-        troe298(T, M, 1.8e-31, -3.4, 1.5e-11, -1.9),               # ClO + NO2 + M
+        troe(T, M, 1.8e-31, -3.4, 1.5e-11, -1.9),               # ClO + NO2 + M
         6.9e-7 * exp(-10909.0 / T) * M,                            # ClONO2 + M  (Fahey, kept)
         2.3e-11 * exp(-200.0 / T),                                 # Cl + O3
         7.1e-12 * exp(-1270.0 / T),                                # Cl + CH4
@@ -118,21 +114,21 @@ def all_coefficients(p, opt):
         2.7e-5 * j,                                                # N2O5 hv
         k20a,                                                      # O3 hv -> O2 + O
         k20b,                                                      # O3 hv -> O2 + O1D
-        troe298(T, M, 2.4e-30, -3.0, 1.6e-12, 0.1),                # NO2 + NO3 + M
+        troe(T, M, 2.4e-30, -3.0, 1.6e-12, 0.1),                # NO2 + NO3 + M
         k22,                                                       # OH + HNO3 (chem. activation)
-        troe298(T, M, 1.8e-30, -3.0, 2.8e-11, 0.0),                # OH + NO2 + M
-        troe298(T, M, 9.1e-32, -1.5, 3.0e-11, 0.0),                # O + NO + M
+        troe(T, M, 1.8e-30, -3.0, 2.8e-11, 0.0),                # OH + NO2 + M
+        troe(T, M, 9.1e-32, -1.5, 3.0e-11, 0.0),                # O + NO + M
         k25,                                                       # O + NO2 + M -> NO3 (assoc.)
         k26,                                                       # O + NO2 -> NO + O2 (chem. act.)
         3.0e-12 * exp(-1500.0 / T),                                # NO + O3
         1.2e-13 * exp(-2450.0 / T),                                # NO2 + O3
-        troe298(T, M, 7.1e-31, -2.6, 3.6e-11, -0.1),               # OH + NO + M
+        troe(T, M, 7.1e-31, -2.6, 3.6e-11, -0.1),               # OH + NO + M
         3.0e-12 * exp(250.0 / T),                                  # OH + HONO
         1.7e-11 * exp(125.0 / T),                                  # NO + NO3
         4.5e-13 * exp(610.0 / T),                                  # OH + HNO4
         3.44e-12 * exp(260.0 / T),                                 # HO2 + NO
-        troe298(T, M, 1.9e-31, -3.4, 4.0e-12, -0.3),               # HO2 + NO2 + M
-        6.1e-34 * (T / 298.0) ** -2.4 * M,                         # O + O2 + M
+        troe(T, M, 1.9e-31, -3.4, 4.0e-12, -0.3),               # HO2 + NO2 + M
+        6.1e-34 * (T / 300.0) ** -2.4 * M,                         # O + O2 + M
         8.0e-12 * exp(-2060.0 / T),                                # O + O3
         1.7e-12 * exp(-940.0 / T),                                 # OH + O3
         4.8e-11 * exp(250.0 / T),                                  # OH + HO2
@@ -153,7 +149,7 @@ def all_coefficients(p, opt):
         2.3e-12 * exp(260.0 / T),                                  # BrO + ClO -> Br + Cl + O2
         4.1e-13 * exp(290.0 / T),                                  # BrO + ClO -> BrCl
         9.5e-13 * exp(550.0 / T),                                  # BrO + ClO -> Br + OClO
-        troe298(T, M, 5.5e-31, -3.1, 6.6e-12, -2.9),               # BrO + NO2 + M
+        troe(T, M, 5.5e-31, -3.1, 6.6e-12, -2.9),               # BrO + NO2 + M
         1.3e-5 * 0.8 * j,                                          # HNO4 hv -> NO2 + HO2
         1.3e-5 * 0.2 * j,                                          # HNO4 hv -> NO3 + OH
         0.013 * j,                                                 # OClO hv

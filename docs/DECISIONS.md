@@ -2,6 +2,17 @@
 
 ADR-style. Newest first. Each: decision, date, rationale, alternatives.
 
+## 2026-07-02 — Fix termolecular reference temperature to 300 K
+The JPL 19-5 cross-check (docs/jpl19-5-sulfur-crosscheck.md) found the code applied `troe298`/
+`falloff298` (298 K) to **termolecular** reactions, but JPL 19-5 tabulates termolecular limits at
+**300 K** (Table 2-1 k0(300)/kinf(300); notes write `(T/300)^-n`; note F17 "k0(300)"). Only
+*bimolecular* Arrhenius uses 298 K. Fixed: renamed to `falloff`/`troe` (300 K) in `mechanism.py`
+and `jaxmodel/rates.py`; also corrected the `O+O2+M→O3` special form (`(T/298)^-2.4` → `(T/300)`).
+Impact ≈ (300/298)^n ≈ 1–3% at stratospheric T. NumPy↔JAX RHS parity preserved (test_jax_dcdt,
+rtol 1e-9); the cross-integrator trajectory test got a relaxed per-species bound for stiff trace
+odd-species (NO3/O/O1D) — an integrator artifact, not a model change. Alternatives: keep 298 K
+(rejected — contradicts JPL 19-5).
+
 ## 2026-07-01 — Model name & repo
 **SANDBOX** (Stratospheric Aerosol-aNd-chemistry Differentiable BOX); repo
 `git@github.com:reflective-org/SANDBOX.git`. Rationale: memorable, reads as an experimentation
