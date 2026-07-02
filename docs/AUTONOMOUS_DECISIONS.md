@@ -101,7 +101,8 @@ the tomas-jax examples so cross-checks against them are apples-to-apples.
 **Q:** Is TOMAS's aerosol sulfate mass stored as SO4 (96 g/mol) or H2SO4 (98 g/mol)? This drives both
 the heterogeneous-chem weight-percent and the Phase-3.5 sulfur budget.
 **Decision:** Treat `Mk[:,SRTSO4]` as **H2SO4-equivalent mass** (MW 98).
-**Rationale:** verified in `tomas_jax/solvers/condensation.py:192-211` — condensation moves the gaseous
+**Rationale:** verified in `tomas_jax/solvers/condensation.py` `_condensation_step_core` (the JIT path
+actually run, ~lines 246-308; the numpy path at 192-211 is deprecated) — condensation moves the gaseous
 H2SO4 mass (`Gc[SRTSO4]`, MW 98) into `Mk[:,SRTSO4]` **1:1** with no MW conversion, and normal-branch
 nucleation depletes gas by exactly the SO4 mass it adds. So particulate sulfur (kg) equals the H2SO4
 mass condensed/nucleated; the weight-percent is `100·M_SO4/(M_SO4+M_H2O)` with `M_SO4` taken directly,
@@ -124,6 +125,18 @@ drift is bounded at TOMAS's own level (test tolerance ~2e-2/day) and that the ph
 is the H2SO4 sink, SA grows). **FLAGGED FOR USER** (see OPEN below) and tracked in DEFERRED.md:
 investigating/fixing tomas-jax's microphysics mass conservation is a tomas-jax change, out of scope for
 the coupling layer.
+
+### AD-3.11 — aerosol_props must use the SAME water scheme as the TOMAS step (bug fix from Lens-1)
+**Q:** The diagnostics (`aerosol_props._wet_diameters_m`) recompute equilibrium water to get wet SA /
+radius / wt%. Which water scheme?
+**Finding (Lens-1 verification):** the diagnostics initially used `calc_equilibrium_water` (the
+ISORROPIA/NH4HSO4 default, ×1.2 factor) while the coupled TOMAS step evolves the particles with
+`water_scheme='h2so4_tabazadeh'` (AD-3.6). Two different water fields → the SA/radius/wt% fed to the
+het chemistry did not match the particles TOMAS carried (measured 1.3-1.8× SA error across RH).
+**Decision/Fix:** `aerosol_props._wet_diameters_m` now uses `calc_equilibrium_water_h2so4(Mk, rh, temp)`
+— the Tabazadeh binary H2SO4/H2O scheme — matching the step. A consequence: `h2so4_weight_pct` now
+equals the Tabazadeh `wt%` exactly (self-consistent), and SA/radius are on the same water basis TOMAS
+uses. Caught by the correctness-lens agent; fixed before the phase gate.
 
 _(further Phase-3 decisions appended as they arise)_
 

@@ -21,15 +21,21 @@ from . import tomas_bridge as tb   # sets tomas_jax on sys.path; exposes SRTSO4/
 
 import jax.numpy as jnp  # noqa: E402
 from tomas_jax.physics.properties import calc_particle_properties  # noqa: E402
-from tomas_jax.physics.water_equilibrium import calc_equilibrium_water  # noqa: E402
+from tomas_jax.physics.water_equilibrium import calc_equilibrium_water_h2so4  # noqa: E402
 
 _SRTSO4 = tb.SRTSO4
 _SRTH2O = tb.SRTH2O
 
 
 def _wet_diameters_m(state):
-    """Per-bin WET particle diameter [m] (equilibrium water added at ``SRTH2O``)."""
-    Mk_wet = calc_equilibrium_water(state.Mk, state.rh)
+    """Per-bin WET particle diameter [m] (equilibrium water added at ``SRTH2O``).
+
+    Uses the **Tabazadeh (pure H2SO4/H2O)** water scheme -- the SAME ``water_scheme='h2so4_tabazadeh'``
+    the coupled TOMAS step evolves (tomas_bridge, AD-3.6). Using the ISORROPIA/NH4HSO4 default here
+    instead would compute SA / radius / wt% on a DIFFERENT water field than the particles TOMAS carries
+    (measured 1.3-1.8x SA error) -- so the diagnostics must match the step's scheme.
+    """
+    Mk_wet = calc_equilibrium_water_h2so4(state.Mk, state.rh, state.temp)
     Dpk, _Dk, _ck = calc_particle_properties(state.Nk, Mk_wet, state.temp, state.pres)
     return Dpk, Mk_wet
 
