@@ -39,7 +39,7 @@ def _total_S(x, aero):
 
 def _conserving_step_factory(frac=0.3):
     """A toy 'microphysics' that moves ``frac`` of gas H2SO4 into bin-0 sulfate -- exactly conserving."""
-    def make(switches):
+    def make(switches, **kw):
         def step(Nk, Mk, Gc, xk, temp, pres, boxvol, rh, alpha, dt, **kwargs):
             moved = Gc[tb.SRTSO4] * frac
             return Nk, Mk.at[0, tb.SRTSO4].add(moved), Gc.at[tb.SRTSO4].add(-moved)
@@ -62,7 +62,7 @@ def test_coupling_conserves_sulfur_with_conserving_stub(monkeypatch):
 def test_identity_stub_leaves_gas_sulfur_untouched(monkeypatch):
     # An identity microphysics (no uptake) must leave the gas-phase sulfur budget conserved to the
     # gas model's own precision -- the handoff round-trip (conc->kg->conc) introduces no drift.
-    def make(switches):
+    def make(switches, **kw):
         return lambda Nk, Mk, Gc, xk, T, P, V, rh, a, dt, **kwargs: (Nk, Mk, Gc)
     monkeypatch.setattr(cd, "make_microphysics_step", make)
     t, x = cd.run_coupled(_sc())

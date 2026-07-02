@@ -63,7 +63,7 @@ def test_nucleation_knob_threaded_to_tomas_step_in_both_drivers(monkeypatch):
     import coupled.reference_numpy as rn
 
     def make_recorder(seen):
-        def make(switches):
+        def make(switches, **kw):
             def step(Nk, Mk, Gc, xk, T, P, V, rh, a, dt, **kwargs):
                 seen.append(kwargs.get("fn_scale"))
                 return Nk, Mk, Gc            # identity -> no microphysics change, always stable
