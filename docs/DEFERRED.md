@@ -1,7 +1,15 @@
 # Deferred / follow-ups (SANDBOX)
 
-- **Phase 2.2 — wire `switches.sulfur`** as the single source of truth for the sulfur gate (today the
-  gate is `photolysis != "reference"`; the CoupledScenario switch is descriptive only).
+- **Phase 2.4 — feed the gate from `switches.sulfur` + real tuvx parity.** Phase 2.2 made
+  `sulfur_chain_active(photolysis)` the single source of truth shared by NumPy and JAX (value only).
+  Remaining end-to-end work (from the #30 review):
+  - The coupled driver maps `CoupledScenario.switches.sulfur` onto the gate (so the switch, not just the
+    photolysis string, controls it) via `CoupledScenario -> ModelConfig`.
+  - The new JAX **tuvx driver must derive its gate from `cfg.photolysis`/`switches.sulfur` via the same
+    helper** — never hardcode a mode. (Today drivers bind mode->driver implicitly: `run_reference`/
+    `run_sza`; calling the wrong one would mis-gate.)
+  - Replace the helper-equality tuvx stand-in with a **genuine cross-backend parity test** for tuvx
+    (integrate NumPy and JAX, compare species).
 - **Phase 2.4 — CoupledScenario integration debts** (from the #29 review):
   - Validate `concentrations` species keys against `config.SPECIES` when the driver wires composition
     (currently a typo'd species is silently accepted — the exact silent-assumption we want to avoid).
@@ -12,14 +20,10 @@
   - Reconcile the two `conftest.py` `sys.path` insertions when `coupled/` imports `gas_phase_chemistry`
     (make `jaxmodel` importable as a package rather than replicating the path hack — see packaging note).
 
-- **Phase 2 prerequisite — make the JAX sulfur gate data-driven.** The NumPy gate is derived from
-  data (`Env.sulfur_chain = cfg.photolysis != "reference"`), but the JAX gate is hardcoded per driver
-  (`make_vector_field`→0.0, `make_sza_vector_field`→1.0, `build_params` default 0.0). They agree today
-  for reference/sza, but `jaxmodel` has **no tuvx driver**, so a `photolysis="tuvx"` run would have
-  NumPy chain-ON vs a default JAX call chain-OFF — a silent disagreement (no test covers tuvx; the
-  `jaxmodel` docstring already notes it isn't valid for tuvx). When the Phase 2 coupled JAX driver is
-  built, drive `sulfur_chain` from `cfg.photolysis` (single source of truth) and add a tuvx parity
-  test. (Raised by the Phase 1 3-agent verification.)
+- ~~**Phase 2 prerequisite — make the JAX sulfur gate data-driven.**~~ **DONE (Phase 2.2).** Both
+  backends now derive the gate from `reactions.sulfur_chain_active(photolysis)` (single source of
+  truth); `test_sulfur_gate_single_source_all_modes` covers reference/sza/tuvx, so the previous silent
+  NumPy-on / JAX-off disagreement for `tuvx` can't recur.
 - **Sulfur test coverage (minor):** no test pins the `SO2+HO2->SO3+OH` (I34, 1e-18) coefficient
   magnitude; the I79 analytic test reuses the implementation constant so it checks structure, not the
   constant's value. Low priority (both are cross-checked against JPL in docs/jpl19-5-sulfur-crosscheck.md).

@@ -19,6 +19,11 @@ from diffrax import Kvaerno5, ODETerm, PIDController, SaveAt, diffeqsolve
 
 from jaxmodel.chem import build_params, dCdt
 from jaxmodel.solar import cos_solar_zenith, photolysis_scale
+from reactions import sulfur_chain_active  # single source of truth for the sulfur gate (NumPy & JAX)
+
+# gate values reused by the drivers below (float, since build_params takes a numeric flag)
+_SULFUR_REFERENCE = float(sulfur_chain_active("reference"))  # 0.0
+_SULFUR_SZA = float(sulfur_chain_active("sza"))              # 1.0
 
 # Kvaerno5's implicit step uses a Newton root find. The default linear solver assumes a
 # well-posed (nonsingular) Jacobian, which can fail when DIFFERENTIATING through the stiff
@@ -35,9 +40,10 @@ def _stiff_solver():
 def make_vector_field(opt):
     """Build the dC/dt vector field for a static O3-photolysis mode ``opt``."""
     def vf(t, y, params):
-        # reference (day/night) mode -> sulfur chain OFF (legacy SO2 reactions; MATLAB-faithful)
+        # reference (day/night) mode -> sulfur gate from the shared helper (chain OFF)
         p = build_params(params["T"], params["M"], params["P"], params["SA"],
-                         params["WTR"], params["Yn2o5"], y, params["j_scale"], sulfur_chain=0.0)
+                         params["WTR"], params["Yn2o5"], y, params["j_scale"],
+                         sulfur_chain=_SULFUR_REFERENCE)
         return dCdt(y, p, opt)
     return vf
 
@@ -104,9 +110,9 @@ def make_sza_vector_field(opt, latitude, longitude, day_of_year, start_utc_hour)
         doy = day_of_year + total_hours / 24.0
         utc = jnp.mod(total_hours, 24.0)
         j_scale = photolysis_scale(cos_solar_zenith(latitude, longitude, doy, utc))
-        # sza is a non-reference mode -> sulfur chain ON (SO2->SO3->H2SO4), matching NumPy build_env
+        # sza is a non-reference mode -> sulfur gate from the shared helper (chain ON), matching NumPy
         p = build_params(params["T"], params["M"], params["P"], params["SA"],
-                         params["WTR"], params["Yn2o5"], y, j_scale, sulfur_chain=1.0)
+                         params["WTR"], params["Yn2o5"], y, j_scale, sulfur_chain=_SULFUR_SZA)
         return dCdt(y, p, opt)
     return vf
 
