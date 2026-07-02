@@ -80,3 +80,10 @@ one per lens. Full verdicts below; all three returned PASS.
 H2SO4 0 → 7.35e3 pptv, SO2 −0.77 %, sulfur drift +1.3e-15, and JAX-vs-NumPy worst relative species
 diff **1.2e-6 (SO2)** under matched J (isolates the solver difference). Plots in `coupled/validation/`
 (`coupled_sulfur.png`, `coupled_conservation.png`, `coupled_jax_vs_numpy.png`).
+
+**What is CI-enforced vs. a committed artifact** (PR#35 review): the automated test
+(`test_coupled_parity.py`) proves **solver parity under matched J** using a *stubbed* adapter (fast) —
+that is the regression gate. The **real-port** 1.2e-6 agreement above comes from `validate_coupled.py`,
+a diagnostic **script** (a real 2-day TUV-x solve is too slow for CI), so it is a manually-run,
+committed artifact (the PNGs), **not** a regression-guarded check. Don't read the committed PNG as a CI
+pass. A CI-cheap real-port smoke test is tracked in `DEFERRED.md`.
