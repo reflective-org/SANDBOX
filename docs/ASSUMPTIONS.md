@@ -42,9 +42,14 @@ if it's not obvious from first principles or the reference, it belongs here.
   `k0(T)=k0_298 (T/298)^-n`). A prior "fix" to 300 K was wrong and has been reverted; both bimolecular
   and termolecular use 298 K. See docs/jpl19-5-sulfur-crosscheck.md and DECISIONS.md (2026-07-02).
 
+## Aerosol → photolysis (Phase 4) — see AUTONOMOUS_DECISIONS.md AD-4.x
+- **Spectral optics via per-wavelength Mie on fixed dry geometric-mean bin radii** + a **fixed complex
+  refractive index 1.4+1e-8j** (AD-4.1). No n(λ); the Mie table is precomputed once and Nk-weighted
+  each step. Bulk SSA = b_sca/b_ext, bulk g scattering-weighted.
+- **Aerosol vertical placement = uniform slab over `aerosol_band_km`** (default (15,25) km), OD per
+  layer = b_ext(λ)·Δz (AD-4.2, FLAGGED OPEN — sets feedback magnitude).
+
 ## Planned (to be recorded/confirmed as implemented)
-- **Aerosol column placement** for TUV-x: the box is one altitude; how its aerosol OD maps into the
-  radiative-transfer column (single layer vs scaled profile) — Phase 4.
 - **Condensation "sticking" knob = accommodation coefficient `alpha`** (TOMAS) — confirm this is the
   intended variable for the sensitivity sweep (Phase 8).
 - **Radiative heating**: gas photochemical heating from `heating_rates.F90`; aerosol *direct* SW/LW

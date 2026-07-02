@@ -49,6 +49,12 @@
   each daytime step, firing tomas-jax's nucleation clamp (`nucleation.py:521-539`) which loses 2/98 of
   the clamped mass every step (~4e-4/day total-S drift). Fix belongs in tomas-jax. See AD-3.10.
 - **Package tomas_jax** (like gas_phase_chemistry) to remove the `coupled/tomas_bridge` sys.path insert.
+- **Wavelength-dependent aerosol refractive index (Phase 4, AD-4.1).** The Mie table uses a fixed
+  n=1.4+1e-8j; add tabulated n(λ) for sulfate (and optionally the wet-solution index) for UV fidelity.
+- **Wet-radius aerosol optics (Phase 4).** Optics use the dry geometric-mean bin radii (TOMAS RF
+  convention); using the water-uptake (wet) radius would grow the scattering cross-section.
+- **Aerosol vertical placement (Phase 4, AD-4.2, OPEN for user).** Currently a uniform slab over
+  `aerosol_band_km`; consider a scaled background profile or a single-layer option.
 - **Exact `aerosol.F90` port** (fractional-source OD interpolation + Ångström scaling). Not needed for
   the coupling (TOMAS supplies spectral optics directly), but required for config-static aerosol
   parity with Fortran TUV-x.

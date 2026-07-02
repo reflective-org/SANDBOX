@@ -25,6 +25,15 @@
 - **γ water activity a_W stays thermodynamic (AD-3.3).** Composition (H2SO4 wt%) comes from TOMAS but
   a_W is still the gas-phase `pH2O/p0` value; a fully self-consistent aerosol-water reconciliation is
   deferred.
+- **Aerosol→photolysis optics use a fixed refractive index (AD-4.1).** No wavelength-dependent n(λ)
+  for sulfate in the UV; the Mie table uses a constant 1.4+1e-8j and the fixed dry geometric-mean bin
+  radii (matching TOMAS's own RF), so wet-growth optical effects are not captured. DEFERRED fidelity.
+- **Aerosol vertical placement = uniform slab (AD-4.2, OPEN).** The box aerosol is spread uniformly
+  over `aerosol_band_km`; the band depth materially sets the aerosol→J feedback magnitude. Flagged for
+  user (single point vs fixed band vs scaled background profile).
+- **Aerosol→J is non-monotonic in loading.** A scattering sulfate aerosol ENHANCES J at low-moderate
+  optical depth (added diffuse actinic flux) and only SHIELDS at high loading — physically correct, but
+  do not expect "more aerosol ⇒ less J" at all loadings (see coupled/validation/phase4_j_vs_od.png).
 - **`switches.sulfur=False` is not "SO2 inert".** The gate toggles between *two chemistries*, not on/off
   of one. With the sulfur chain OFF, the model falls back to the reference-only legacy MATLAB SO2 lumps
   (`SO2+OH→HO2`, `SO2+HO2→`), which still destroy SO2 (~0.45 %/day) but produce no SO3/H2SO4. So

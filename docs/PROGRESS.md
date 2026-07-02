@@ -30,9 +30,16 @@ Phases from `docs/master-plan.md`. Status updated each phase gate.
   parity, plots, 3-agent verification (3.5). SO2→sulfate demonstrated (SA 0.27→21 µm²/cm³ over 2 d);
   total-S drift is TOMAS-internal (~1e-3, see CAVEATS/AD-3.10).
 
+- **Phase 4 — Aerosol → photolysis radiation — COMPLETE.** Spectral aerosol optics from the TomasState
+  via per-wavelength Mie on the fixed bin radii (`aerosol_optics.py`, 4.1); dynamic aerosol radiator
+  injected into the TUV-x port `_solve` (4.2); wired through the adapter + coupled driver behind
+  `switches.aerosol_to_j` with a configurable altitude band (4.3); validation sweep + plot (4.4). J
+  responds correctly (scattering enhancement then shielding). `aerosol_band_km` placement flagged OPEN
+  (AD-4.2). NumPy mirror kept in parity.
+
 ## Next
-- **Phase 4** — Two-way radiation: aerosol → photolysis. Feed TOMAS Mie optics (OD/SSA/g) into the
-  TUV-x port's aerosol radiator so J responds to aerosol. Gets its own sub-plan + tasks.
+- **Phase 5** — Radiative heating → temperature (switchable). Port `heating_rates.F90` (gas
+  photochemical heating) + decide aerosol direct SW/LW heating fidelity. Gets its own sub-plan + tasks.
 
 ## Phase status
 | Phase | Title | Status |
@@ -40,7 +47,7 @@ Phases from `docs/master-plan.md`. Status updated each phase gate.
 | 1 | Gas sulfur→H2SO4 (+JPL check) | ✅ done (3-agent verified) |
 | 2 | JAX operator-split coupling skeleton + single config | ✅ done (3-agent verified) |
 | 3 | Couple TOMAS microphysics (H2SO4 handoff; SA→chem) | ✅ done (3-agent verified) |
-| 4 | Aerosol→photolysis radiation | not started |
+| 4 | Aerosol→photolysis radiation | ✅ done (pending 3-agent) |
 | 5 | Radiative heating→T | not started |
 | 6 | Dilution (gas+aerosol, entrainment) | not started |
 | 7 | Single unified input + validation + plots | not started |

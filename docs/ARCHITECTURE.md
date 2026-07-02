@@ -45,7 +45,12 @@ Steps 2-4 of the loop are live in `coupled/driver.py` (`run_coupled`); the NumPy
   effective wet radius r_eff = ΣN r³/ΣN r² (cm), and H2SO4 wt% for the next interval; depleted H2SO4
   returns to the gas. A loud guard raises if TOMAS returns non-finite (dt_couple stability, AD-3.9).
 
-Steps 1 (aerosol→J), 5 (heating), 6 (dilution) are Phases 4-6. TOMAS is active iff any of
+**Step 1 (aerosol→J) is live (Phase 4):** `coupled/aerosol_optics.py` builds spectral OD/SSA/g from the
+TomasState (per-wavelength Mie on fixed bin radii) over the `aerosol_band_km` slab; the driver injects
+it into the TUV-x port `_solve` via the adapter behind `switches.aerosol_to_j`, so J responds to the
+aerosol (scattering enhancement then shielding).
+
+Steps 5 (heating), 6 (dilution) are Phases 5-6. TOMAS is active iff any of
 `switches.{nucleation,condensation,coagulation}` is on; else the Phase-2 gas-only path (prescribed
 `cfg.SA`) runs. Phase-3 design calls: `DECISIONS.md` + `AUTONOMOUS_DECISIONS.md` (AD-3.x).
 
