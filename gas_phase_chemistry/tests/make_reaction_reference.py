@@ -7,7 +7,7 @@ Usage:
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src-python"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from reactions import reference_table  # noqa: E402
 
 HEADER = """# Reaction reference
@@ -22,12 +22,19 @@ In code: `reactions.BY_RNUMBER["R26"]` or `reactions.BY_KLABEL["k22"]`; list eve
 
 """
 
+# Path to the committed REACTIONS.md (single source of truth for both the writer and the sync test).
+REACTIONS_MD = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "REACTIONS.md"))
+
+
+def render() -> str:
+    """The full REACTIONS.md content (header + generated table). Used by main() and the sync test."""
+    return HEADER + reference_table() + "\n"
+
 
 def main():
-    out = os.path.join(os.path.dirname(__file__), "..", "REACTIONS.md")
-    with open(out, "w") as f:
-        f.write(HEADER + reference_table() + "\n")
-    print(f"Wrote {os.path.relpath(out)}")
+    with open(REACTIONS_MD, "w") as f:
+        f.write(render())
+    print(f"Wrote {os.path.relpath(REACTIONS_MD)}")
 
 
 if __name__ == "__main__":
