@@ -214,3 +214,44 @@ scalar SSA/g. TOMAS optics are per-wavelength.
 arrays (the dataclass already supports (n_layers, n_wl) arrays), rather than the scalar broadcast form.
 Inject it per-solve in `api._solve` (programmatic, like the LA/SR O2 in-place mod), NOT via the JSON
 config path — the coupled aerosol is dynamic.
+
+---
+
+## Phase 5 — Radiative heating → temperature
+
+### AD-5.1 — Gas photochemical heating scope: O3 (both channels), O2 deferred
+**Q:** `heating_rates.F90` defines heating for O2 (jo2, thresholds 175.05/242.37 nm) and O3 (jo3_a O1D
+310.32 nm, jo3_b O3P 1179.87 nm). Which to port for the ~19 km / 68 mbar box?
+**Decision:** port **O3 heating (both channels)** now — the dominant SW photochemical heating in the
+lower stratosphere (Hartley/Huggins/Chappuis). **O2 heating (Schumann-Runge/Lyman-α) deferred**: it
+requires the LA/SR-corrected O2 cross-section path and is minor at 19 km. Documented in CAVEATS/DEFERRED.
+**Rationale:** captures the physically dominant term with the data already in the port (O3 base σ +
+o3_o1d/o3_o3p QYs + actinic flux + etfl); energy terms are physical thresholds (from ts1_tsmlt config).
+
+### AD-5.2 — Heating kernel reuses the port's actinic flux + xsqy (energy-term formula)
+**Q:** How to compute the heating rate?
+**Decision:** port the `heating_rates.F90` kernel exactly: `energy(λ)=hc·(1/λ − 1/λ_threshold)` (J,
+≥0), `heating_per_absorber(z)=Σ_λ actinic(λ,z)·etfl(λ)·energy(λ)·σφ(λ,z)·scaling` [J s⁻¹ per absorber
+molecule], reusing `RadiationField` (fdr+fdn+fup) and the channel σφ. Volumetric heating =
+`[O3]·heating_per_absorber`. Add a `PhotolysisCalculator.heating_rate_profile` alongside
+`rate_constants_profile`.
+
+### AD-5.3 — dT/dt and the operator-split temperature update
+**Q:** How does heating change the box temperature?
+**Decision:** `dT/dt = H_volumetric / (n_air · cp_molec)`, cp_molec = 7/2·kB ≈ 4.83e-23 J/K
+(diatomic air, constant pressure). In the coupled loop, T is held constant within an interval (like J)
+and updated between intervals: `T += dT/dt · Δt_couple`, feeding the next interval's chemistry. Behind
+`switches.heating_to_t`; off ⇒ T constant (tested).
+**Rationale:** standard photochemical-heating → temperature-tendency; operator-split consistent with
+the frozen-J/frozen-aerosol treatment.
+
+### AD-5.4 — Aerosol direct heating: SW absorption only; LW is OPEN (flagged for user)
+**Q:** Aerosol direct radiative heating — SW absorption (Mie Qabs×flux) and/or longwave?
+**Decision:** include **aerosol SW absorption heating** from the Mie optics already built
+(`b_abs = b_ext − b_sca`), `H_agg,SW = Σ_λ actinic(λ)·etfl(λ)·b_abs(λ)·(photon energy)`. **Do NOT
+implement longwave aerosol heating** — it is outside any shortwave actinic-flux code, requires a
+dedicated LW radiative-transfer/parameterization, and LW is the DOMINANT stratospheric sulfate-aerosol
+heating term. Inventing an LW scheme autonomously would be an unvetted modeling choice.
+**FLAGGED OPEN for user:** confirm whether/how to add LW aerosol heating (e.g. a gray-body LW
+parameterization vs a full LW band model). Until then, aerosol heating is SW-only and will UNDERESTIMATE
+the true sulfate heating. Documented in CAVEATS + DEFERRED.
