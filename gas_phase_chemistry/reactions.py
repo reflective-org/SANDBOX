@@ -80,6 +80,13 @@ def _k70(e):  # HO2 + HO2 -> H2O2 : JPL 19-5 B13, bimolecular + termolecular[M] 
     return (k_bi + k_ter) * water
 
 
+def _k_so3_h2o(e):  # SO3 + H2O (+H2O) -> H2SO4 : JPL 19-5 I79
+    # JPL recommends the first-order SO3 loss  kI = 8.5e-41 * exp(+6540/T) * [H2O]^2  (s^-1,
+    # [H2O] in molec/cm^3). The reaction "SO3 + H2O -> H2SO4" is mass-action over (SO3, H2O),
+    # so we fold one [H2O] into the coefficient; the mechanism supplies the other -> [H2O]^2.
+    return 8.5e-41 * exp(6540.0 / e.T) * e.H2O
+
+
 # O3 photolysis branches depend on the `opt` mode (the Science-paper O1D workaround) and on
 # water vapour. The model treats O3 as photolyzing 100% to O(1D) (concs_het.m L145-152), so the
 # total O3 photolysis rate constant is the O(1D)-*channel* value: reference 4.7e-5 (at 45 deg SZA).
@@ -223,7 +230,12 @@ REACTIONS = [
     photo("HOBr -> OH + Br",               j45=1.8e-3),
 
     # --- SO2 / CH4 / HO2 additions (FK); rates updated to JPL 19-5 parameterizations ---
-    react("SO2 + OH -> HO2",               _k68, "JPL 19-5 (I4) termolecular; product lumped to HO2"),
+    # SO2 oxidation is MODE-GATED (e.sulfur_chain): the two legacy reactions below (sulfur dropped)
+    # run ONLY in reference mode (MATLAB-faithful); the SO2->SO3->H2SO4 chain (further below) runs
+    # in non-reference modes. In reference mode the chain rates are 0 and SO3/H2SO4 stay 0, so
+    # species 1-34 are byte-identical to before. See docs/jpl19-5-sulfur-crosscheck.md.
+    react("SO2 + OH -> HO2",               lambda e: _k68(e) * (0.0 if e.sulfur_chain else 1.0),
+          note="reference-only lump (sulfur dropped); JPL 19-5 I4"),
     react("CH4 + OH -> HO2",               lambda e: 2.45e-12 * exp(-1775.0 / e.T),
           note="JPL 19-5 (D14, OH+CH4); product lumped to HO2"),
     react("HO2 + HO2 -> H2O2",             _k70, "JPL 19-5 (B13): bimol + termol[M] + H2O enhancement"),
@@ -231,10 +243,16 @@ REACTIONS = [
     # stays ON at night. Modelled as a constant (not j_scale-gated) to reproduce the source
     # exactly. Candidate to revisit once SZA-dependent photolysis is in (would be day-only).
     react("H2O2 -> 2 OH",                  lambda e: 1e-5, "FK: constant, not day/night gated"),
-    # SO2 + HO2: JPL 19-5 / Graham 1979 give only an UPPER LIMIT < 1e-18 (no recommended rate).
-    # Set to the upper limit; FLAG: this is an upper bound -> run a sensitivity test on it.
-    react("SO2 + HO2 ->",                  lambda e: 1.0e-18,
-          note="UPPER LIMIT (Graham 1979 / JPL 19-5 I34); sensitivity test needed"),
+    react("SO2 + HO2 ->",                  lambda e: 1.0e-18 * (0.0 if e.sulfur_chain else 1.0),
+          note="reference-only null sink; UPPER LIMIT (JPL 19-5 I34)"),
+
+    # --- Gas-phase sulfur oxidation chain SO2 -> SO3 -> H2SO4 (non-reference modes only) ---
+    react("SO2 + OH -> SO3 + HO2",         lambda e: _k68(e) * (1.0 if e.sulfur_chain else 0.0),
+          note="net of JPL 19-5 I4 (SO2+OH+M->HOSO2, rate-limiting) + I92 (HOSO2+O2->HO2+SO3)"),
+    react("SO2 + HO2 -> SO3 + OH",         lambda e: 1.0e-18 * (1.0 if e.sulfur_chain else 0.0),
+          note="JPL 19-5 I34 rate (upper limit); PRODUCTS ARE AN ASSUMPTION -- JPL recommends none"),
+    react("SO3 + H2O -> H2SO4",            lambda e: _k_so3_h2o(e) if e.sulfur_chain else 0.0,
+          note="JPL 19-5 I79: kI = 8.5e-41 exp(6540/T) [H2O]^2"),
 ]
 
 # Original MATLAB rate-constant labels (concs_het.m), aligned 1:1 with REACTIONS above.
@@ -254,6 +272,8 @@ _K_LABELS = [
     "k66",                                                          # bromine het
     "k67",                                                          # bromine photolysis
     "k68", "k69", "k70", "k71", "k72",                              # FK additions
+    "k73", "k74", "k75",                                            # sulfur chain: SO2+OH->SO3+HO2,
+    #                                                                 SO2+HO2->SO3+OH, SO3+H2O->H2SO4
 ]
 assert len(_K_LABELS) == len(REACTIONS), (len(_K_LABELS), len(REACTIONS))
 for _rxn, _k in zip(REACTIONS, _K_LABELS):
@@ -300,5 +320,8 @@ def build_env(cfg, conc, j_scale: float, j_values: dict | None = None) -> Env:
         "Yn2o5": cfg.Yn2o5,   # set manually in the scenario
         "Ybrono2": 0.8,       # fixed (JPL)
     }
+    # sulfur chain active in non-reference photolysis modes (sza/tuvx); reference stays faithful
+    sulfur_chain = getattr(cfg, "photolysis", "reference") != "reference"
     return Env(T=cfg.T, M=M, P=cfg.P, SA=cfg.SA, WTR=cfg.WTR, opt=cfg.opt,
-               gammas=gammas, j_scale=j_scale, H2O=conc[IDX["H2O"]], j_values=j_values)
+               gammas=gammas, j_scale=j_scale, H2O=conc[IDX["H2O"]], j_values=j_values,
+               sulfur_chain=sulfur_chain)

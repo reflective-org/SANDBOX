@@ -35,8 +35,9 @@ def _stiff_solver():
 def make_vector_field(opt):
     """Build the dC/dt vector field for a static O3-photolysis mode ``opt``."""
     def vf(t, y, params):
+        # reference (day/night) mode -> sulfur chain OFF (legacy SO2 reactions; MATLAB-faithful)
         p = build_params(params["T"], params["M"], params["P"], params["SA"],
-                         params["WTR"], params["Yn2o5"], y, params["j_scale"])
+                         params["WTR"], params["Yn2o5"], y, params["j_scale"], sulfur_chain=0.0)
         return dCdt(y, p, opt)
     return vf
 
@@ -103,8 +104,9 @@ def make_sza_vector_field(opt, latitude, longitude, day_of_year, start_utc_hour)
         doy = day_of_year + total_hours / 24.0
         utc = jnp.mod(total_hours, 24.0)
         j_scale = photolysis_scale(cos_solar_zenith(latitude, longitude, doy, utc))
+        # sza is a non-reference mode -> sulfur chain ON (SO2->SO3->H2SO4), matching NumPy build_env
         p = build_params(params["T"], params["M"], params["P"], params["SA"],
-                         params["WTR"], params["Yn2o5"], y, j_scale)
+                         params["WTR"], params["Yn2o5"], y, j_scale, sulfur_chain=1.0)
         return dCdt(y, p, opt)
     return vf
 

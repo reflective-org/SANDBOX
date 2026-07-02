@@ -89,6 +89,12 @@ def all_coefficients(p, opt):
     k70 = (3.0e-13 * exp(460.0 / T) + 2.1e-33 * M * exp(920.0 / T)) \
         * (1.0 + 1.4e-21 * H2O * exp(2200.0 / T))
 
+    # sulfur-chain gate (0/1): mirrors reactions.Env.sulfur_chain. 0 = reference (legacy SO2
+    # reactions; sulfur dropped), 1 = SO2->SO3->H2SO4 chain. See docs/jpl19-5-sulfur-crosscheck.md.
+    s_new = p["sulfur_chain"]
+    s_ref = 1.0 - s_new
+    k_so3_h2o = 8.5e-41 * exp(6540.0 / T) * H2O   # JPL 19-5 I79 (folds one [H2O]; mech supplies other)
+
     return [
         6.4e-12 * exp(290.0 / T),                                  # ClO + NO
         k2,                                                        # ClO + ClO + M
@@ -163,9 +169,13 @@ def all_coefficients(p, opt):
         7.2e-11 * exp(-70.0 / T),                                  # Cl + C2H6 (disabled)
         khet(g["Ybrono2"], 142.0, T, SA),                          # het BrONO2 + H2O
         1.8e-3 * j,                                                # HOBr hv
-        k68,                                                       # SO2 + OH (JPL 19-5 termolecular)
+        k68 * s_ref,                                               # SO2 + OH -> HO2 (reference-only lump)
         2.45e-12 * exp(-1775.0 / T),                               # CH4 + OH (JPL 19-5 D14)
         k70,                                                       # HO2 + HO2 (JPL 19-5 B13)
         1e-5,                                                      # H2O2 -> 2OH (FK, constant)
-        1.0e-18,                                                   # SO2 + HO2 (upper limit; sens. test)
+        1.0e-18 * s_ref,                                           # SO2 + HO2 -> (reference-only null sink)
+        # --- gas-phase sulfur chain (non-reference modes only); order matches reactions.REACTIONS ---
+        k68 * s_new,                                               # SO2 + OH -> SO3 + HO2 (I4+I92 net)
+        1.0e-18 * s_new,                                           # SO2 + HO2 -> SO3 + OH (I34; products assumed)
+        k_so3_h2o * s_new,                                         # SO3 + H2O -> H2SO4 (JPL 19-5 I79)
     ]

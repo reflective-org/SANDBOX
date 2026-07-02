@@ -8,9 +8,11 @@ def test_every_reaction_has_a_klabel():
 
 
 def test_counts():
-    # 78 reactions total (k1..k72 with a/b branch suffixes); 75 active (3 disabled).
-    assert len(REACTIONS) == 78
-    assert len(MECHANISM.active) == 75
+    # 81 reactions total: 78 original (k1..k72 with a/b branch suffixes) + 3 sulfur-chain
+    # reactions (k73-k75); 78 active (3 disabled). The sulfur-chain reactions are always active
+    # (mode-gated by rate via Env.sulfur_chain, not by the .active flag).
+    assert len(REACTIONS) == 81
+    assert len(MECHANISM.active) == 78
 
 
 def test_rnumber_lookup_matches_position():
