@@ -5,10 +5,11 @@
 #   Load: CoupledScenario.load("coupled/scenarios/coupled_full.yaml")
 #   Run:  from coupled.driver import run_coupled; run_coupled(CoupledScenario.load(...))
 #
-# NOTE on stability: with nucleation ON, TOMAS can produce a runaway fine mode and, combined with
-# aerosol_to_j, stress the stiff gas solver (see docs/CAVEATS.md, AD-3.9/AD-4.2/runaway-nucleation).
-# For a robust demonstration run, keep dt_couple small OR run condensation+coagulation without
-# nucleation. This example lists every knob; tune per study.
+# All processes are ON (full coupled physics). The old nucleation "runaway" was a coarse operator-split
+# artifact (a whole dt_couple's H2SO4 dumped into one TOMAS step); the two-level driver resolves it by
+# consuming the gas H2SO4 in adaptive fine micro-steps within each outer step, so nucleation self-limits
+# (see docs/time-integration-plan.md). dt_couple is the OUTER (J recompute) cadence; the inner micro
+# step is adaptive (micro_eps/micro_floor_s/micro_cap_s). This example lists every knob; tune per study.
 # =====================================================================================
 
 # --- environment ---
@@ -47,11 +48,11 @@ coag_kernel_scale:     1.0   # NOT wired yet (must stay 1.0)
 # --- per-process switches (all implemented as of Phase 6) ---
 switches:
   sulfur:        true    # gas SO2 -> SO3 -> H2SO4
-  nucleation:    false   # TOMAS new-particle formation (see stability note above)
+  nucleation:    true    # TOMAS new-particle formation (two-level driver resolves the old runaway)
   condensation:  true    # TOMAS H2SO4 condensation
   coagulation:   true    # TOMAS coagulation
   aerosol_to_j:  true    # aerosol optics -> photolysis J
-  heating_to_t:  false   # radiative heating -> box T (SW-only; no LW cooling -- AD-5.4)
+  heating_to_t:  true    # radiative heating -> box T (SW-only; no LW cooling yet -- AD-5.4)
   dilution:      true    # dilution + background relaxation
 
 # --- initial gas composition (pptv); omitted species start at 0. H2O is set from WTR. ---

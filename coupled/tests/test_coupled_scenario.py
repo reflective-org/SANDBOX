@@ -14,11 +14,15 @@ _DEFAULT_YAML = os.path.join(os.path.dirname(__file__), "..", "scenarios", "coup
 def test_defaults():
     sc = CoupledScenario()
     assert sc.photolysis == "tuvx"
-    assert sc.dt_couple == 120.0
-    assert sc.switches.sulfur is True
-    # every not-yet-implemented switch defaults off
-    assert not any([sc.switches.nucleation, sc.switches.condensation, sc.switches.coagulation,
-                    sc.switches.aerosol_to_j, sc.switches.heating_to_t, sc.switches.dilution])
+    assert sc.dt_couple == 600.0            # outer radiation/coupling step (two-level driver)
+    assert sc.dt_rad == sc.dt_couple        # alias property
+    # adaptive inner (micro) step defaults
+    assert (sc.micro_eps, sc.micro_floor_s, sc.micro_cap_s) == (0.1, 1.0e-4, 20.0)
+    # ALL processes default ON (full coupled physics is the default; the nucleation "runaway" that
+    # once motivated defaults-off was a coarse-step artifact, fixed by the two-level driver)
+    assert all([sc.switches.sulfur, sc.switches.nucleation, sc.switches.condensation,
+                sc.switches.coagulation, sc.switches.aerosol_to_j, sc.switches.heating_to_t,
+                sc.switches.dilution])
 
 
 def test_load_default_yaml():

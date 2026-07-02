@@ -12,10 +12,10 @@ _FULL = os.path.join(os.path.dirname(__file__), "..", "scenarios", "coupled_full
 def test_full_yaml_loads_and_validates():
     sc = CoupledScenario.load(_FULL)
     assert sc.photolysis == "tuvx"
-    # all the Phase 3-6 switches on except nucleation (stability note) and heating_to_t
+    # full physics: every process switch ON (the two-level driver resolves the old nucleation runaway)
     assert sc.switches.condensation and sc.switches.coagulation and sc.switches.aerosol_to_j
     assert sc.switches.dilution and sc.switches.sulfur
-    assert sc.switches.nucleation is False
+    assert sc.switches.nucleation and sc.switches.heating_to_t
     # knobs present, defaults 1.0; dilution + band parsed
     assert (sc.nucleation_rate_scale, sc.condensation_alpha, sc.coag_kernel_scale) == (1.0, 1.0, 1.0)
     assert sc.aerosol_band_km == (15.0, 25.0)

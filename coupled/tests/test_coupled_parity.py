@@ -13,6 +13,7 @@ import numpy as np
 
 import coupled.driver as cd
 from coupled import CoupledScenario
+from coupled.coupled_scenario import Switches
 from coupled.reference_numpy import run_coupled_numpy
 
 _COMP = {"O2": 2.1e11, "O3": 1.18e6, "CH4": 1.6e6, "SO2": 9.5e5, "ClO": 10.0,
@@ -32,9 +33,15 @@ def test_coupled_tuvx_numpy_jax_parity(monkeypatch):
     monkeypatch.setattr(cd, "_compute_j_values",
                         lambda cfg, t, aerosol_props=None: {eq: 1.0e-4 * (k + 1) for k, eq in enumerate(photo)})
 
+    # gas-only parity (isolate the gas solver): TOMAS/aerosol/heating/dilution OFF -- otherwise the
+    # all-on default would move sulfur into particles and the gas-only-S invariant below would not hold
+    # (the coupled-with-TOMAS parity is covered separately by test_coupled_parity_tomas.py).
     sc = CoupledScenario(P=68.0, T=210.0, WTR=5.0, latitude=0.0, longitude=0.0, day_of_year=80,
                          start_utc_hour=6.0, days=1, DT=21600.0, dt_couple=21600.0,
-                         photolysis="tuvx", concentrations=_COMP)
+                         photolysis="tuvx", concentrations=_COMP,
+                         switches=Switches(sulfur=True, nucleation=False, condensation=False,
+                                           coagulation=False, aerosol_to_j=False,
+                                           heating_to_t=False, dilution=False))
 
     t_jx, x_jx = cd.run_coupled(sc)
     t_np, x_np = run_coupled_numpy(sc)
