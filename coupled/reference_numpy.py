@@ -18,6 +18,7 @@ from . import driver as cd                      # sets gas_phase_chemistry on sy
 from .tomas_bridge import (initial_tomas_state, make_microphysics_step, SRTSO4,
                            BOXVOL_CM3, MW_H2SO4)
 from .aerosol_props import het_inputs
+from .dilution import dilute_gas, dilute_aerosol
 from .units import conc_to_mass, mass_to_conc
 
 from config import IDX, air_number_density       # noqa: E402  (gas model)
@@ -44,6 +45,11 @@ def run_coupled_numpy(scenario):
     tstate = initial_tomas_state(scenario) if tomas_active else None
     het = het_inputs(tstate) if tomas_active else None
     h2so4_idx = IDX["H2SO4"]
+
+    dilution_active = bool(scenario.switches.dilution)   # Phase 6 (mirror of the JAX driver)
+    kdil = float(scenario.dilution_rate)
+    gas_bg = y.copy()
+    tstate_bg = tstate
 
     aerosol_to_j = bool(scenario.switches.aerosol_to_j) and tomas_active and cfg.photolysis == "tuvx"
     heating_active = bool(scenario.switches.heating_to_t) and cfg.photolysis == "tuvx"
@@ -103,6 +109,12 @@ def run_coupled_numpy(scenario):
                                      mie=(mie_table if tomas_active else None))
             cfg.T = float(cfg.T + dTdt * (t1 - t0))
             cfg.M = air_number_density(cfg.P, cfg.T)
+
+        if dilution_active:   # mirror of the JAX driver's dilution (operator-split, last)
+            yc = dilute_gas(yc, gas_bg, kdil, float(t1 - t0))
+            if tomas_active:
+                tstate = dilute_aerosol(tstate, tstate_bg, kdil, float(t1 - t0))
+                het = het_inputs(tstate)
 
         t_list.append(t1)
         x_list.append(yc.copy())

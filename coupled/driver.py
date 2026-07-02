@@ -42,6 +42,7 @@ from .tomas_bridge import (initial_tomas_state, make_microphysics_step, SRTSO4,
                            BOXVOL_CM3, MW_H2SO4)
 from .aerosol_props import het_inputs
 from . import heating as _heating
+from .dilution import dilute_gas, dilute_aerosol
 from .units import conc_to_mass, mass_to_conc
 
 from config import IDX, air_number_density                   # noqa: E402  (gas model)
@@ -112,6 +113,12 @@ def run_coupled(scenario, return_aerosol=False, return_state=False):
     het = het_inputs(tstate) if tomas_active else None
     h2so4_idx = IDX["H2SO4"]
 
+    # Phase 6: dilution -> first-order relaxation toward the INITIAL box state (AD-6.3).
+    dilution_active = bool(scenario.switches.dilution)
+    kdil = float(scenario.dilution_rate)
+    gas_bg = jnp.asarray(y0)            # background gas composition = initial state
+    tstate_bg = tstate                  # background aerosol = initial TomasState (immutable)
+
     # Phase 4: aerosol -> photolysis. Active only with TOMAS on, tuvx photolysis, and the switch.
     aerosol_to_j = bool(scenario.switches.aerosol_to_j) and tomas_active and cfg.photolysis == "tuvx"
     # Phase 5: radiative heating -> T. Requires tuvx (needs the real radiation solve).
@@ -180,6 +187,12 @@ def run_coupled(scenario, return_aerosol=False, return_state=False):
             cfg.T = float(cfg.T + dTdt * (t1 - t0))
             cfg.M = air_number_density(cfg.P, cfg.T)
             params["T"], params["M"] = cfg.T, cfg.M
+
+        if dilution_active:   # relax gas + aerosol toward the initial background (operator-split, last)
+            yc = dilute_gas(yc, gas_bg, kdil, float(t1 - t0))
+            if tomas_active:
+                tstate = dilute_aerosol(tstate, tstate_bg, kdil, float(t1 - t0))
+                het = het_inputs(tstate)   # het inputs reflect the diluted aerosol next interval
 
         t_list.append(t1)
         x_list.append(np.asarray(yc))
