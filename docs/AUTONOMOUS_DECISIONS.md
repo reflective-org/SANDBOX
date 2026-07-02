@@ -49,7 +49,7 @@ f-factor in `hetgammas_jpl00` (which takes one scalar radius)?
 (the 3rd/2nd moment), in cm. (Initially chose number-weighted; **revised** — see below.)
 **Rationale:** heterogeneous uptake is carried by the surface-area-dominant (larger) particles, so the
 surface-area-weighted mean is the physically correct single representative for the f-factor, and it is
-exactly the standard aerosol *effective radius*. Wet (deliquesced) particle, matching the old 1-µm
+exactly the standard aerosol *effective radius*. Wet (deliquesced) particle, matching the old 0.1-µm
 value. **Why revised from number-weighted:** when nucleation is on, the number-weighted mean collapses
 toward the ~1 nm nucleation mode — unphysical for uptake AND numerically fatal: the f-factor
 `coth(r/l) − l/r` becomes `inf − inf → NaN` when r ≪ the reacto-diffusive length l. r_eff is far more
