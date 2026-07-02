@@ -352,9 +352,17 @@ def build_env(cfg, conc, j_scale: float, j_values: dict | None = None,
     ClONO2_ppb = conc[IDX["ClONO2"]] / M * 1e9
     H2O_ppm = conc[IDX["H2O"]] / M * 1e6
 
-    h2so4wp, _ml, a_W = h2so4wp_at(cfg.T, cfg.P, H2O_ppm)
+    # Composition + radius for the uptake gammas. Default to the thermodynamic weight percent and the
+    # legacy 1-um radius; the coupled driver overrides both with TOMAS-derived values (a_W always stays
+    # from the gas-phase water thermodynamics -- it is a water activity, not a bulk-composition term;
+    # see docs/AUTONOMOUS_DECISIONS.md AD-3.3/3.4).
+    h2so4wp_thermo, _ml, a_W = h2so4wp_at(cfg.T, cfg.P, H2O_ppm)
+    wp_override = getattr(cfg, "h2so4wp", None)
+    h2so4wp = h2so4wp_thermo if wp_override is None else wp_override
+    radius_override = getattr(cfg, "particle_radius", None)
+    radius = 0.1e-4 if radius_override is None else radius_override
     Yhocl, Yclnh2o, Yclnhcl = hetgammas_jpl00(
-        cfg.T, cfg.P, h2so4wp, a_W, HCl_ppb, ClONO2_ppb, radius=0.1e-4, sts=0)
+        cfg.T, cfg.P, h2so4wp, a_W, HCl_ppb, ClONO2_ppb, radius=radius, sts=0)
 
     gammas = {
         "Yhocl": Yhocl, "Yclnh2o": Yclnh2o, "Yclnhcl": Yclnhcl,

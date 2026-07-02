@@ -143,8 +143,13 @@ def make_frozen_vf(opt):
     across intervals (only the argument arrays change; no per-interval recompile).
     """
     def vf(t, y, args):
+        # Phase-3 aerosol overrides are optional in args: absent (Phase 2 runs) -> the build_params
+        # defaults (0.1e-4 cm, thermodynamic wt%), reproducing pre-TOMAS behaviour; present (coupled
+        # driver) -> TOMAS-derived SA/radius/wt% for this outer step. MUST mirror NumPy build_env.
         p = build_params(args["T"], args["M"], args["P"], args["SA"], args["WTR"], args["Yn2o5"],
-                         y, args["j_scale"], sulfur_chain=args["sulfur_chain"])
+                         y, args["j_scale"], sulfur_chain=args["sulfur_chain"],
+                         particle_radius=args.get("particle_radius", 0.1e-4),
+                         h2so4wp=args.get("h2so4wp", None))
         return dCdt(y, p, opt, photo_override=args["photo_override"])
     return vf
 

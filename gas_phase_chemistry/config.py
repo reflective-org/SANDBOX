@@ -87,6 +87,12 @@ class ModelConfig:
     SZA: int = 1
     opt: int = 1
     M: float | None = None
+    # Aerosol overrides for the heterogeneous uptake (Phase 3, TOMAS coupling). Both None ->
+    # standalone behaviour: radius = the legacy hard-coded 0.1e-4 cm (1 um), and the H2SO4 weight
+    # percent from the thermodynamic h2so4wp_at(T,P,H2O). When the coupled driver supplies
+    # TOMAS-derived values it sets these per outer step (see coupled/aerosol_props.het_inputs).
+    particle_radius: float | None = None   # aerosol radius (cm) for the reacto-diffusive f-factor
+    h2so4wp: float | None = None           # H2SO4 weight percent of the aerosol (composition)
     count: int = field(default=0)
     # Photolysis handling. "reference" uses the fixed 45-deg J-values with the day/night
     # flag SZA (the validated MATLAB behaviour). "sza" scales J by the real solar zenith
