@@ -11,14 +11,14 @@
   - Replace the helper-equality tuvx stand-in with a **genuine cross-backend parity test** for tuvx
     (integrate NumPy and JAX, compare species).
 - **Phase 2.4 — CoupledScenario integration debts** (from the #29 review):
-  - Validate `concentrations` species keys against `config.SPECIES` when the driver wires composition
-    (currently a typo'd species is silently accepted — the exact silent-assumption we want to avoid).
-  - Dedupe `PHOTOLYSIS_MODES` (defined in both `coupled/coupled_scenario.py` and
-    `gas_phase_chemistry/config.py`) to one source of truth once the import lands.
-  - Single `CoupledScenario -> ModelConfig` mapping so the duplicated fields (T/P/SA/WTR/Yn2o5/opt/
-    lat/lon/...) can't drift.
-  - Reconcile the two `conftest.py` `sys.path` insertions when `coupled/` imports `gas_phase_chemistry`
-    (make `jaxmodel` importable as a package rather than replicating the path hack — see packaging note).
+  - ~~Validate `concentrations` species keys~~ **DONE (2.4a):** `model_bridge.initial_state` raises on
+    unknown species.
+  - ~~Single `CoupledScenario -> ModelConfig` mapping~~ **DONE (2.4a):** `model_bridge.to_model_config`.
+  - `PHOTOLYSIS_MODES` dedup: **guarded (2.4a)** by an assertion in `model_bridge` that the coupled and
+    gas lists match; a true single definition still needs gas_phase_chemistry packaged.
+  - **Still open — package gas_phase_chemistry.** `model_bridge` uses an interim `sys.path` insert to
+    import the gas model; make `gas_phase_chemistry`/`jaxmodel` an installable package so `coupled/`
+    imports it cleanly (removes the path insert and the coupled/conftest dual-path setup).
 
 - ~~**Phase 2 prerequisite — make the JAX sulfur gate data-driven.**~~ **DONE (Phase 2.2).** Both
   backends now derive the gate from `reactions.sulfur_chain_active(photolysis)` (single source of
