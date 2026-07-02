@@ -58,8 +58,16 @@ def build_params(T, M, P, SA, WTR, Yn2o5, conc, j_scale, sulfur_chain=0.0):
                 Yn2o5=Yn2o5, Ybrono2=0.8)
 
 
-def dCdt(conc, p, opt):
-    """dC/dt (length-34) for state ``conc`` given parameter dict ``p`` and static ``opt``."""
+def dCdt(conc, p, opt, photo_override=None):
+    """dC/dt for state ``conc`` given parameter dict ``p`` and static ``opt``.
+
+    ``photo_override`` (optional): a length-``len(active)`` array of **frozen absolute photolysis
+    coefficients** from the TUV-x port (``reactions.photolysis_coeffs``), ``NaN`` where a reaction is
+    not photolysis. When given, the photolysis reactions use these absolute-J coefficients instead of
+    the built-in ``j45*j_scale`` path -- this is how the JAX backend runs ``photolysis="tuvx"``.
+    """
     coeffs_all = all_coefficients(p, opt)
-    coeffs = [coeffs_all[i] for i in ACTIVE_INDICES]
+    coeffs = jnp.stack([coeffs_all[i] for i in ACTIVE_INDICES])
+    if photo_override is not None:
+        coeffs = jnp.where(jnp.isnan(photo_override), coeffs, photo_override)
     return S_JNP @ _reaction_rates(conc, coeffs)
