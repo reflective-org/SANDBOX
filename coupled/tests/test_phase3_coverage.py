@@ -29,7 +29,7 @@ def _sc(**kw):
 
 
 def _nan_step_factory(_switches):
-    def step(Nk, Mk, Gc, xk, T, P, V, rh, a, dt):
+    def step(Nk, Mk, Gc, xk, T, P, V, rh, a, dt, **kwargs):
         return Nk, Mk.at[0, tb.SRTSO4].set(jnp.nan), Gc
     return step
 
