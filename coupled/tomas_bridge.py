@@ -71,14 +71,19 @@ def initial_tomas_state(scenario) -> TomasState:
 
     Gc is all-zero: gaseous H2SO4 is handed in by the driver each outer step (the gas model owns it).
     Number/mass are per grid cell (``boxvol=BOXVOL_CM3``); T in K, P in Pa (scenario.P is mbar).
+    ``scenario.tomas_nbins`` picks the size resolution: 40 (mass-doubling) or 80 (sqrt(2) ratio);
+    downstream consumers (Mie table, optics, diagnostics) must use the state's own ``xk``.
     """
+    nbins = int(getattr(scenario, "tomas_nbins", 40))
+    if nbins not in (40, 80):
+        raise ValueError(f"tomas_nbins must be 40 or 80, got {nbins}")
     pres_pa = scenario.P * 100.0                       # mbar -> Pa (TOMAS uses Pa)
     Nk_np, Mk_np = _bad.get_initial_state(
-        nbins=NBINS, boxvol=BOXVOL_CM3, dist="redcircles",
+        nbins=nbins, boxvol=BOXVOL_CM3, dist="redcircles",
         to_ambient=True, temp=scenario.T, pres=pres_pa)
     Nk = jnp.asarray(Nk_np, dtype=jnp.float64)
     Mk = jnp.asarray(Mk_np, dtype=jnp.float64)
-    xk = tcfg.xk_boundaries()
+    xk = tcfg.xk_boundaries() if nbins == 40 else tcfg.make_grid_80bin()
     Gc = jnp.zeros(tcfg.N_GAS_SPECIES, dtype=jnp.float64)
     alpha = float(getattr(scenario, "condensation_alpha", ALPHA_DEFAULT))  # Phase-7 knob
     return TomasState.create(Nk, Mk, xk, scenario.T, pres_pa, BOXVOL_CM3,
@@ -97,14 +102,22 @@ def active_processes(switches) -> list[str]:
     return [p for p in _PROCESS_ORDER if flags[p]]
 
 
-def make_microphysics_step(switches):
+def make_microphysics_step(switches, ion_pair_rate=0.0):
     """Build the TOMAS ``step_fn(Nk,Mk,Gc,xk,temp,pres,boxvol,rh,alpha,dt,**kw)->(Nk,Mk,Gc)``.
 
     Uses the Marianna-validated scheme choices; SO2 chemistry is omitted. Returns ``None`` if no
     microphysics process is switched on (the driver then skips the TOMAS step entirely).
+    ``ion_pair_rate`` [pairs/cm^3/s] is baked in as TOMAS's ``fion`` (Dunne-2016 ion-induced
+    nucleation); make_step's own default is 0, which silently turns those channels off -- so the
+    scenario value must be passed through here.
     """
     procs = active_processes(switches)
     if not procs:
         return None
-    return make_step(procs, cond_method=_COND_METHOD, nucl_scheme=_NUCL_SCHEME,
+    step = make_step(procs, cond_method=_COND_METHOD, nucl_scheme=_NUCL_SCHEME,
                      water_scheme=_WATER_SCHEME)
+    fion = float(ion_pair_rate)
+
+    def step_fn(*args, **kwargs):
+        return step(*args, fion=fion, **kwargs)
+    return step_fn

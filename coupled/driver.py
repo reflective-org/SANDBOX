@@ -204,21 +204,27 @@ def _envelope_grid(t0, t1, n_pts: int = 301):
     return np.linspace(t0, t1, n_pts)
 
 
-def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_dist=False):
+def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_dist=False,
+                return_photolysis=False):
     """Integrate a CoupledScenario with operator splitting.
 
     Returns ``(t [s], states [n_t, n_species])``. With ``return_aerosol=True`` also returns a dict of
     per-output-time aerosol diagnostics (``SA`` [um^2/cm^3], ``radius_cm``, ``h2so4wp`` [wt%],
     ``particulate_S`` [molec/cm^3 as H2SO4-equiv]); the arrays are all-NaN when TOMAS is inactive.
     With ``return_state=True`` also appends the final ``TomasState`` (or ``None`` if TOMAS inactive),
-    e.g. for plotting the evolved size distribution. Extra outputs are appended in that order.
+    e.g. for plotting the evolved size distribution. With ``return_photolysis=True`` also appends a
+    dict of the FROZEN per-interval photolysis coefficients actually used by the gas solve:
+    ``{"t_mid" [n_int], "J" [n_int, n_photo] (s^-1), "equations" [n_photo]}`` (the ``photo_override``
+    rows of ``reactions.photolysis_coeffs``, i.e. absolute TUV-x J or the j45*j_scale fallback).
+    Extra outputs are appended in that order.
     """
     cfg = to_model_config(scenario)
     y0 = initial_state(scenario)
     sulfur = float(scenario.switches.sulfur)   # single gate source (NumPy match: build_env(sulfur_chain=))
     params = dict(T=cfg.T, M=cfg.M, P=cfg.P, SA=cfg.SA, WTR=cfg.WTR, Yn2o5=cfg.Yn2o5)
 
-    tomas_step = make_microphysics_step(scenario.switches)
+    tomas_step = make_microphysics_step(scenario.switches,
+                                        ion_pair_rate=float(scenario.ion_pair_rate))
     tomas_active = tomas_step is not None
     tstate = initial_tomas_state(scenario) if tomas_active else None
     het = het_inputs(tstate) if tomas_active else None
@@ -244,6 +250,10 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         if name not in IDX:
             raise ValueError(f"dilution_zero_species has unknown species {name!r}")
         gas_bg[IDX[name]] = 0.0
+    for name, bg_ppt in scenario.dilution_background.items():   # explicit pptv overrides (win over 0)
+        if name not in IDX:
+            raise ValueError(f"dilution_background has unknown species {name!r}")
+        gas_bg[IDX[name]] = float(bg_ppt) * 1e-12 * cfg.M       # pptv -> molec/cm^3 (as initial_state)
     gas_bg = jnp.asarray(gas_bg)
     tstate_bg = tstate                  # background aerosol = initial TomasState (immutable)
 
@@ -256,9 +266,10 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     heating_active = bool(scenario.switches.heating_to_t) and cfg.photolysis == "tuvx"
     mie_table = None
     if aerosol_to_j or (heating_active and tomas_active):   # mie needed for aerosol optics/absorption
-        from .aerosol_optics import MieTable, aerosol_optical_props, placement_band_km
+        from .aerosol_optics import MieTable, aerosol_optical_props, placement_band_km, bin_radii_m
         _wl_nm, _height_edges = calculator_grids(cfg)
-        mie_table = MieTable(_wl_nm)
+        # radii from the STATE's own bin grid (40- or 80-bin), not the module default
+        mie_table = MieTable(_wl_nm, radii_m=bin_radii_m(np.asarray(tstate.xk)))
         # pressure-anchored plume: band centered on the box altitude (same USSA reference the J
         # interpolation uses), thickness = scenario.aerosol_thickness_km -- or the absolute override.
         _box_alt = _box_altitude_km(float(cfg.P), str(getattr(cfg, "tuvx_data_root", _TUVX_ROOT)))
@@ -296,6 +307,11 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     nk_list, dp_list = ([_sizedist_record()[0]], [_sizedist_record()[1]]) if (
         return_size_dist and tomas_active) else (None, None)
     env_pts = _envelope_pts(scenario.dt_couple)     # per-run constant -> one jit compile
+    if return_photolysis:                           # photo positions/equations of the override vector
+        from reactions import MECHANISM
+        _photo_idx = [i for i, r in enumerate(MECHANISM.active) if r.kind == "photo"]
+        _photo_eqs = [MECHANISM.active[i].equation for i in _photo_idx]
+        j_tmid, j_rows = [], []
     yc = jnp.asarray(y0)
     for t0, t1 in _outer_intervals(cfg, scenario.days, scenario.dt_couple):
         t_mid = 0.5 * (t0 + t1)
@@ -306,6 +322,9 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         # SZA, same frozen end-of-previous-interval aerosol; previously heating solved again).
         jv, heat_res = _frozen_j_and_heating(cfg, t_mid, aerosol_props=_aerosol_props())
         override = jnp.asarray(photolysis_coeffs(cfg, j_scale, jv))
+        if return_photolysis:
+            j_tmid.append(t_mid)
+            j_rows.append(np.asarray(override)[_photo_idx])
         args = {**params, "j_scale": j_scale, "sulfur_chain": sulfur, "photo_override": override}
         if tomas_active:   # freeze this interval's aerosol het inputs (end-of-previous-interval state)
             args = {**args, "SA": het["SA"], "particle_radius": het["radius_cm"],
@@ -372,4 +391,6 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         # dict with per-time per-bin number [#/cm^3] and wet diameter [m] (None if TOMAS inactive)
         sd = None if nk_list is None else {"n_cm3": np.asarray(nk_list), "Dp_m": np.asarray(dp_list)}
         out.append(sd)
+    if return_photolysis:
+        out.append({"t_mid": np.asarray(j_tmid), "J": np.asarray(j_rows), "equations": _photo_eqs})
     return tuple(out) if len(out) > 2 else (t, x)

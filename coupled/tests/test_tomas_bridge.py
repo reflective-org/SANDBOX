@@ -77,3 +77,38 @@ def test_step_consumes_injected_h2so4():
     assert float(Gc2[tb.SRTSO4]) < float(Gc[tb.SRTSO4])
     assert float(jnp.sum(Mk2[:, tb.SRTSO4])) > float(jnp.sum(st.Mk[:, tb.SRTSO4]))
     assert float(jnp.min(Nk2)) >= 0.0
+
+
+def test_80bin_initial_state_matches_40bin_totals():
+    # tomas_nbins=80: same observation on the sqrt(2) grid -- same total number, finer bins.
+    import jax.numpy as jnp
+    st40 = tb.initial_tomas_state(_scenario())
+    st80 = tb.initial_tomas_state(_scenario(tomas_nbins=80))
+    assert st80.Nk.shape == (80,) and len(st80.xk) == 81
+    n40, n80 = float(jnp.sum(st40.Nk)), float(jnp.sum(st80.Nk))
+    assert abs(n80 / n40 - 1.0) < 0.05
+    m40 = float(jnp.sum(st40.Mk[:, tb.SRTSO4]))
+    m80 = float(jnp.sum(st80.Mk[:, tb.SRTSO4]))
+    assert abs(m80 / m40 - 1.0) < 0.10
+    # het inputs (SA / r_eff / wt%) agree across resolutions to a few percent
+    from coupled.aerosol_props import het_inputs
+    h40, h80 = het_inputs(st40), het_inputs(st80)
+    assert abs(h80["SA"] / h40["SA"] - 1.0) < 0.05
+    assert abs(h80["radius_cm"] / h40["radius_cm"] - 1.0) < 0.05
+
+
+def test_ion_pair_rate_scales_nucleation():
+    # fion > 0 must strengthen nucleation (Dunne ion-induced channels) for the same H2SO4.
+    import jax.numpy as jnp
+    from coupled.units import conc_to_mass
+    sc = _scenario()
+    st = tb.initial_tomas_state(sc)
+    h2so4_kg = conc_to_mass(1.0e7, tb.BOXVOL_CM3, tb.MW_H2SO4)
+    Gc = st.Gc.at[tb.SRTSO4].add(h2so4_kg)
+    out = {}
+    for fion in (0.0, 30.0):
+        step = tb.make_microphysics_step(sc.switches, ion_pair_rate=fion)
+        Nk2, _Mk2, _Gc2 = step(st.Nk, st.Mk, Gc, st.xk, st.temp, st.pres, st.boxvol,
+                               st.rh, st.alpha, 10.0)
+        out[fion] = float(jnp.sum(Nk2))
+    assert out[30.0] > out[0.0]

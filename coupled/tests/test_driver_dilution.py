@@ -59,3 +59,22 @@ def test_dilution_pulls_toward_background():
     so2 = IDX["SO2"]
     # SO2 is consumed by chemistry; dilution replenishes it toward the (higher) initial value
     assert abs(x_on[-1, so2] - y0[so2]) < abs(x_off[-1, so2] - y0[so2])
+
+
+def test_dilution_background_override_pulls_to_value():
+    # dilution_background sets a nonzero background: strong dilution relaxes SO2 to 15 pptv, not 0.
+    from config import IDX
+    sc = _sc(switches=_gas(dilution=True), dilution_rate=1.0e-3,
+             dilution_zero_species=("SO2", "SO3", "H2SO4"),
+             dilution_background={"SO2": 15.0})
+    t, x = run_coupled(sc)
+    M = x[0, IDX["O2"]] / 0.21
+    so2_ppt = x[-1, IDX["SO2"]] / M * 1e12
+    assert abs(so2_ppt - 15.0) < 1.0
+
+
+def test_dilution_background_unknown_species_raises():
+    import pytest
+    sc = _sc(switches=_gas(dilution=True), dilution_background={"NOPE": 1.0})
+    with pytest.raises(ValueError, match="dilution_background"):
+        run_coupled(sc)

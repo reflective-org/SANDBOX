@@ -103,6 +103,19 @@ class CoupledScenario:
     # Gas species zeroed in the dilution BACKGROUND (entrained air); all others keep their initial
     # value. Empty () => background is the full initial state (AD-6.3). Names must be valid species.
     dilution_zero_species: tuple = ()
+    # Explicit background mixing ratios (pptv) for the dilution background, applied AFTER
+    # dilution_zero_species (an override wins over a zero). Species not listed keep the
+    # zero-species/initial-state background. E.g. {"SO2": 15.0} = clean stratosphere with 15 ppt SO2.
+    dilution_background: dict = field(default_factory=dict)
+
+    # Ion-pair production rate [pairs/cm^3/s] for the Dunne-2016 ion-induced nucleation channels
+    # (TOMAS ``fion``). 0 (default) disables ion-induced nucleation (neutral channels unaffected);
+    # galactic-cosmic-ray values at ~20 km are O(10) pairs/cm^3/s.
+    ion_pair_rate: float = 0.0
+    # TOMAS size resolution: 40 (standard, mass-doubling) or 80 (high-res, sqrt(2) mass ratio);
+    # both span dry Dp 1.7 nm - 17.5 um. Everything downstream (initial state, Mie table, optics)
+    # follows the state's own xk grid.
+    tomas_nbins: int = 40
 
     # --- sensitivity knobs (Phase 7; free multipliers, default 1.0; for Phase-8 sweeps) ---
     nucleation_rate_scale: float = 1.0   # -> TOMAS make_step nucleation fn_scale

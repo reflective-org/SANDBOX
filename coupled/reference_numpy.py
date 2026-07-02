@@ -40,7 +40,8 @@ def run_coupled_numpy(scenario):
     atol = _abstol(cfg.opt)
     intervals = cd._outer_intervals(cfg, scenario.days, scenario.dt_couple)
 
-    tomas_step = make_microphysics_step(scenario.switches)
+    tomas_step = make_microphysics_step(scenario.switches,
+                                        ion_pair_rate=float(scenario.ion_pair_rate))
     tomas_active = tomas_step is not None
     tstate = initial_tomas_state(scenario) if tomas_active else None
     het = het_inputs(tstate) if tomas_active else None
@@ -54,16 +55,20 @@ def run_coupled_numpy(scenario):
     dt_micro = floor
     dilution_active = bool(scenario.switches.dilution)   # Phase 6 (mirror of the JAX driver)
     kdil = float(scenario.dilution_rate)
-    gas_bg = y.copy()
+    gas_bg = y.copy()                                    # background: initial state + zeros + overrides
+    for name in scenario.dilution_zero_species:
+        gas_bg[IDX[name]] = 0.0
+    for name, bg_ppt in scenario.dilution_background.items():
+        gas_bg[IDX[name]] = float(bg_ppt) * 1e-12 * cfg.M
     tstate_bg = tstate
 
     aerosol_to_j = bool(scenario.switches.aerosol_to_j) and tomas_active and cfg.photolysis == "tuvx"
     heating_active = bool(scenario.switches.heating_to_t) and cfg.photolysis == "tuvx"
     mie_table = None
     if aerosol_to_j or (heating_active and tomas_active):
-        from .aerosol_optics import MieTable, aerosol_optical_props, placement_band_km
+        from .aerosol_optics import MieTable, aerosol_optical_props, placement_band_km, bin_radii_m
         _wl_nm, _height_edges = cd.calculator_grids(cfg)
-        mie_table = MieTable(_wl_nm)
+        mie_table = MieTable(_wl_nm, radii_m=bin_radii_m(np.asarray(tstate.xk)))
         _box_alt = cd._box_altitude_km(float(cfg.P), str(getattr(cfg, "tuvx_data_root", cd._TUVX_ROOT)))
         _band_km = placement_band_km(_box_alt, scenario)   # same anchoring as the JAX driver
 
