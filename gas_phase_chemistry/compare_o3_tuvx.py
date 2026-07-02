@@ -24,7 +24,7 @@ _p.add_argument("--out", default="o3_tuvx_comparison")
 _args = _p.parse_args()
 CFG = _args.config
 OUT = _args.out
-SPECIES = ["O3", "OH", "HO2", "O1D", "O", "NO2", "NO", "HNO3", "ClO", "N2O5", "SO2"]
+SPECIES = ["O3", "OH", "HO2", "O1D", "O", "NO2", "NO", "HNO3", "ClO", "N2O5", "SO2", "H2O2"]
 
 _orig_j = ad.j_values_for
 

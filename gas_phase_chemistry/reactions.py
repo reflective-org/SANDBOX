@@ -240,10 +240,12 @@ REACTIONS = [
     react("CH4 + OH -> HO2",               lambda e: 2.45e-12 * exp(-1775.0 / e.T),
           note="JPL 19-5 (D14, OH+CH4); product lumped to HO2"),
     react("HO2 + HO2 -> H2O2",             _k70, "JPL 19-5 (B13): bimol + termol[M] + H2O enhancement"),
-    # H2O2 photolysis: in the MATLAB this k71 is defined OUTSIDE the day/night block, so it
-    # stays ON at night. Modelled as a constant (not j_scale-gated) to reproduce the source
-    # exactly. Candidate to revisit once SZA-dependent photolysis is in (would be day-only).
-    react("H2O2 -> 2 OH",                  lambda e: 1e-5, "FK: constant, not day/night gated"),
+    # H2O2 photolysis: now a proper photolysis reaction (was a constant 1e-5 in the MATLAB, defined
+    # outside the day/night block so it stayed ON at night). In tuvx mode the adapter injects the
+    # absolute TUV-x J (H2O2+hv->OH+OH, JPL94 cross section, ported in special.py); reference/sza
+    # modes use j45*j_scale with j45=1.0e-5 (the TUV-x 45-deg value at ~20 km is ~9.8e-6, i.e. the
+    # old constant was already ~the 45-deg value). Now correctly 0 at night (fixes the on-at-night quirk).
+    photo("H2O2 -> 2 OH",                  j45=1.0e-5, note="JPL94 xs; TUV-x J in tuvx mode"),
     react("SO2 + HO2 ->",                  lambda e: 1.0e-18 * (0.0 if e.sulfur_chain else 1.0),
           note="reference-only null sink; UPPER LIMIT (JPL 19-5 I34)"),
 

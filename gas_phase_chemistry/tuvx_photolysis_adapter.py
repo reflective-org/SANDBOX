@@ -46,6 +46,7 @@ REACTION_MAP = {
     "BrCl -> Br + Cl": "BrCl+hv->Br+Cl",
     "HONO -> OH + NO": "HNO2+hv->OH+NO",
     "HOBr -> OH + Br": "HOBr+hv->OH+Br",
+    "H2O2 -> 2 OH": "H2O2+hv->OH+OH",
     # O2 photolysis is handled via the Lyman-alpha/Schumann-Runge band parameterization
     "O2 -> 2 O": "O2+hv->O+O",
     # O3 photolysis: the model treats O3 as photolyzing 100% to O(1D) (concs_het.m L145-152),
