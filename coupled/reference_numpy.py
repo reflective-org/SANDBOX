@@ -46,6 +46,7 @@ def run_coupled_numpy(scenario):
     het = het_inputs(tstate) if tomas_active else None
     h2so4_idx = IDX["H2SO4"]
 
+    nuc_scale = float(scenario.nucleation_rate_scale)    # Phase 7 knob (mirror)
     dilution_active = bool(scenario.switches.dilution)   # Phase 6 (mirror of the JAX driver)
     kdil = float(scenario.dilution_rate)
     gas_bg = y.copy()

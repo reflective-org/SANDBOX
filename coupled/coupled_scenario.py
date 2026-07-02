@@ -81,6 +81,11 @@ class CoupledScenario:
     # switches.dilution is on (AD-6.2; default ~ 1/(10 days)). The V(t) schedule is deferred.
     dilution_rate: float = 1.157e-6
 
+    # --- sensitivity knobs (Phase 7; free multipliers, default 1.0; for Phase-8 sweeps) ---
+    nucleation_rate_scale: float = 1.0   # -> TOMAS make_step nucleation fn_scale
+    condensation_alpha: float = 1.0      # -> TomasState alpha (Fuchs accommodation coefficient), (0,1]
+    coag_kernel_scale: float = 1.0       # NOT wired in tomas-jax yet (AD-7.2): must stay 1.0 (raises)
+
     # --- aerosol -> photolysis (Phase 4) ---
     # Altitude band (km) over which the box aerosol is spread in the TUV-x radiative-transfer column
     # when switches.aerosol_to_j is on (AD-4.2, FLAGGED OPEN -- the band sets the feedback magnitude).
@@ -112,6 +117,14 @@ class CoupledScenario:
         self.aerosol_band_km = band
         if self.dilution_rate < 0.0:
             raise ValueError(f"dilution_rate must be >= 0, got {self.dilution_rate}")
+        if self.nucleation_rate_scale < 0.0:
+            raise ValueError(f"nucleation_rate_scale must be >= 0, got {self.nucleation_rate_scale}")
+        if not (0.0 < self.condensation_alpha <= 1.0):
+            raise ValueError(f"condensation_alpha must be in (0, 1], got {self.condensation_alpha}")
+        if self.coag_kernel_scale != 1.0:   # not wired in tomas-jax -- fail loud, don't silently ignore
+            raise NotImplementedError(
+                "coag_kernel_scale is not wired yet (tomas-jax has no coagulation-kernel scale knob); "
+                "it must stay 1.0 until that Phase-8/tomas-jax change lands (see AD-7.2, DEFERRED.md).")
         if self.dt_couple > self.DT:
             raise ValueError(f"dt_couple ({self.dt_couple}) must be <= output step DT ({self.DT})")
         # dt_couple drives sub-stepping within an output interval, so DT must be a whole multiple of it

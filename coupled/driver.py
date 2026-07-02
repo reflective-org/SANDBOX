@@ -113,6 +113,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False):
     het = het_inputs(tstate) if tomas_active else None
     h2so4_idx = IDX["H2SO4"]
 
+    nuc_scale = float(scenario.nucleation_rate_scale)   # Phase 7 knob -> TOMAS nucleation fn_scale
     # Phase 6: dilution -> first-order relaxation toward the INITIAL box state (AD-6.3).
     dilution_active = bool(scenario.switches.dilution)
     kdil = float(scenario.dilution_rate)
@@ -164,7 +165,8 @@ def run_coupled(scenario, return_aerosol=False, return_state=False):
             gas_h2so4_kg = conc_to_mass(float(yc[h2so4_idx]), BOXVOL_CM3, MW_H2SO4)
             Gc = tstate.Gc.at[SRTSO4].set(gas_h2so4_kg)
             Nk, Mk, Gc = tomas_step(tstate.Nk, tstate.Mk, Gc, tstate.xk, tstate.temp, tstate.pres,
-                                    tstate.boxvol, tstate.rh, tstate.alpha, float(t1 - t0))
+                                    tstate.boxvol, tstate.rh, tstate.alpha, float(t1 - t0),
+                                    fn_scale=nuc_scale)
             if not (bool(jnp.all(jnp.isfinite(Nk))) and bool(jnp.all(jnp.isfinite(Mk)))):
                 raise RuntimeError(
                     f"TOMAS microphysics produced non-finite output on interval [{t0}, {t1}] "

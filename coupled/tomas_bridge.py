@@ -80,8 +80,9 @@ def initial_tomas_state(scenario) -> TomasState:
     Mk = jnp.asarray(Mk_np, dtype=jnp.float64)
     xk = tcfg.xk_boundaries()
     Gc = jnp.zeros(tcfg.N_GAS_SPECIES, dtype=jnp.float64)
+    alpha = float(getattr(scenario, "condensation_alpha", ALPHA_DEFAULT))  # Phase-7 knob
     return TomasState.create(Nk, Mk, xk, scenario.T, pres_pa, BOXVOL_CM3,
-                             Gc=Gc, rh=rh_from_scenario(scenario), alpha=ALPHA_DEFAULT)
+                             Gc=Gc, rh=rh_from_scenario(scenario), alpha=alpha)
 
 
 def active_processes(switches) -> list[str]:
