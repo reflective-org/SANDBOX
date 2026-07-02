@@ -1,26 +1,30 @@
 # Copyright (C) 2026 University Corporation for Atmospheric Research
 # SPDX-License-Identifier: Apache-2.0
-"""Operator-split coupling driver (Phase 2.4b).
+"""Two-level operator-split coupling driver.
 
-Runs the coupled box on the JAX gas backend with an outer loop of ``dt_couple`` steps. Each outer
-step: compute the photolysis J from the TUV-x port at the step MIDPOINT (2nd-order splitting), freeze
-it, and integrate the gas ODE over the interval with a fresh solve (never stepping across a J jump).
-The outer grid is snapped to sunrise/sunset (so no interval straddles the terminator; J is off at
-night). One SZA source (gas ``solar.py``, the same the adapter uses) drives J, the day/night snap, and
-the fallback ``j_scale``. ``switches.sulfur`` drives the gas sulfur gate.
+Runs the coupled box on the JAX gas backend with a TWO-LEVEL time integration (see
+docs/time-integration-plan.md):
 
-TOMAS microphysics (Phase 3) slots into this same outer loop: after the gas sub-step, the gas-produced
-H2SO4 is handed to TOMAS (``Gc[SRTSO4]``), TOMAS runs nucleation/condensation/coagulation (its own SO2
-chemistry OFF) over the interval, the depleted H2SO4 is written back to the gas, and the new aerosol
-surface area / wet radius / H2SO4 weight-percent feed the NEXT interval's heterogeneous chemistry.
-TOMAS is active iff any of ``switches.{nucleation,condensation,coagulation}`` is on; otherwise the run
-is the Phase-2 gas-only path with the prescribed ``cfg.SA``. Dilution / heating: Phases 5-6.
+* OUTER (radiation) step ``dt_couple`` (== ``dt_rad``, ~minutes): compute the photolysis J from the
+  TUV-x port at the step MIDPOINT (2nd-order splitting) and FREEZE it (plus the aerosol optics and the
+  heterogeneous-chemistry inputs) for the whole outer step. The outer grid is snapped to sunrise/sunset
+  (no interval straddles the terminator; J is off at night). One SZA source (gas ``solar.py``, the same
+  the adapter uses) drives J, the day/night snap, and the fallback ``j_scale``. ``switches.sulfur``
+  drives the gas sulfur gate.
+* INNER (micro) step -- ADAPTIVE, fine early: within each outer step the gas ODE is solved ONCE with a
+  DENSE output (H2SO4 accumulates, no aerosol sink), then TOMAS consumes that H2SO4 envelope in
+  adaptive micro-steps (``_tomas_micro``). Each micro-step is sized so the fractional change in gaseous
+  H2SO4 and aerosol number stays <= ``micro_eps``, bounded to [``micro_floor_s``, ``micro_cap_s``]. This
+  is approach B: nucleation only ever sees one micro-step's worth of H2SO4 (so it self-limits instead of
+  running away on a coarse step), while the expensive TUV-x solve stays on the coarse outer cadence.
 
-Δt_couple with TOMAS (AD-3, decision 3): a single TOMAS ``make_step`` per outer interval is used, so
-``dt_couple`` must be small enough to resolve the sub-second H2SO4 condensation transient (highest in
-the first minutes) -- pick a small ``dt_couple`` for TOMAS-active runs. The aerosol het inputs are held
-frozen over each interval (sequential operator splitting, like J), using the state from the end of the
-previous interval; the first interval uses the initial TOMAS state.
+TOMAS microphysics (Phase 3) runs nucleation/condensation/coagulation with its own SO2 chemistry OFF;
+the gas model owns sulfur. TOMAS is active iff any of ``switches.{nucleation,condensation,coagulation}``
+is on; otherwise the run is the gas-only path with the prescribed ``cfg.SA`` (one endpoint gas solve per
+outer step, no micro-loop). The aerosol surface area / wet radius / H2SO4 weight-percent from the end of
+each outer step feed the NEXT step's heterogeneous chemistry (frozen per outer step, like J); the first
+step uses the initial TOMAS state. Heating (Phase 5) and dilution (Phase 6) are applied once per outer
+step (heating is a slow ~0.1 K/day term; dilution's analytic relaxation is exact over the outer step).
 
 Gate source: ``switches.sulfur`` is THE sulfur-gate source here. It is passed to the JAX side
 (``sulfur_chain``) and, for a NumPy comparison, must likewise be passed to ``build_env(sulfur_chain=...)``
@@ -92,6 +96,87 @@ def _frozen_j_values(cfg, t_mid: float, aerosol_props=None):
     return _compute_j_values(cfg, t_mid, aerosol_props=aerosol_props) if cfg.photolysis == "tuvx" else None
 
 
+# H2SO4 number density [molec/cm^3] below which gaseous sulfuric acid is negligible for nucleation --
+# used as the denominator floor in the production-fraction step controller (avoids div-by-~0 when the
+# gas H2SO4 is essentially zero, e.g. at t=0 in a clean background, so the step is free to grow).
+_H2SO4_NEGLIGIBLE = 1.0e5
+
+
+def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, floor, cap, dt_start,
+                  on_accept=None):
+    """Adaptive TOMAS micro-loop over [t0, t1] consuming the gas H2SO4 envelope (approach B).
+
+    ``env_h2so4_conc(t) -> gaseous H2SO4 [molec/cm^3]`` is the gas solution WITHOUT any aerosol sink
+    (H2SO4 accumulates), evaluated at micro-step boundaries. TOMAS removes H2SO4 incrementally, so it
+    only ever sees one micro-step's worth of *fresh* production.
+
+    What the micro-step controls is the OPERATOR-SPLIT COUPLING error: each step lumps the gas H2SO4
+    produced over ``dt`` and hands it to TOMAS, which then resolves nucleation/condensation/coagulation
+    for that ``dt`` with its OWN internal (adaptive) sub-stepping. So the outer step must keep the
+    *produced* H2SO4 small vs the standing amount -- ``production/standing <= eps`` -- but must NOT try
+    to also resolve the nucleation kinetics (TOMAS does that; controlling the fractional change in
+    particle number would over-refine to an infeasible step count when N is small, and controlling the
+    fraction CONSUMED would double-resolve TOMAS's internal sub-stepping). ``dt`` is bounded to
+    [``floor``, ``cap``] s. Non-finite TOMAS output (its internal sub-stepping overflowed) shrinks
+    ``dt``; hitting the floor while STILL non-finite RAISES -- never silently swallow a blown-up step.
+    If the floor is reached only because the production fraction is still > eps (but TOMAS is finite),
+    the step is accepted and a one-line under-resolution notice is printed (the coupling is slightly
+    under-resolved but the microphysics itself is valid).
+
+    Shared verbatim by the JAX driver (``sol.evaluate``) and the NumPy mirror (SciPy ``sol.sol``) so the
+    two-level stepping is identical across backends. Returns ``(tstate, removal_kg, next_dt, n_micro)``.
+    """
+    Nk, Mk, Gc = tstate.Nk, tstate.Mk, tstate.Gc
+    removal_kg = 0.0
+    t = t0
+    env_prev = env_h2so4_conc(t0)                                    # H2SO4 envelope [molec/cm^3] at t
+    dt = min(max(dt_start, floor), cap, t1 - t0)
+    n_micro = 0
+    while t < t1 - 1e-9:
+        dt = min(dt, t1 - t)
+        t_end = t + dt
+        env_end = env_h2so4_conc(t_end)                             # envelope at step end
+        produced = max(env_end - env_prev, 0.0)                     # gas H2SO4 made this step [/cm^3]
+        frac_prod = produced / max(env_end, _H2SO4_NEGLIGIBLE)      # coupling error metric
+        # standing H2SO4 available to TOMAS = envelope at step end minus what TOMAS already removed
+        avail_kg = max(conc_to_mass(env_end, BOXVOL_CM3, MW_H2SO4) - removal_kg, 0.0)
+        Gc_in = Gc.at[SRTSO4].set(avail_kg)
+        Nk2, Mk2, Gc2 = tomas_step(Nk, Mk, Gc_in, tstate.xk, tstate.temp, tstate.pres,
+                                   tstate.boxvol, tstate.rh, tstate.alpha, float(dt),
+                                   fn_scale=nuc_scale)
+        finite = bool(jnp.all(jnp.isfinite(Nk2)) & jnp.all(jnp.isfinite(Mk2))
+                      & jnp.all(jnp.isfinite(Gc2)))
+        at_floor = dt <= floor * (1.0 + 1e-9)
+        if not finite:
+            if at_floor:
+                raise RuntimeError(
+                    f"TOMAS produced non-finite output at the micro-step floor ({floor:g} s) on outer "
+                    f"interval [{t0:.4g}, {t1:.4g}] at t={t:.4g} s (H2SO4 handed in "
+                    f"{avail_kg:.3e} kg, nucleation_rate_scale={nuc_scale}). TOMAS's internal "
+                    f"sub-stepping overflowed even at the floor -- lower micro_floor_s or the "
+                    f"nucleation scale (see docs/CAVEATS.md). NOT swallowing this.")
+            dt = max(dt * 0.5, floor)
+            continue
+        if frac_prod > eps and not at_floor:                        # refine to resolve the coupling
+            dt = max(dt * 0.5, floor)
+            continue
+        if frac_prod > eps and at_floor:                            # finite but coupling under-resolved
+            print(f"[coupled] NOTE: micro-step at floor ({floor:g} s) on [{t0:.4g},{t1:.4g}] t={t:.4g}s "
+                  f"has production fraction {frac_prod:.3f} > micro_eps={eps} (H2SO4 rising fast); "
+                  f"accepting -- microphysics finite but the gas->TOMAS coupling is under-resolved "
+                  f"here. Lower micro_floor_s for a tighter split.")
+        Nk, Mk, Gc = Nk2, Mk2, Gc2                                    # accept
+        removal_kg += max(avail_kg - float(Gc2[SRTSO4]), 0.0)
+        if on_accept is not None:                                     # diagnostics hook (t, dt, frac)
+            on_accept(t, dt, frac_prod)
+        t = t_end
+        env_prev = env_end
+        n_micro += 1
+        if frac_prod < 0.5 * eps:                                     # relax when comfortably under eps
+            dt = min(dt * 2.0, cap)
+    return tstate._replace(Nk=Nk, Mk=Mk, Gc=Gc), removal_kg, max(dt, floor), n_micro
+
+
 def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_dist=False):
     """Integrate a CoupledScenario with operator splitting.
 
@@ -105,13 +190,17 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     y0 = initial_state(scenario)
     sulfur = float(scenario.switches.sulfur)   # single gate source (NumPy match: build_env(sulfur_chain=))
     params = dict(T=cfg.T, M=cfg.M, P=cfg.P, SA=cfg.SA, WTR=cfg.WTR, Yn2o5=cfg.Yn2o5)
-    step = make_frozen_step(cfg.opt, atol=jnp.asarray(_abstol(cfg.opt)))
 
     tomas_step = make_microphysics_step(scenario.switches)
     tomas_active = tomas_step is not None
     tstate = initial_tomas_state(scenario) if tomas_active else None
     het = het_inputs(tstate) if tomas_active else None
     h2so4_idx = IDX["H2SO4"]
+
+    # Two-level integration: the gas ODE is solved ONCE per outer step. With TOMAS active we need a
+    # DENSE solution so the adaptive micro-loop can query the gas H2SO4 envelope at sub-interval times
+    # while TOMAS consumes it (approach B). Without TOMAS, just the endpoint (Phase-2 gas-only path).
+    step = make_frozen_step(cfg.opt, atol=jnp.asarray(_abstol(cfg.opt)), dense=tomas_active)
 
     nuc_scale = float(scenario.nucleation_rate_scale)   # Phase 7 knob -> TOMAS nucleation fn_scale
     # Phase 6: dilution -> relaxation toward a background (AD-6.3). Background gas = initial state with
@@ -162,6 +251,12 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         Dpk, _ = _wet_diameters_m(tstate)
         return np.asarray(tstate.Nk) / float(tstate.boxvol), np.asarray(Dpk)
 
+    # --- adaptive inner (micro) step for the gas<->TOMAS handoff (two-level integration, approach B) --
+    eps = float(scenario.micro_eps)
+    floor = float(scenario.micro_floor_s)
+    cap = float(scenario.micro_cap_s)
+    dt_micro = floor                # start fine (t=0 burst); carried/relaxed across outer intervals
+    micro_total = 0
     t_list, x_list = [0.0], [np.asarray(y0)]
     aero_list = [_aero_record()]
     nk_list, dp_list = ([_sizedist_record()[0]], [_sizedist_record()[1]]) if (
@@ -176,24 +271,23 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         if tomas_active:   # freeze this interval's aerosol het inputs (end-of-previous-interval state)
             args = {**args, "SA": het["SA"], "particle_radius": het["radius_cm"],
                     "h2so4wp": het["h2so4wp"]}
-        yc = step(yc, t0, t1, args)
-
         if tomas_active:
-            # handoff: gas H2SO4 [molec/cm^3] -> Gc[SRTSO4] [kg]; TOMAS depletes it; write back.
-            gas_h2so4_kg = conc_to_mass(float(yc[h2so4_idx]), BOXVOL_CM3, MW_H2SO4)
-            Gc = tstate.Gc.at[SRTSO4].set(gas_h2so4_kg)
-            Nk, Mk, Gc = tomas_step(tstate.Nk, tstate.Mk, Gc, tstate.xk, tstate.temp, tstate.pres,
-                                    tstate.boxvol, tstate.rh, tstate.alpha, float(t1 - t0),
-                                    fn_scale=nuc_scale)
-            if not (bool(jnp.all(jnp.isfinite(Nk))) and bool(jnp.all(jnp.isfinite(Mk)))):
-                raise RuntimeError(
-                    f"TOMAS microphysics produced non-finite output on interval [{t0}, {t1}] "
-                    f"(gas H2SO4 handed in = {float(yc[h2so4_idx]):.3e} molec/cm^3). This is TOMAS's "
-                    f"nucleation-rate overflow for a large H2SO4 slug -- reduce dt_couple so the "
-                    f"per-step gas H2SO4 stays below ~1e9 molec/cm^3 (see docs/CAVEATS.md, AD-3.9).")
-            tstate = tstate._replace(Nk=Nk, Mk=Mk, Gc=Gc)
-            yc = yc.at[h2so4_idx].set(mass_to_conc(float(Gc[SRTSO4]), BOXVOL_CM3, MW_H2SO4))
+            # ONE dense gas solve over the outer interval (H2SO4 accumulates, no aerosol sink); TOMAS
+            # then consumes that H2SO4 envelope in adaptive micro-steps (fine early). Final gas H2SO4 =
+            # envelope(t1) minus the cumulative TOMAS removal. This is the two-level operator split that
+            # keeps nucleation from seeing a whole interval's H2SO4 at once (docs/time-integration-plan).
+            sol = step(yc, t0, t1, args)
+            tstate, removal_kg, dt_micro, n_micro = micro_consume(
+                lambda tt: float(sol.evaluate(tt)[h2so4_idx]), t0, t1, tstate, tomas_step,
+                nuc_scale, eps, floor, cap, dt_micro)
+            micro_total += n_micro
+            yc = sol.ys[-1]
+            env_end_kg = conc_to_mass(float(yc[h2so4_idx]), BOXVOL_CM3, MW_H2SO4)
+            yc = yc.at[h2so4_idx].set(
+                mass_to_conc(max(env_end_kg - removal_kg, 0.0), BOXVOL_CM3, MW_H2SO4))
             het = het_inputs(tstate)                          # for the next interval
+        else:
+            yc = step(yc, t0, t1, args)                       # gas-only endpoint (Phase-2 path)
 
         if heating_active:
             # radiative heating -> box T (forward-Euler over the interval). The updated T feeds the

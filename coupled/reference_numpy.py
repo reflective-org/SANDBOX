@@ -47,6 +47,11 @@ def run_coupled_numpy(scenario):
     h2so4_idx = IDX["H2SO4"]
 
     nuc_scale = float(scenario.nucleation_rate_scale)    # Phase 7 knob (mirror)
+    # two-level micro-step params (mirror of the JAX driver; SAME micro_consume shared)
+    eps = float(scenario.micro_eps)
+    floor = float(scenario.micro_floor_s)
+    cap = float(scenario.micro_cap_s)
+    dt_micro = floor
     dilution_active = bool(scenario.switches.dilution)   # Phase 6 (mirror of the JAX driver)
     kdil = float(scenario.dilution_rate)
     gas_bg = y.copy()
@@ -82,25 +87,23 @@ def run_coupled_numpy(scenario):
             env = build_env(cfg, c, j_scale, j_values=jv, sulfur_chain=sulfur)
             return MECHANISM.dCdt(env, c)
 
-        sol = solve_ivp(rhs, (t0, t1), yc, method="BDF", atol=atol, rtol=1e-3, first_step=1e-10)
+        # dense_output=True so the two-level micro-loop can query the H2SO4 envelope (approach B),
+        # mirroring the JAX driver's dense diffrax solve. Without TOMAS this is just the endpoint.
+        sol = solve_ivp(rhs, (t0, t1), yc, method="BDF", atol=atol, rtol=1e-3, first_step=1e-10,
+                        dense_output=tomas_active)
         if not sol.success:
             raise RuntimeError(f"NumPy mirror failed on [{t0}, {t1}]: {sol.message}")
         yc = sol.y[:, -1]
 
         if tomas_active:
-            gas_h2so4_kg = conc_to_mass(float(yc[h2so4_idx]), BOXVOL_CM3, MW_H2SO4)
-            Gc = tstate.Gc.at[SRTSO4].set(gas_h2so4_kg)
-            Nk, Mk, Gc = tomas_step(tstate.Nk, tstate.Mk, Gc, tstate.xk, tstate.temp, tstate.pres,
-                                    tstate.boxvol, tstate.rh, tstate.alpha, float(t1 - t0),
-                                    fn_scale=nuc_scale)   # Phase-7 knob (mirror of the JAX driver)
-            if not (bool(np.all(np.isfinite(np.asarray(Nk)))) and
-                    bool(np.all(np.isfinite(np.asarray(Mk))))):
-                raise RuntimeError(
-                    f"TOMAS produced non-finite output on [{t0}, {t1}] (gas H2SO4 = "
-                    f"{float(yc[h2so4_idx]):.3e} molec/cm^3); reduce dt_couple (see AD-3.9).")
-            tstate = tstate._replace(Nk=Nk, Mk=Mk, Gc=Gc)
+            # one dense gas solve above; TOMAS consumes the H2SO4 envelope in adaptive micro-steps via
+            # the SAME shared micro_consume the JAX driver uses (identical stepping across backends).
+            tstate, removal_kg, dt_micro, _n = cd.micro_consume(
+                lambda tt: float(sol.sol(tt)[h2so4_idx]), t0, t1, tstate, tomas_step,
+                nuc_scale, eps, floor, cap, dt_micro)
             yc = yc.copy()
-            yc[h2so4_idx] = mass_to_conc(float(Gc[SRTSO4]), BOXVOL_CM3, MW_H2SO4)
+            env_end_kg = conc_to_mass(float(yc[h2so4_idx]), BOXVOL_CM3, MW_H2SO4)
+            yc[h2so4_idx] = mass_to_conc(max(env_end_kg - removal_kg, 0.0), BOXVOL_CM3, MW_H2SO4)
             het = het_inputs(tstate)
 
         if heating_active:   # mirror the JAX driver's radiative-heating -> box T update

@@ -154,20 +154,27 @@ def make_frozen_vf(opt):
     return vf
 
 
-def make_frozen_step(opt, atol=1e-6, rtol=1e-3, first_step=1e-10, max_steps=1_000_000):
+def make_frozen_step(opt, atol=1e-6, rtol=1e-3, first_step=1e-10, max_steps=1_000_000, dense=False):
     """Build ``step(y0, t0, t1, args) -> y(t1)`` for one operator-split sub-step.
 
     The integrator is RE-INITIALIZED per call (a fresh diffeqsolve on [t0,t1]) so it never steps
     across a photolysis discontinuity -- the whole point of freezing J per outer step. The term/solver
     are built once (``opt`` static) so repeated calls reuse the compiled computation.
+
+    ``dense=True``: the returned ``step`` yields the full diffrax ``sol`` (with ``sol.ys[-1]`` = y(t1)
+    AND a continuous interpolant ``sol.evaluate(t)``) instead of just y(t1). The two-level coupled
+    driver uses this to query the gas H2SO4 envelope at adaptive sub-interval (micro-step) times while
+    TOMAS consumes it, without re-solving the gas ODE per micro-step (approach B, see
+    docs/time-integration-plan.md).
     """
     term = ODETerm(make_frozen_vf(opt))
     solver = _stiff_solver()
     ctrl = PIDController(rtol=rtol, atol=atol)
+    saveat = SaveAt(t1=True, dense=True) if dense else SaveAt(t1=True)
 
     def step(y0, t0, t1, args):
         sol = diffeqsolve(term, solver, t0=t0, t1=t1, dt0=first_step, y0=jnp.asarray(y0),
-                          args=args, stepsize_controller=ctrl, saveat=SaveAt(t1=True),
+                          args=args, stepsize_controller=ctrl, saveat=saveat,
                           max_steps=max_steps)
-        return sol.ys[-1]
+        return sol if dense else sol.ys[-1]
     return step

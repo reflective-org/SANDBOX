@@ -35,13 +35,17 @@ class Switches:
     # sulfur chain is gated by photolysis mode (Env.sulfur_chain = photolysis != "reference").
     # Phase 2.2 makes THIS switch the single source of truth for the gate; until then it is
     # descriptive only. Keep photolysis mode and this flag consistent to avoid confusion.
-    sulfur: bool = True            # gas-phase SO2->SO3->H2SO4 chain (Phase 1; active in non-reference)
-    nucleation: bool = False       # TOMAS (Phase 3)
-    condensation: bool = False     # TOMAS (Phase 3)
-    coagulation: bool = False      # TOMAS (Phase 3)
-    aerosol_to_j: bool = False     # aerosol optics -> TUV-x radiation (Phase 4)
-    heating_to_t: bool = False     # radiative heating -> box temperature (Phase 5)
-    dilution: bool = False         # dilution + background entrainment (Phase 6)
+    # All processes ON by default: the coupled system is the full physics. Individual processes are
+    # turned OFF (or scaled via the sensitivity knobs) only for deliberate sub-case / sensitivity runs.
+    # (The nucleation "runaway" that once motivated defaults-off was a coarse-outer-step operator-split
+    # artifact; the two-level adaptive micro-stepping driver resolves it, so full physics is safe.)
+    sulfur: bool = True            # gas-phase SO2->SO3->H2SO4 chain (Phase 1)
+    nucleation: bool = True        # TOMAS (Phase 3)
+    condensation: bool = True      # TOMAS (Phase 3)
+    coagulation: bool = True       # TOMAS (Phase 3)
+    aerosol_to_j: bool = True      # aerosol optics -> TUV-x radiation (Phase 4)
+    heating_to_t: bool = True      # radiative heating -> box temperature (Phase 5)
+    dilution: bool = True          # dilution + background entrainment (Phase 6)
 
     def validate(self) -> None:
         on = {name for name, val in asdict(self).items() if val}
@@ -71,7 +75,20 @@ class CoupledScenario:
     # --- run schedule ---
     days: int = 10            # number of days to simulate
     DT: float = 600.0         # output time step (s)
-    dt_couple: float = 120.0  # operator-split outer coupling step (s); drives the J recompute
+    # Outer radiation/coupling step (s): the cadence at which the (expensive) TUV-x J and aerosol
+    # optics are recomputed and frozen. Within each outer step the gas<->TOMAS<->dilution coupling is
+    # resolved on an ADAPTIVE fine->coarse micro-step (see micro_* below); the outer step no longer
+    # needs to be tiny. Exposed as ``dt_rad`` (alias property). 600 s default; 300 s also fine.
+    dt_couple: float = 600.0
+
+    # --- adaptive inner (micro) time step for the gas<->TOMAS handoff (two-level integration) ---
+    # Each micro-step is chosen so the fractional change in gaseous H2SO4 and in aerosol number N stays
+    # below ``micro_eps``, bounded to [``micro_floor_s``, ``micro_cap_s``]. It auto-shrinks where
+    # nucleation is fast (burst / high nucleation_rate_scale) and relaxes when slow -- no per-scenario
+    # tuning. Hitting the floor while still over eps raises (never silently under-resolve).
+    micro_eps: float = 0.1
+    micro_floor_s: float = 1.0e-4
+    micro_cap_s: float = 20.0
 
     # --- photolysis ---
     photolysis: str = "tuvx"
@@ -104,6 +121,11 @@ class CoupledScenario:
     # --- initial gas composition (pptv); species omitted start at 0 ---
     concentrations: dict = field(default_factory=dict)
 
+    @property
+    def dt_rad(self) -> float:
+        """Alias for ``dt_couple`` -- the outer radiation/coupling step (J recompute cadence)."""
+        return self.dt_couple
+
     def __post_init__(self):
         if isinstance(self.switches, dict):           # allow a plain dict from YAML/JSON
             valid = set(Switches.__dataclass_fields__)
@@ -115,6 +137,13 @@ class CoupledScenario:
             raise ValueError(f"photolysis must be one of {PHOTOLYSIS_MODES}, got {self.photolysis!r}")
         if self.dt_couple <= 0:
             raise ValueError(f"dt_couple must be > 0, got {self.dt_couple}")
+        if not (0.0 < self.micro_eps <= 1.0):
+            raise ValueError(f"micro_eps must be in (0, 1], got {self.micro_eps}")
+        if self.micro_floor_s <= 0.0:
+            raise ValueError(f"micro_floor_s must be > 0, got {self.micro_floor_s}")
+        if self.micro_cap_s < self.micro_floor_s:
+            raise ValueError(f"micro_cap_s ({self.micro_cap_s}) must be >= micro_floor_s "
+                             f"({self.micro_floor_s})")
         if self.days < 1:
             raise ValueError(f"days must be >= 1, got {self.days}")
         band = tuple(float(v) for v in self.aerosol_band_km)   # YAML/JSON give a list
