@@ -52,8 +52,14 @@ surface-area-weighted mean is the physically correct single representative for t
 exactly the standard aerosol *effective radius*. Wet (deliquesced) particle, matching the old 1-µm
 value. **Why revised from number-weighted:** when nucleation is on, the number-weighted mean collapses
 toward the ~1 nm nucleation mode — unphysical for uptake AND numerically fatal: the f-factor
-`coth(r/l) − l/r` becomes `inf − inf → NaN` when r ≪ the reacto-diffusive length l. r_eff stays in the
-accumulation-mode range (~0.05-0.5 µm) for realistic distributions, keeping the f-factor well-posed.
+`coth(r/l) − l/r` becomes `inf − inf → NaN` when r ≪ the reacto-diffusive length l. r_eff is far more
+robust than the number-weighted mean and the f-factor stays finite.
+**Correction (Lens-3):** the earlier claim that r_eff "stays in ~0.05-0.5 µm for realistic
+distributions" is FALSE under the shipped `validate_phase3` config: TOMAS's Ricco-Dunne nucleation
+produces a runaway burst (final total N ≈ 1.6e10 cm⁻³, implausibly high vs real stratosphere ~1-100
+cm⁻³) that dominates BOTH number AND surface area, so r_eff collapses to ~5 nm (0.005 µm). The f-factor
+is still finite at 5 nm (survivable), but surface-area weighting does not "protect" against the fine
+mode when nucleation dominates the surface area itself. See the OPEN runaway-nucleation item.
 Empty distribution → 0.1e-4 cm fallback.
 
 ### AD-3.9 — dt_couple / gas-H2SO4 stability limit + loud NaN guard
@@ -106,25 +112,28 @@ actually run, ~lines 246-308; the numpy path at 192-211 is deprecated) — conde
 H2SO4 mass (`Gc[SRTSO4]`, MW 98) into `Mk[:,SRTSO4]` **1:1** with no MW conversion, and normal-branch
 nucleation depletes gas by exactly the SO4 mass it adds. So particulate sulfur (kg) equals the H2SO4
 mass condensed/nucleated; the weight-percent is `100·M_SO4/(M_SO4+M_H2O)` with `M_SO4` taken directly,
-and the budget converts particulate mass → molec/cm³ with MW=98. Caveat (documented, edge case only):
-the nucleation *clamp* branch (gas exhausted) applies a 96/98 factor, a tiny non-conservation that
-only fires when gas H2SO4 is fully depleted within a step — flagged in CAVEATS.md.
+and the budget converts particulate mass → molec/cm³ with MW=98. **Clamp caveat (corrected by Lens-3 —
+NOT edge-case-only):** the nucleation *clamp* branch (gas exhausted) applies a 96/98 factor; in the
+coupled stratospheric regime the gas H2SO4 is fully depleted **every daytime step**, so the clamp fires
+routinely and is the dominant sulfur-drift term (see AD-3.10). Flagged in CAVEATS.md.
 
-### AD-3.10 — TOMAS internal sulfur non-conservation (~1%/day) — coupling handoff is exact
+### AD-3.10 — Coupled-run sulfur drift = the 96/98 nucleation-clamp firing every daytime step (CORRECTED by Lens-3)
 **Q:** The coupled run does not conserve total (gas+particulate) sulfur to machine precision. Bug, or
 inherent?
-**Finding:** **Inherent to the tomas-jax build.** Measured standalone TOMAS (no gas coupling), injecting
-H2SO4 and stepping nucleation+condensation+coagulation, drifts **−1.3e-2 over 40 steps** in its own
-`Gc[SRTSO4]` + `sum(Mk[:,SRTSO4])`. So TOMAS's mass-number-fixing (MNFIX), the PPM condensation
-redistribution, and nucleation cluster accounting are not strictly sulfur-conserving.
-**Decision:** (a) prove the **coupling layer is exact** — with a perfectly-conserving stub microphysics
-(moves a fixed fraction of `Gc[SRTSO4]` into `Mk[:,SRTSO4]`), the driver conserves total sulfur to
-~1e-12, and with an identity stub the gas-phase budget is untouched — so the handoff / write-back /
-particulate accounting introduce NO spurious source or sink; (b) for the REAL TOMAS run, assert the
-drift is bounded at TOMAS's own level (test tolerance ~2e-2/day) and that the physics is right (aerosol
-is the H2SO4 sink, SA grows). **FLAGGED FOR USER** (see OPEN below) and tracked in DEFERRED.md:
-investigating/fixing tomas-jax's microphysics mass conservation is a tomas-jax change, out of scope for
-the coupling layer.
+**Finding (corrected by the physical-conservation verification agent):** the coupled 1-day drift is
+**−4.3e-4**, and it is **TOMAS-internal but NOT generic MNFIX drift**. The real mechanism, traced
+per step: condensation+nucleation consume the gas H2SO4 to **exactly 0 every daytime step**, which
+triggers the **nucleation *clamp* branch** (`tomas_jax/physics/nucleation.py:521-539`) — it depletes
+gas by `gc_so4` but deposits only `gc_so4·(96/98)` into the aerosol, a **−2.04% loss on the clamped
+fraction every daytime step**. At the coupled run's actual H2SO4 scale (~1e6/step) standalone TOMAS
+otherwise conserves to ~2e-6; the earlier "~1.3e-2 over 40 steps" figure only reproduces at an
+artificially large ~1e8/step slug. So the clamp (AD-3.8) is **not an edge case here — full depletion
+is the normal operating regime**, and it is the dominant drift term.
+**Decision:** (a) the **coupling layer is proven exact** — a perfectly-conserving stub conserves total
+sulfur to ~1e-12 and drop/double-count stubs fail loudly (verified by Lens-2); (b) accept the clamp
+loss as a **tomas-jax property** (fixing the 96/98 clamp is a tomas-jax change, DEFERRED), assert the
+real-run drift is bounded (<2e-2), and correct AD-3.8/CAVEATS to state the clamp fires every daytime
+step. **FLAGGED FOR USER** (see OPEN).
 
 ### AD-3.11 — aerosol_props must use the SAME water scheme as the TOMAS step (bug fix from Lens-1)
 **Q:** The diagnostics (`aerosol_props._wet_diameters_m`) recompute equilibrium water to get wet SA /
@@ -151,3 +160,15 @@ _(further Phase-3 decisions appended as they arise)_
   or should we (a) investigate/fix mass conservation in tomas-jax (MNFIX / PPM condensation / nucleation
   cluster accounting), or (b) pin a different tomas-jax branch/commit with better conservation? I have
   proceeded treating it as a documented caveat (CAVEATS.md) + DEFERRED item so Phases 4-7 can continue.
+
+- **[Phase 3] Runaway homogeneous nucleation (N ≈ 1.6e10 cm⁻³).** (Lens-3, AD-3.4) With nucleation on,
+  TOMAS's Ricco-Dunne scheme produces an implausibly large number of sub-10 nm particles at these
+  stratospheric conditions (real background is ~1-100 cm⁻³), collapsing the effective radius to ~5 nm
+  and driving the every-step 96/98 clamp loss (AD-3.10). This is likely an artifact of the operator
+  split dumping a whole interval's H2SO4 into one nucleation step and/or nucleation being inappropriate
+  for a quiescent stratospheric background (where condensation onto pre-existing aerosol dominates and
+  homogeneous nucleation is rare outside fresh plumes). **Questions for you:** (a) should nucleation
+  default OFF for background stratospheric runs (condensation+coagulation only give a physical r_eff
+  ~0.1 µm)? (b) or use a much smaller dt_couple / an internal TOMAS sub-step schedule to tame the
+  burst? (c) or a different nucleation scheme? I proceeded with all three microphysics ON in the
+  validation for completeness, and documented the artifact; the coupling machinery itself is correct.

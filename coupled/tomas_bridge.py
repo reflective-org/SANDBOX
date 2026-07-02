@@ -39,6 +39,7 @@ import background_aerosol_distribution as _bad      # noqa: E402  (Marianna dist
 
 # --- exposed constants the driver/props need (single source) ---
 SRTSO4 = tcfg.SRTSO4          # sulfate index in Gc (gaseous H2SO4 handoff slot) and Mk
+SRTSO2 = tcfg.SRTSO2          # SO2 index in the gas array Gc (TOMAS's own SO2 chem is OFF here)
 SRTH2O = tcfg.SRTH2O          # aerosol water index in Mk
 NBINS = tcfg.NBINS
 MW_H2SO4 = tcfg.MW_H2SO4      # g/mol (98.0), for the units bridge
