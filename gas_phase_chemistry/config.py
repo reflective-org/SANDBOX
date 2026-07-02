@@ -97,7 +97,14 @@ class ModelConfig:
     day_of_year: float = 80.0
     start_utc_hour: float = 6.0  # UTC hour at model time t = 0
 
+    #: photolysis modes understood by the model (validated so a typo can't silently mis-gate,
+    #: e.g. quietly enabling the non-reference sulfur chain -- see reactions.build_env).
+    PHOTOLYSIS_MODES = ("reference", "sza", "tuvx")
+
     def __post_init__(self) -> None:
         # Match MATLAB: M is derived from P and T unless explicitly provided.
         if self.M is None:
             self.M = air_number_density(self.P, self.T)
+        if self.photolysis not in self.PHOTOLYSIS_MODES:
+            raise ValueError(
+                f"photolysis must be one of {self.PHOTOLYSIS_MODES}, got {self.photolysis!r}")

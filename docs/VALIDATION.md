@@ -22,4 +22,23 @@ at each phase gate.
   k0(300)), but the code used `troe298` (298 K). Fixed on `fix/termolecular-ref-temp-300k` (see that PR).
 
 ## Phase gates (3-agent verification)
-_(to be appended per phase — lens verdicts + evidence)_
+
+### Phase 1 — gas SO2→SO3→H2SO4 (2026-07-02) — **PASS**
+Three independent agents, each working from primary sources (JPL 19-5 PDF / code / tests), not from a
+summary:
+- **Lens 1 — correctness vs JPL 19-5: PASS.** Pulled the Table 2-1 header verbatim
+  (`k0(T)=k0_298 (T/298)^-n`) → termolecular reference is **298 K** (settling the 298↔300 dispute);
+  SO2+OH = I4+I92 net; SO2+HO2 = I34 upper-limit with products correctly flagged as an assumption;
+  SO3+H2O = I79, with the `[H2O]^2` reconstruction shown. No discrepancies.
+- **Lens 2 — tests + NumPy↔JAX parity: PASS (with noted gaps, now addressed).** 92/92 tests pass;
+  coefficient/order parity exact (max rel diff 2e-16); reference-mode faithfulness proven (species
+  1–34 tendencies unchanged, chain coeffs exactly 0). Gaps it found → fixed: added
+  `test_so2_to_so3_production_rate_matches_k68` and `test_chain_on_numpy_jax_parity` (chain-ON dC/dt
+  parity). Remaining item logged: JAX gate is hardcoded per-driver (Phase 2 prerequisite → DEFERRED.md).
+- **Lens 3 — physical/conservation + assumptions: PASS.** Sulfur conservation bit-exact (crafted
+  state) and machine-precision end-to-end (drift 6.6e-16); units correct; gate has no double-counting.
+  Concerns fixed: stale "300 K" row in the crosscheck doc; clarified the SO2+HO2 ~0.02% metric; added
+  `ModelConfig.photolysis` enum validation (no silent mis-gate on a typo).
+
+End-to-end run (`sulfur_budget.py`, 10-day tuvx, model_input): H2SO4 0 → ~4.8e4 pptv, SO2 −5.0%,
+total-sulfur drift +3.5e-15. Plots in `gas_phase_chemistry/sulfur_budget/`.

@@ -8,7 +8,7 @@ handbook-confirmed. Line numbers below refer to the `pdftotext -layout` extracti
 
 | # | Reaction | JPL 19-5 rate | JPL ref | Notes |
 |---|---|---|---|---|
-| 1 | **SO2 + OH + M → HOSO2** | k0(300)=2.9e-31, n=4.1; k∞(300)=1.7e-12, m=−0.2 (termolecular, **300 K** ref) | Table 2-1, **I4** | matches current `_k68` coefficients |
+| 1 | **SO2 + OH + M → HOSO2** | k0(298)=2.9e-31, n=4.1; k∞(298)=1.7e-12, m=−0.2 (termolecular, **298 K** ref) | Table 2-1, **I4** | matches current `_k68` coefficients |
 | 2 | **HOSO2 + O2 → HO2 + SO3** | k = 1.3e-12·exp(−330/T); k(298)=4.3e-13 | **I92** | fast; the step that turns HOSO2 into HO2+SO3 |
 | 3 | **SO2 + HO2 → products** | **< 1.0e-18** (295–300 K), upper limit | **I34** | **JPL gives NO product-channel recommendation** |
 | 4 | **SO3 + 2 H2O → H2SO4 (+H2O)** | kI = 8.5e-41·exp(+6540/T)·[H2O]² s⁻¹ ([H2O] in molec/cm³) | **I79** | product confirmed to be H2SO4; 2nd order in H2O |
@@ -26,7 +26,8 @@ O3+SO2→SO3+O2 (<2e-22, I11); ClO+SO2→Cl+SO3 (<4e-18, I59).
   (not merely Lovejoy 1996 — I79 fits Lovejoy + Jayne). Produces H2SO4.
 - **`SO2 + HO2 → SO3 + OH`** — rate `1e-18` is the **JPL upper limit** (I34). ⚠️ **The SO3+OH product
   channel is our assumption; JPL explicitly declines to recommend products.** Recorded in
-  `ASSUMPTIONS.md`. (Effect on SO2 is ~0.02%, so the product choice is immaterial to results.)
+  `ASSUMPTIONS.md`. (Removing this reaction changes final SO2 by ~0.02% over a 10-day run; its
+  instantaneous share of SO2 loss is ~0.001%. Either way the product choice is immaterial.)
 
 ## Reference temperature: 298 K (BOTH bimolecular and termolecular)
 

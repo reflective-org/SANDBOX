@@ -24,9 +24,10 @@ def test_active_indices_align_with_mechanism():
 
 
 def _state_and_meta():
-    rows = list(csv.DictReader(open(os.path.join(FIXDIR, "rhs.csv"))))
-    meta = {r[0]: r[1] for r in csv.reader(open(os.path.join(FIXDIR, "rhs_meta.csv")))
-            if r and r[0] != "key"}
+    with open(os.path.join(FIXDIR, "rhs.csv")) as f:
+        rows = list(csv.DictReader(f))
+    with open(os.path.join(FIXDIR, "rhs_meta.csv")) as f:
+        meta = {r[0]: r[1] for r in csv.reader(f) if r and r[0] != "key"}
     by = {r["species"]: float(r["x"]) for r in rows}
     state = np.array([by[n] for n in SPECIES])
     return state, meta
