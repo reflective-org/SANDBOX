@@ -29,11 +29,16 @@ def photolysis_source_report(cfg, t):
     TUV-x J, the O3 O(1D)-channel J (which feeds BOTH O3 channels via the opt water-split), or a
     reference ``j45*j_scale`` fallback -- and flag any covered reaction whose J is NaN (which the
     JAX/NumPy paths would otherwise swallow into the fallback). Non-tuvx modes use j45*j_scale.
+
+    This is a single-instant audit (the sunniest time in the run), not a per-step scan, so a
+    *transient* NaN J at other times could be missed; a port/coverage bug producing NaN would be
+    persistent and caught here.
     """
     photo = [r.equation for r in MECHANISM.active if r.kind == "photo"]
     if cfg.photolysis != "tuvx":
         return [f"photolysis J source ({cfg.photolysis}): all {len(photo)} reactions use j45*j_scale"], []
 
+    # imported locally (not at module top) so tests can monkeypatch j_values_for without a real solve
     from tuvx_photolysis_adapter import j_values_for
     # pick the sunniest model time in the run so a daytime (and any NaN) J is sampled
     sample_t = max(
