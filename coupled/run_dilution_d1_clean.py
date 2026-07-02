@@ -57,8 +57,9 @@ def main():
     sc = _scenario()
     print("Running Dilution-1 clean-stratosphere (20 km, 30N, summer, 10 d, full coupling)...")
     try:
-        t, x, aero, sd, st_final = run_coupled(sc, return_aerosol=True, return_size_dist=True,
-                                               return_state=True)
+        # run_coupled appends extras in order: aerosol, state, size_dist
+        t, x, aero, st_final, sd = run_coupled(sc, return_aerosol=True, return_state=True,
+                                               return_size_dist=True)
     except RuntimeError as e:
         print(f"RUN STOPPED (reported, not swallowed): {e}")
         raise
