@@ -83,6 +83,38 @@ def _calculator(config_path: str, data_root: str):
     return PhotolysisCalculator.from_tuvx_json(config_path, data_root=data_root)
 
 
+def compute_box_heating(cfg, t_seconds, aerosol_props=None):
+    """Photochemical-heating inputs at the box altitude for one solar time (Phase 5).
+
+    Returns ``(heating_per_absorber {reaction: J s-1 per molec}, box_actinic_flux [n_wl],
+    wavelength_centers_nm)`` interpolated to the box altitude, or ``None`` at night (sza>=90).
+    One radiation solve; ``aerosol_props`` (if given) is injected and cleared (try/finally).
+    """
+    import numpy as np
+    from solar import solar_zenith_angle
+
+    total_hours = cfg.start_utc_hour + t_seconds / 3600.0
+    day_of_year = cfg.day_of_year + total_hours / 24.0
+    sza = solar_zenith_angle(cfg.latitude, cfg.longitude, day_of_year, total_hours % 24.0)
+    if sza >= 90.0:
+        return None
+    config_path = str(getattr(cfg, "tuvx_config", _DEFAULT_CONFIG))
+    data_root = str(getattr(cfg, "tuvx_data_root", _TUVX_ROOT))
+    calc = _calculator(config_path, data_root)
+    altitude = _box_altitude_km(float(cfg.P), data_root)
+    esd = _earth_sun_distance(day_of_year)
+    calc.aerosol_props = aerosol_props
+    try:
+        heating, flux = calc.heating_and_actinic_flux(sza, esd)
+    finally:
+        calc.aerosol_props = None
+    h_box = {n: float(np.interp(altitude, calc.height_edges_km, hr)) for n, hr in heating.items()}
+    flux_box = np.array([np.interp(altitude, calc.height_edges_km, flux[:, k])
+                         for k in range(flux.shape[1])])
+    wl = np.asarray(calc.wl_edges, dtype=float)
+    return h_box, flux_box, 0.5 * (wl[:-1] + wl[1:])
+
+
 def calculator_grids(cfg):
     """(wavelength_centers_nm, height_edges_km) of the port's cached calculator, for aerosol optics."""
     import numpy as np
