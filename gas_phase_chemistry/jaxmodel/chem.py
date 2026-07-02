@@ -38,8 +38,13 @@ def _reaction_rates(conc, coeffs):
     return jnp.stack(terms)
 
 
-def build_params(T, M, P, SA, WTR, Yn2o5, conc, j_scale):
-    """Assemble the rate-function parameter dict, computing aerosol gammas from ``conc``."""
+def build_params(T, M, P, SA, WTR, Yn2o5, conc, j_scale, sulfur_chain=0.0):
+    """Assemble the rate-function parameter dict, computing aerosol gammas from ``conc``.
+
+    ``sulfur_chain`` (0.0/1.0) gates the gas-phase SO2->SO3->H2SO4 chain: 0 = reference mode
+    (legacy SO2 reactions, sulfur dropped), 1 = non-reference (the chain). Default 0 keeps the
+    JAX model reference-faithful and matches the NumPy default (photolysis="reference").
+    """
     HCl_ppb = conc[IDX["HCl"]] / M * 1e9
     ClONO2_ppb = conc[IDX["ClONO2"]] / M * 1e9
     H2O_ppm = conc[IDX["H2O"]] / M * 1e6
@@ -48,6 +53,7 @@ def build_params(T, M, P, SA, WTR, Yn2o5, conc, j_scale):
         T, P, h2so4wp, a_W, HCl_ppb, ClONO2_ppb, 0.1e-4, 0)
     return dict(T=T, M=M, P=P, SA=SA, WTR=WTR, j_scale=j_scale,
                 H2O=conc[IDX["H2O"]],   # for the HO2+HO2 water enhancement
+                sulfur_chain=sulfur_chain,
                 Yhocl=Yhocl, Yclnh2o=Yclnh2o, Yclnhcl=Yclnhcl,
                 Yn2o5=Yn2o5, Ybrono2=0.8)
 

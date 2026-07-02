@@ -11,9 +11,9 @@ In code: `reactions.BY_RNUMBER["R26"]` or `reactions.BY_KLABEL["k22"]`; list eve
 | R# | k-label | type | reaction | note |
 |----|---------|------|----------|------|
 | R1 | k1 | gas | ClO + NO -> NO2 + Cl | JPL 19-5 (F130) |
-| R2 | k2 | gas | ClO + ClO + M -> ClOOCl + M | JPL 19-5 (F10), 298 K ref |
+| R2 | k2 | gas | ClO + ClO + M -> ClOOCl + M | JPL 19-5 (F10), 300 K ref |
 | R3 | k3 | gas | ClOOCl + M -> ClO + ClO + M | JPL 19-5 (k2 / Keq, Table 3-1 #20) |
-| R4 | k4 | gas | ClO + NO2 + M -> ClONO2 + M | JPL 19-5 (F8), 298 K ref |
+| R4 | k4 | gas | ClO + NO2 + M -> ClONO2 + M | JPL 19-5 (F8), 300 K ref |
 | R5 | k5 | gas | ClONO2 + M -> ClO + NO2 + M | Fahey (not in JPL; kept) |
 | R6 | k6 | gas | Cl + O3 -> ClO + O2 | JPL 19-5 (F68) |
 | R7 | k7 | gas | Cl + CH4 -> HCl + CH3 | JPL 19-5 (F75) |
@@ -34,21 +34,21 @@ In code: `reactions.BY_RNUMBER["R26"]` or `reactions.BY_KLABEL["k22"]`; list eve
 | R22 | k19 | photo | N2O5 -> NO2 + NO3 |  |
 | R23 | k20a | photo | O3 -> O2 + O | O3 photolysis (opt-dependent) |
 | R24 | k20b | photo | O3 -> O2 + O1D | O3 photolysis (opt-dependent) |
-| R25 | k21 | gas | NO2 + NO3 + M -> N2O5 + M | JPL 19-5 (C7), 298 K ref |
+| R25 | k21 | gas | NO2 + NO3 + M -> N2O5 + M | JPL 19-5 (C7), 300 K ref |
 | R26 | k22 | gas | OH + HNO3 -> H2O + NO3 | JPL 19-5 (K2), chemical-activation form |
-| R27 | k23 | gas | OH + NO2 + M -> HNO3 + M | JPL 19-5 (C4), 298 K ref |
-| R28 | k24 | gas | O + NO + M -> NO2 + M | JPL 19-5 (C1), 298 K ref |
+| R27 | k23 | gas | OH + NO2 + M -> HNO3 + M | JPL 19-5 (C4), 300 K ref |
+| R28 | k24 | gas | O + NO + M -> NO2 + M | JPL 19-5 (C1), 300 K ref |
 | R29 | k25 | gas | O + NO2 + M -> NO3 + M | JPL 19-5 (K1), association channel |
 | R30 | k26 | gas | O + NO2 -> NO + O2 | JPL 19-5 (K1), chemical-activation channel |
 | R31 | k27 | gas | NO + O3 -> NO2 + O2 | JPL 19-5 (C19) |
 | R32 | k28 | gas | NO2 + O3 -> NO3 + O2 | JPL 19-5 (C21) |
-| R33 | k29 | gas | OH + NO + M -> HONO + M | JPL 19-5 (C3), 298 K ref |
+| R33 | k29 | gas | OH + NO + M -> HONO + M | JPL 19-5 (C3), 300 K ref |
 | R34 | k30 | gas | OH + HONO -> H2O + NO2 | JPL 19-5 (C7-bimol) |
 | R35 | k31 | gas | NO + NO3 -> 2 NO2 | JPL 19-5 (C20) |
 | R36 | k32 | gas | OH + HNO4 -> H2O + NO2 + O2 | JPL 19-5 (C8) |
 | R37 | k33 | gas | HO2 + NO -> NO2 + OH | JPL 19-5 (C10), main OH prod |
-| R38 | k34 | gas | HO2 + NO2 + M -> HNO4 + M | JPL 19-5 (C6), 298 K ref |
-| R39 | k35 | gas | O + O2 + M -> O3 + M | JPL 19-5 (A1), 298 K ref |
+| R38 | k34 | gas | HO2 + NO2 + M -> HNO4 + M | JPL 19-5 (C6), 300 K ref |
+| R39 | k35 | gas | O + O2 + M -> O3 + M | JPL 19-5 (A1), 300 K ref |
 | R40 | k36 | gas | O + O3 -> 2 O2 | JPL 19-5 |
 | R41 | k37 | gas | OH + O3 -> HO2 + O2 | JPL 19-5 |
 | R42 | k38 | gas | OH + HO2 -> H2O + O2 | JPL 19-5 |
@@ -69,7 +69,7 @@ In code: `reactions.BY_RNUMBER["R26"]` or `reactions.BY_KLABEL["k22"]`; list eve
 | R57 | k53 | gas | BrO + ClO -> Br + Cl + O2 | JPL 19-5 |
 | R58 | k54 | gas | BrO + ClO -> BrCl + O2 | JPL 19-5 |
 | R59 | k55 | gas | BrO + ClO -> Br + OClO | JPL 19-5 |
-| R60 | k56 | gas | BrO + NO2 + M -> BrONO2 + M | JPL 19-5 (G2), 298 K ref |
+| R60 | k56 | gas | BrO + NO2 + M -> BrONO2 + M | JPL 19-5 (G2), 300 K ref |
 | R61 | k57a | photo | HNO4 -> NO2 + HO2 |  |
 | R62 | k57b | photo | HNO4 -> NO3 + OH |  |
 | R63 | k58 | photo | OClO -> O + ClO |  |
@@ -83,8 +83,11 @@ In code: `reactions.BY_RNUMBER["R26"]` or `reactions.BY_KLABEL["k22"]`; list eve
 | R71 | k65 | gas | Cl + C2H6 -> HCl | disabled [disabled] |
 | R72 | k66 | het | BrONO2 + H2O -> HOBr + HNO3aq | gamma fixed at 0.8 (JPL) |
 | R73 | k67 | photo | HOBr -> OH + Br |  |
-| R74 | k68 | gas | SO2 + OH -> HO2 | JPL 19-5 (I4) termolecular; product lumped to HO2 |
+| R74 | k68 | gas | SO2 + OH -> HO2 | reference-only lump (sulfur dropped); JPL 19-5 I4 |
 | R75 | k69 | gas | CH4 + OH -> HO2 | JPL 19-5 (D14, OH+CH4); product lumped to HO2 |
 | R76 | k70 | gas | HO2 + HO2 -> H2O2 | JPL 19-5 (B13): bimol + termol[M] + H2O enhancement |
 | R77 | k71 | gas | H2O2 -> 2 OH | FK: constant, not day/night gated |
-| R78 | k72 | gas | SO2 + HO2 -> | UPPER LIMIT (Graham 1979 / JPL 19-5 I34); sensitivity test needed |
+| R78 | k72 | gas | SO2 + HO2 -> | reference-only null sink; UPPER LIMIT (JPL 19-5 I34) |
+| R79 | k73 | gas | SO2 + OH -> SO3 + HO2 | net of JPL 19-5 I4 (SO2+OH+M->HOSO2, rate-limiting) + I92 (HOSO2+O2->HO2+SO3) |
+| R80 | k74 | gas | SO2 + HO2 -> SO3 + OH | JPL 19-5 I34 rate (upper limit); PRODUCTS ARE AN ASSUMPTION -- JPL recommends none |
+| R81 | k75 | gas | SO3 + H2O -> H2SO4 | JPL 19-5 I79: kI = 8.5e-41 exp(6540/T) [H2O]^2 |

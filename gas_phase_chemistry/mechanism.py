@@ -65,6 +65,9 @@ class Env:
     # Per-reaction photolysis rate constants [1/s] keyed by reaction equation. When a reaction's
     # equation is present, photo() uses this absolute J instead of j45*j_scale (the TUV-x path).
     j_values: dict | None = None
+    # Gate for the gas-phase sulfur chain (SO2->SO3->H2SO4). True in non-reference photolysis modes;
+    # in reference mode it is False so the legacy (MATLAB-faithful) SO2 reactions run instead.
+    sulfur_chain: bool = False
 
 
 # ---------------------------------------------------------------------------------------
