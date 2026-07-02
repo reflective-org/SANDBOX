@@ -77,9 +77,15 @@ class CoupledScenario:
     photolysis: str = "tuvx"
 
     # --- dilution (Phase 6) ---
-    # First-order relaxation rate [1/s] toward the initial (background) box state when
-    # switches.dilution is on (AD-6.2; default ~ 1/(10 days)). The V(t) schedule is deferred.
+    # First-order relaxation rate [1/s] toward the background when switches.dilution is on and
+    # dilution_regime is "" (constant rate; AD-6.2). Ignored when a regime is set.
     dilution_rate: float = 1.157e-6
+    # Time-varying dilution regime "" (constant) | D1 (Low Kz) | D2 | D3 | D5, from the plume
+    # volume-expansion V(t)/V0 (Schumann scaling; coupled/dilution.DILUTION_REGIMES).
+    dilution_regime: str = ""
+    # Gas species zeroed in the dilution BACKGROUND (entrained air); all others keep their initial
+    # value. Empty () => background is the full initial state (AD-6.3). Names must be valid species.
+    dilution_zero_species: tuple = ()
 
     # --- sensitivity knobs (Phase 7; free multipliers, default 1.0; for Phase-8 sweeps) ---
     nucleation_rate_scale: float = 1.0   # -> TOMAS make_step nucleation fn_scale
@@ -117,6 +123,10 @@ class CoupledScenario:
         self.aerosol_band_km = band
         if self.dilution_rate < 0.0:
             raise ValueError(f"dilution_rate must be >= 0, got {self.dilution_rate}")
+        self.dilution_zero_species = tuple(self.dilution_zero_species)   # YAML list -> tuple
+        _VALID_REGIMES = ("", "D1", "D2", "D3", "D5")
+        if self.dilution_regime not in _VALID_REGIMES:
+            raise ValueError(f"dilution_regime must be one of {_VALID_REGIMES}, got {self.dilution_regime!r}")
         if self.nucleation_rate_scale < 0.0:
             raise ValueError(f"nucleation_rate_scale must be >= 0, got {self.nucleation_rate_scale}")
         if not (0.0 < self.condensation_alpha <= 1.0):

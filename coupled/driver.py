@@ -42,7 +42,7 @@ from .tomas_bridge import (initial_tomas_state, make_microphysics_step, SRTSO4,
                            BOXVOL_CM3, MW_H2SO4)
 from .aerosol_props import het_inputs
 from . import heating as _heating
-from .dilution import dilute_gas, dilute_aerosol
+from .dilution import dilute_gas, dilute_aerosol, kdil_from_regime as dl_kdil_from_regime
 from .units import conc_to_mass, mass_to_conc
 
 from config import IDX, air_number_density                   # noqa: E402  (gas model)
@@ -92,7 +92,7 @@ def _frozen_j_values(cfg, t_mid: float, aerosol_props=None):
     return _compute_j_values(cfg, t_mid, aerosol_props=aerosol_props) if cfg.photolysis == "tuvx" else None
 
 
-def run_coupled(scenario, return_aerosol=False, return_state=False):
+def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_dist=False):
     """Integrate a CoupledScenario with operator splitting.
 
     Returns ``(t [s], states [n_t, n_species])``. With ``return_aerosol=True`` also returns a dict of
@@ -114,11 +114,21 @@ def run_coupled(scenario, return_aerosol=False, return_state=False):
     h2so4_idx = IDX["H2SO4"]
 
     nuc_scale = float(scenario.nucleation_rate_scale)   # Phase 7 knob -> TOMAS nucleation fn_scale
-    # Phase 6: dilution -> first-order relaxation toward the INITIAL box state (AD-6.3).
+    # Phase 6: dilution -> relaxation toward a background (AD-6.3). Background gas = initial state with
+    # the scenario's dilution_zero_species set to 0 (e.g. plume SO2/H2SO4 + radicals absent from clean
+    # entrained air). Rate is constant (dilution_rate) or time-varying from a regime's V(t) expansion.
     dilution_active = bool(scenario.switches.dilution)
-    kdil = float(scenario.dilution_rate)
-    gas_bg = jnp.asarray(y0)            # background gas composition = initial state
+    regime = scenario.dilution_regime
+    gas_bg = np.asarray(y0, dtype=float).copy()
+    for name in scenario.dilution_zero_species:
+        if name not in IDX:
+            raise ValueError(f"dilution_zero_species has unknown species {name!r}")
+        gas_bg[IDX[name]] = 0.0
+    gas_bg = jnp.asarray(gas_bg)
     tstate_bg = tstate                  # background aerosol = initial TomasState (immutable)
+
+    def _kdil(t0, t1):
+        return dl_kdil_from_regime(regime, t0, t1) if regime else float(scenario.dilution_rate)
 
     # Phase 4: aerosol -> photolysis. Active only with TOMAS on, tuvx photolysis, and the switch.
     aerosol_to_j = bool(scenario.switches.aerosol_to_j) and tomas_active and cfg.photolysis == "tuvx"
@@ -146,8 +156,16 @@ def run_coupled(scenario, return_aerosol=False, return_state=False):
             (het["SA"], het["radius_cm"], het["h2so4wp"], _particulate_S(tstate))
         return aero + (cfg.T,)   # current box temperature (evolves when heating_to_t is on)
 
+    def _sizedist_record():
+        # per-bin number [#/cm^3] and wet diameter [m] for the banana plot / size distributions
+        from .aerosol_props import _wet_diameters_m
+        Dpk, _ = _wet_diameters_m(tstate)
+        return np.asarray(tstate.Nk) / float(tstate.boxvol), np.asarray(Dpk)
+
     t_list, x_list = [0.0], [np.asarray(y0)]
     aero_list = [_aero_record()]
+    nk_list, dp_list = ([_sizedist_record()[0]], [_sizedist_record()[1]]) if (
+        return_size_dist and tomas_active) else (None, None)
     yc = jnp.asarray(y0)
     for t0, t1 in _outer_intervals(cfg, scenario.days, scenario.dt_couple):
         t_mid = 0.5 * (t0 + t1)
@@ -190,7 +208,8 @@ def run_coupled(scenario, return_aerosol=False, return_state=False):
             cfg.M = air_number_density(cfg.P, cfg.T)
             params["T"], params["M"] = cfg.T, cfg.M
 
-        if dilution_active:   # relax gas + aerosol toward the initial background (operator-split, last)
+        if dilution_active:   # relax gas + aerosol toward the background (operator-split, last)
+            kdil = _kdil(t0, t1)
             yc = dilute_gas(yc, gas_bg, kdil, float(t1 - t0))
             if tomas_active:
                 tstate = dilute_aerosol(tstate, tstate_bg, kdil, float(t1 - t0))
@@ -199,6 +218,10 @@ def run_coupled(scenario, return_aerosol=False, return_state=False):
         t_list.append(t1)
         x_list.append(np.asarray(yc))
         aero_list.append(_aero_record())
+        if nk_list is not None:
+            nk, dp = _sizedist_record()
+            nk_list.append(nk)
+            dp_list.append(dp)
 
     t = np.asarray(t_list)
     x = np.asarray(x_list)
@@ -209,4 +232,8 @@ def run_coupled(scenario, return_aerosol=False, return_state=False):
                     "particulate_S": a[:, 3], "T": a[:, 4]})
     if return_state:
         out.append(tstate)
+    if return_size_dist:
+        # dict with per-time per-bin number [#/cm^3] and wet diameter [m] (None if TOMAS inactive)
+        sd = None if nk_list is None else {"n_cm3": np.asarray(nk_list), "Dp_m": np.asarray(dp_list)}
+        out.append(sd)
     return tuple(out) if len(out) > 2 else (t, x)
