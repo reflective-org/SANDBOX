@@ -59,3 +59,20 @@ def test_enabling_unimplemented_switch_raises():
 def test_unknown_key_rejected():
     with pytest.raises(ValueError):
         CoupledScenario.from_dict({"not_a_field": 1})
+
+
+def test_unknown_switch_key_raises_friendly_valueerror():
+    # a typo'd switch name gives a clear ValueError, not a cryptic TypeError
+    with pytest.raises(ValueError):
+        CoupledScenario(switches={"sulfer": True})
+
+
+def test_dt_couple_must_not_exceed_DT():
+    with pytest.raises(ValueError):
+        CoupledScenario(DT=600.0, dt_couple=900.0)
+
+
+def test_DT_must_be_multiple_of_dt_couple():
+    with pytest.raises(ValueError):
+        CoupledScenario(DT=600.0, dt_couple=250.0)   # 600 / 250 is not an integer
+    CoupledScenario(DT=600.0, dt_couple=200.0)        # 600 / 200 = 3 -> ok

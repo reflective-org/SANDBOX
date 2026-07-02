@@ -31,6 +31,10 @@ _IMPLEMENTED_SWITCHES = frozenset({"sulfur"})
 class Switches:
     """Per-process on/off flags for the coupled system (see CoupledScenario)."""
 
+    # NOTE: `sulfur` is NOT yet honored by any driver (Phase 2 has no coupled driver). Today the
+    # sulfur chain is gated by photolysis mode (Env.sulfur_chain = photolysis != "reference").
+    # Phase 2.2 makes THIS switch the single source of truth for the gate; until then it is
+    # descriptive only. Keep photolysis mode and this flag consistent to avoid confusion.
     sulfur: bool = True            # gas-phase SO2->SO3->H2SO4 chain (Phase 1; active in non-reference)
     nucleation: bool = False       # TOMAS (Phase 3)
     condensation: bool = False     # TOMAS (Phase 3)
@@ -81,11 +85,20 @@ class CoupledScenario:
 
     def __post_init__(self):
         if isinstance(self.switches, dict):           # allow a plain dict from YAML/JSON
+            valid = set(Switches.__dataclass_fields__)
+            unknown = set(self.switches) - valid
+            if unknown:                                # friendly error (not a cryptic TypeError)
+                raise ValueError(f"Unknown switch(es) {sorted(unknown)}; valid: {sorted(valid)}")
             self.switches = Switches(**self.switches)
         if self.photolysis not in PHOTOLYSIS_MODES:
             raise ValueError(f"photolysis must be one of {PHOTOLYSIS_MODES}, got {self.photolysis!r}")
         if self.dt_couple <= 0:
             raise ValueError(f"dt_couple must be > 0, got {self.dt_couple}")
+        if self.dt_couple > self.DT:
+            raise ValueError(f"dt_couple ({self.dt_couple}) must be <= output step DT ({self.DT})")
+        # dt_couple drives sub-stepping within an output interval, so DT must be a whole multiple of it
+        if abs(self.DT / self.dt_couple - round(self.DT / self.dt_couple)) > 1e-9:
+            raise ValueError(f"DT ({self.DT}) must be an integer multiple of dt_couple ({self.dt_couple})")
         self.switches.validate()
 
     # ----------------------------------------------------------------------------------

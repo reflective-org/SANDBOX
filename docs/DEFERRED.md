@@ -1,5 +1,17 @@
 # Deferred / follow-ups (SANDBOX)
 
+- **Phase 2.2 — wire `switches.sulfur`** as the single source of truth for the sulfur gate (today the
+  gate is `photolysis != "reference"`; the CoupledScenario switch is descriptive only).
+- **Phase 2.4 — CoupledScenario integration debts** (from the #29 review):
+  - Validate `concentrations` species keys against `config.SPECIES` when the driver wires composition
+    (currently a typo'd species is silently accepted — the exact silent-assumption we want to avoid).
+  - Dedupe `PHOTOLYSIS_MODES` (defined in both `coupled/coupled_scenario.py` and
+    `gas_phase_chemistry/config.py`) to one source of truth once the import lands.
+  - Single `CoupledScenario -> ModelConfig` mapping so the duplicated fields (T/P/SA/WTR/Yn2o5/opt/
+    lat/lon/...) can't drift.
+  - Reconcile the two `conftest.py` `sys.path` insertions when `coupled/` imports `gas_phase_chemistry`
+    (make `jaxmodel` importable as a package rather than replicating the path hack — see packaging note).
+
 - **Phase 2 prerequisite — make the JAX sulfur gate data-driven.** The NumPy gate is derived from
   data (`Env.sulfur_chain = cfg.photolysis != "reference"`), but the JAX gate is hardcoded per driver
   (`make_vector_field`→0.0, `make_sza_vector_field`→1.0, `build_params` default 0.0). They agree today

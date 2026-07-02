@@ -15,7 +15,11 @@ between the two models. They mirror ``tomas-jax``'s ``molec_cm3_to_kg_gridcell``
 
 from __future__ import annotations
 
-#: Avogadro constant [molecules / mol] (CODATA / TOMAS value).
+#: Avogadro constant [molecules / mol]. CODATA value, chosen to MATCH TOMAS's constant so the
+#: gas<->aerosol bridge is self-consistent with the model it feeds. NOTE (deliberate seam mismatch):
+#: the gas-phase chemistry uses a rounded 6.02e23 (mechanism.khet, config.air_number_density), so
+#: molecule<->mole conversions differ ~0.036% between the two models. This is a conscious choice
+#: (bridge matches TOMAS), not drift; revisit if the gas model is ever unified to CODATA.
 AVOGADRO = 6.02214076e23
 
 
