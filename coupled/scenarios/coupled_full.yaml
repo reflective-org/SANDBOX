@@ -1,0 +1,69 @@
+# =====================================================================================
+# SANDBOX single input -- FULL coupling (Phase 7). One file drives the whole coupled box:
+# gas chemistry + TUV-x photolysis + TOMAS microphysics + aerosol->photolysis + heating->T
+# + dilution, with per-process switches and the Phase-8 sensitivity knobs.
+#   Load: CoupledScenario.load("coupled/scenarios/coupled_full.yaml")
+#   Run:  from coupled.driver import run_coupled; run_coupled(CoupledScenario.load(...))
+#
+# NOTE on stability: with nucleation ON, TOMAS can produce a runaway fine mode and, combined with
+# aerosol_to_j, stress the stiff gas solver (see docs/CAVEATS.md, AD-3.9/AD-4.2/runaway-nucleation).
+# For a robust demonstration run, keep dt_couple small OR run condensation+coagulation without
+# nucleation. This example lists every knob; tune per study.
+# =====================================================================================
+
+# --- environment ---
+T:      210        # temperature (K)
+P:      68         # pressure (mbar)
+SA:     2          # prescribed surface area (used only when TOMAS microphysics is OFF)
+WTR:    5          # water vapour (ppm)
+Yn2o5:  0.1        # N2O5 + H2O uptake coefficient
+opt:    1          # O3-photolysis mode
+
+# --- location & date ---
+latitude:        0.0
+longitude:       0.0
+day_of_year:     80
+start_utc_hour:  6.0
+
+# --- run schedule ---
+days:       2
+DT:         600     # output step (s)
+dt_couple:  600     # operator-split outer step (s); keep small when TOMAS is active
+
+# --- photolysis: reference | sza | tuvx (aerosol->J and heating need tuvx) ---
+photolysis: tuvx
+
+# --- dilution (Phase 6) ---
+dilution_rate: 1.157e-6      # 1/s  (~1/(10 days)) relaxation toward the initial background
+
+# --- aerosol -> photolysis (Phase 4) ---
+aerosol_band_km: [15.0, 25.0]   # stratospheric slab the box aerosol fills in the RT column
+
+# --- sensitivity knobs (Phase 7; free multipliers, default 1.0) ---
+nucleation_rate_scale: 1.0   # -> TOMAS nucleation fn_scale
+condensation_alpha:    1.0   # -> Fuchs accommodation coefficient (0,1]
+coag_kernel_scale:     1.0   # NOT wired yet (must stay 1.0)
+
+# --- per-process switches (all implemented as of Phase 6) ---
+switches:
+  sulfur:        true    # gas SO2 -> SO3 -> H2SO4
+  nucleation:    false   # TOMAS new-particle formation (see stability note above)
+  condensation:  true    # TOMAS H2SO4 condensation
+  coagulation:   true    # TOMAS coagulation
+  aerosol_to_j:  true    # aerosol optics -> photolysis J
+  heating_to_t:  false   # radiative heating -> box T (SW-only; no LW cooling -- AD-5.4)
+  dilution:      true    # dilution + background relaxation
+
+# --- initial gas composition (pptv); omitted species start at 0. H2O is set from WTR. ---
+concentrations:
+  O2:      2.1e11
+  O3:      1.18e6
+  SO2:     9.5e5
+  OH:      0.5
+  HO2:     3.0
+  'NO':    450.0      # quoted: bare NO is YAML false
+  NO2:     450.0
+  HCl:     777.0      # required -- gammas divide by zero at HCl=0
+  ClONO2:  127.0
+  HNO3:    2000.0
+  ClO:     10.0
