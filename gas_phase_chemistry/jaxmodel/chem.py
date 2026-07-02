@@ -26,6 +26,12 @@ ACTIVE_INDICES = [i for i, r in enumerate(REACTIONS) if r.active]
 # Rate-law (species index, power) for each active reaction, in column order.
 RATE_LAW = [rxn._rate_idx for rxn in MECHANISM.active]
 
+# Static boolean mask of which active reactions are photolysis. Used to apply a frozen photolysis
+# override by POSITION (structural), so the override's values array carries only J -- a NaN J at a
+# covered photolysis position then PROPAGATES to the output (surfacing a bad upstream J) instead of
+# being silently swallowed. (Do not overload NaN with "not a photolysis reaction".)
+PHOTO_MASK = jnp.array([r.kind == "photo" for r in MECHANISM.active])
+
 
 def _reaction_rates(conc, coeffs):
     """Reaction-rate vector: coefficient * product(conc**power) over rate-law species."""
@@ -58,8 +64,18 @@ def build_params(T, M, P, SA, WTR, Yn2o5, conc, j_scale, sulfur_chain=0.0):
                 Yn2o5=Yn2o5, Ybrono2=0.8)
 
 
-def dCdt(conc, p, opt):
-    """dC/dt (length-34) for state ``conc`` given parameter dict ``p`` and static ``opt``."""
+def dCdt(conc, p, opt, photo_override=None):
+    """dC/dt for state ``conc`` given parameter dict ``p`` and static ``opt``.
+
+    ``photo_override`` (optional): a length-``len(active)`` array of **frozen absolute photolysis
+    coefficients** from the TUV-x port (``reactions.photolysis_coeffs``). When given, the photolysis
+    reactions (selected by the static ``PHOTO_MASK``, NOT by NaN) use these absolute-J coefficients
+    instead of the built-in ``j45*j_scale`` path -- this is how the JAX backend runs
+    ``photolysis="tuvx"``. Non-photolysis entries of the override are ignored (masked out); a NaN J at
+    a covered photolysis position propagates to the output rather than being swallowed.
+    """
     coeffs_all = all_coefficients(p, opt)
-    coeffs = [coeffs_all[i] for i in ACTIVE_INDICES]
+    coeffs = jnp.stack([coeffs_all[i] for i in ACTIVE_INDICES])
+    if photo_override is not None:
+        coeffs = jnp.where(PHOTO_MASK, photo_override, coeffs)
     return S_JNP @ _reaction_rates(conc, coeffs)

@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
+
 from aerosol import h2so4wp_at
 from config import IDX
 from gammas import hetgammas_jpl00
@@ -308,6 +310,29 @@ def sulfur_chain_active(photolysis: str) -> bool:
     CoupledScenario.switches.sulfur in Phase 2.4.)
     """
     return photolysis != "reference"
+
+
+def photolysis_coeffs(cfg, j_scale: float, j_values: dict | None = None) -> np.ndarray:
+    """Frozen photolysis rate coefficients for the JAX backend, aligned to ``MECHANISM.active``.
+
+    Returns a length-``len(MECHANISM.active)`` array: the coefficient for each ``kind=="photo"``
+    reaction (absolute TUV-x J via ``j_values``, or ``j45*j_scale`` fallback; O3 uses the O(1D)-channel
+    J with the opt-mode water split), and ``NaN`` for every non-photolysis reaction.
+
+    These are evaluated with the very same reaction ``coeff_fn``s the NumPy RHS uses, so there is one
+    implementation of the J-consumption logic (no JAX re-derivation to drift). Photolysis coefficients
+    are concentration-independent, so this array is constant over an operator-split step ("frozen J");
+    the JAX ``dCdt`` overrides its photolysis positions with it (``photo_override``).
+    """
+    # Photolysis coeff_fns (photo() and the O3 _k20a/_k20b) depend ONLY on {j_values, j_scale, WTR,
+    # opt} -- not on P/SA/gammas/H2O -- so a partial Env is sufficient. If a future photolysis rate
+    # grows a new dependency, add it here (and it likely stops being a pure "frozen" photolysis coeff).
+    env = Env(T=cfg.T, M=cfg.M, WTR=cfg.WTR, opt=cfg.opt, j_scale=j_scale, j_values=j_values)
+    out = np.full(len(MECHANISM.active), np.nan)
+    for i, rxn in enumerate(MECHANISM.active):
+        if rxn.kind == "photo":
+            out[i] = rxn.coeff_fn(env)
+    return out
 
 
 def build_env(cfg, conc, j_scale: float, j_values: dict | None = None) -> Env:
