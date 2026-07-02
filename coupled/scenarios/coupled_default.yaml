@@ -1,0 +1,61 @@
+# =====================================================================================
+# Single input for the coupled SANDBOX model (Phase 2 scaffold).
+# Everything for a run in one file: environment, location/date, schedule (incl. the
+# operator-split coupling step dt_couple), photolysis mode, per-process switches, and the
+# full initial gas composition. Load:  CoupledScenario.load("coupled/scenarios/coupled_default.yaml")
+# NOTE: switches for not-yet-implemented processes must stay false (Phase 3+).
+# =====================================================================================
+
+# --- environment ---
+T:      210        # temperature (K)
+P:      68         # pressure (mbar)
+SA:     2          # aerosol surface-area density (um^2/cm^3) -- prescribed until TOMAS (Phase 3)
+WTR:    5          # water vapour (ppm)
+Yn2o5:  0.1        # N2O5 + H2O uptake coefficient
+opt:    1          # O3-photolysis mode
+
+# --- location & date ---
+latitude:        0.0
+longitude:       0.0
+day_of_year:     80
+start_utc_hour:  6.0
+
+# --- run schedule ---
+days:       10     # days to simulate
+DT:         600    # output time step (s)
+dt_couple:  120    # operator-split outer coupling step (s); drives the J recompute
+
+# --- photolysis: reference | sza | tuvx ---
+photolysis: tuvx
+
+# --- per-process switches (only 'sulfur' is wired in Phase 2; the rest land in later phases) ---
+switches:
+  sulfur:        true    # gas-phase SO2 -> SO3 -> H2SO4 (active in non-reference photolysis)
+  nucleation:    false   # Phase 3 (TOMAS)
+  condensation:  false   # Phase 3 (TOMAS)
+  coagulation:   false   # Phase 3 (TOMAS)
+  aerosol_to_j:  false   # Phase 4 (aerosol optics -> photolysis)
+  heating_to_t:  false   # Phase 5 (radiative heating -> temperature)
+  dilution:      false   # Phase 6 (dilution + background entrainment)
+
+# --- output ---
+output_dir: coupled_output
+
+# --- initial gas composition (pptv); species omitted start at 0 ---
+concentrations:
+  O2:      2.1e+11
+  O3:      1.18e+6
+  CH4:     1.6e+6
+  H2O:     5.0e+6
+  C2H6:    200
+  SO2:     953895
+  ClO:     10
+  ClONO2:  127
+  HCl:     777
+  N2O5:    20
+  "NO":    450
+  NO2:     450
+  OH:      0.5
+  HO2:     3
+  SO3:     0
+  H2SO4:   0

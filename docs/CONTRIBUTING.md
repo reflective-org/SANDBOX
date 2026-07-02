@@ -3,6 +3,15 @@
 This project uses a strict **branch-per-task → Pull Request → review** workflow so every stage is
 trackable through GitHub PRs, issues, labels, and tags.
 
+## Coding rules
+
+- **Never bypass an error with `try/except`.** If something raises, fix the root cause — do not wrap it
+  to make code "work" or tests pass. Prefer validating/raising loudly over silent fallbacks.
+  Transparent *record-and-report* is fine (e.g. the TUV-x adapter's `skipped_reactions` surfaces what
+  it couldn't handle); silent swallowing is not.
+- **No "for simplicity" shortcuts** that force things to run at the expense of correctness — ask
+  instead. Every non-obvious modeling assumption goes in `docs/ASSUMPTIONS.md`.
+
 ## Rules
 
 - **`main` is the always-releasable integration branch. Never commit directly to `main`.**
