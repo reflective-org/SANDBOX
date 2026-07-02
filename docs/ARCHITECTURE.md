@@ -54,4 +54,19 @@ Steps 5 (heating, Phase 5) and 6 (dilution, Phase 6 -- `coupled/dilution.py`, re
 `switches.{nucleation,condensation,coagulation}` is on; else the Phase-2 gas-only path (prescribed
 `cfg.SA`) runs. Phase-3 design calls: `DECISIONS.md` + `AUTONOMOUS_DECISIONS.md` (AD-3.x).
 
+## Running the coupled model (single input)
+`CoupledScenario` is the single input (one YAML/JSON): environment, location/date, schedule
+(`dt_couple`), `photolysis`, per-process `switches`, `dilution_rate`, `aerosol_band_km`, the three
+sensitivity knobs (`nucleation_rate_scale`, `condensation_alpha`, `coag_kernel_scale`), and the initial
+gas composition. Example: `coupled/scenarios/coupled_full.yaml`.
+```python
+from coupled import CoupledScenario
+from coupled.driver import run_coupled
+sc = CoupledScenario.load("coupled/scenarios/coupled_full.yaml")
+t, x, aero = run_coupled(sc, return_aerosol=True)   # x: (n_t, 36) gas; aero: SA/radius_cm/h2so4wp/particulate_S/T
+```
+Toggling switches reproduces every sub-case (gas-only → +microphysics → +aerosol→J → +heating →
++dilution); see `coupled/validate_phase7.py`. `coupled/reference_numpy.run_coupled_numpy` is the
+SciPy-BDF mirror for cross-backend checks.
+
 See `docs/master-plan.md` for the full plan and phase breakdown.

@@ -62,6 +62,10 @@ if it's not obvious from first principles or the reference, it belongs here.
   + aerosol; **background = initial box state**; **constant** dilution_rate (V(t) deferred); box T NOT
   diluted (heating owns T).
 
+## Sensitivity knobs (Phase 7) -- see AUTONOMOUS_DECISIONS.md AD-7.2
+- **nucleation_rate_scale** -> TOMAS nucleation `fn_scale`; **condensation_alpha** -> TomasState alpha
+  (0,1]; **coag_kernel_scale** NOT wired (raises if != 1.0 -- tomas-jax has no such knob yet).
+
 ## Planned (to be recorded/confirmed as implemented)
 - **Condensation "sticking" knob = accommodation coefficient `alpha`** (TOMAS) — confirm this is the
   intended variable for the sensitivity sweep (Phase 8).

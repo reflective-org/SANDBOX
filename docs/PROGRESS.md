@@ -49,9 +49,21 @@ Phases from `docs/master-plan.md`. Status updated each phase gate.
   switches.dilution (6.2); validation (6.3). All process switches now implemented. Constant rate;
   V(t) schedule + temperature dilution deferred.
 
+- **Phase 7 — Single unified input + end-to-end — COMPLETE.** CoupledScenario is the single input
+  (already YAML/JSON); added the 3 sensitivity knobs (nucleation_rate_scale->fn_scale,
+  condensation_alpha->TomasState.alpha; coag_kernel_scale RAISES if !=1.0, not wired) (7.1); shippable
+  coupled_full.yaml + roundtrip (7.2); validate_phase7 sub-case demo (one input, progressive physics)
+  (7.3). All 7 switches implemented; end-to-end reproduces every sub-case.
+
 ## Next
-- **Phase 7** — Single unified input + end-to-end validation: one YAML drives everything; switches
-  reproduce each sub-case; the 3 sensitivity knobs (coag/nucleation/alpha) as free multipliers.
+- **Phase 8** (future) — Sensitivity sweeps over the knobs. Needs a tomas-jax coagulation-kernel-scale
+  knob for coag_kernel_scale. Not started.
+
+## OPEN for the user (see docs/AUTONOMOUS_DECISIONS.md)
+- Phase 3: TOMAS internal sulfur loss (AD-3.10) + runaway nucleation (default nucleation off?).
+- Phase 4: aerosol vertical placement / `aerosol_band_km` (AD-4.2).
+- Phase 5: heating is SW-only, NO longwave cooling / no LW aerosol heating (AD-5.4) -- biggest one.
+- Recurring: gammas divide-by-zero at HCl=0 (keep HCl>0); package gas_phase_chemistry + tomas_jax.
 
 ## Phase status
 | Phase | Title | Status |
@@ -62,5 +74,5 @@ Phases from `docs/master-plan.md`. Status updated each phase gate.
 | 4 | Aerosol→photolysis radiation | ✅ done (pending 3-agent) |
 | 5 | Radiative heating→T | ✅ done (pending 3-agent) |
 | 6 | Dilution (gas+aerosol, entrainment) | ✅ done (verified) |
-| 7 | Single unified input + validation + plots | not started |
+| 7 | Single unified input + validation + plots | ✅ done (pending 3-agent) |
 | 8 | Sensitivity sweeps (coag/nucleation/condensation) | not started |

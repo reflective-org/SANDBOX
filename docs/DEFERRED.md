@@ -48,6 +48,9 @@
 - **96/98 nucleation clamp loss (Phase 3, tomas-jax).** In the coupled regime gas H2SO4 fully depletes
   each daytime step, firing tomas-jax's nucleation clamp (`nucleation.py:521-539`) which loses 2/98 of
   the clamped mass every step (~4e-4/day total-S drift). Fix belongs in tomas-jax. See AD-3.10.
+- **Coagulation-kernel scale knob in tomas-jax (Phase 7/8).** `coag_kernel_scale` is exposed on the
+  scenario but raises unless 1.0; add a scale factor through `calc_coagulation_kernel` ->
+  `coag_euler_step` -> `make_step` to enable the Phase-8 coagulation sweep.
 - **Package tomas_jax** (like gas_phase_chemistry) to remove the `coupled/tomas_bridge` sys.path insert.
 - **Wavelength-dependent aerosol refractive index (Phase 4, AD-4.1).** The Mie table uses a fixed
   n=1.4+1e-8j; add tabulated n(λ) for sulfate (and optionally the wet-solution index) for UV fidelity.
