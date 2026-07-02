@@ -18,7 +18,7 @@ def _state():
 def test_props_physical_ranges():
     st = _state()
     sa = ap.surface_area_um2_cm3(st)
-    r = ap.mean_wet_radius_cm(st)
+    r = ap.effective_wet_radius_cm(st)
     wp = ap.h2so4_weight_pct(st)
     assert sa > 0.0                       # background distribution has surface area
     assert 1e-7 < r < 1e-2                # wet radius between ~1 nm and ~100 um, in cm
@@ -31,7 +31,7 @@ def test_het_inputs_bundle():
     d = ap.het_inputs(st)
     assert set(d) == {"SA", "radius_cm", "h2so4wp"}
     assert d["SA"] == ap.surface_area_um2_cm3(st)
-    assert d["radius_cm"] == ap.mean_wet_radius_cm(st)
+    assert d["radius_cm"] == ap.effective_wet_radius_cm(st)
     assert d["h2so4wp"] == ap.h2so4_weight_pct(st)
 
 
@@ -60,8 +60,8 @@ def test_weight_pct_is_rh_determined():
     assert ap.h2so4_weight_pct(st._replace(rh=0.5)) < wp0
 
 
-def test_number_weighted_radius_single_bin():
-    # put all number+mass in one bin -> mean wet radius equals that bin's wet radius
+def test_effective_radius_single_bin():
+    # put all number+mass in one bin -> effective radius (3rd/2nd moment) equals that bin's wet radius
     st = _state()
     k = 20
     Nk = jnp.zeros_like(st.Nk).at[k].set(st.Nk[k])
@@ -69,14 +69,14 @@ def test_number_weighted_radius_single_bin():
     one = st._replace(Nk=Nk, Mk=Mk)
     Dpk, _ = ap._wet_diameters_m(one)
     expected_cm = float(0.5 * Dpk[k]) * 100.0
-    assert abs(ap.mean_wet_radius_cm(one) - expected_cm) < 1e-12
+    assert abs(ap.effective_wet_radius_cm(one) - expected_cm) < 1e-12
 
 
 def test_empty_state_limits():
     st = _state()
     empty = st._replace(Nk=jnp.zeros_like(st.Nk), Mk=jnp.zeros_like(st.Mk))
     assert ap.surface_area_um2_cm3(empty) == 0.0
-    assert ap.mean_wet_radius_cm(empty) == 0.1e-4     # legacy 1-um fallback
+    assert ap.effective_wet_radius_cm(empty) == 0.1e-4     # legacy 1-um fallback
     assert ap.h2so4_weight_pct(empty) == 0.0
 
 

@@ -9,8 +9,18 @@ The outer grid is snapped to sunrise/sunset (so no interval straddles the termin
 night). One SZA source (gas ``solar.py``, the same the adapter uses) drives J, the day/night snap, and
 the fallback ``j_scale``. ``switches.sulfur`` drives the gas sulfur gate.
 
-TOMAS microphysics / dilution / heating are NOT here yet -- they slot into this same outer loop in
-Phases 3-6.
+TOMAS microphysics (Phase 3) slots into this same outer loop: after the gas sub-step, the gas-produced
+H2SO4 is handed to TOMAS (``Gc[SRTSO4]``), TOMAS runs nucleation/condensation/coagulation (its own SO2
+chemistry OFF) over the interval, the depleted H2SO4 is written back to the gas, and the new aerosol
+surface area / wet radius / H2SO4 weight-percent feed the NEXT interval's heterogeneous chemistry.
+TOMAS is active iff any of ``switches.{nucleation,condensation,coagulation}`` is on; otherwise the run
+is the Phase-2 gas-only path with the prescribed ``cfg.SA``. Dilution / heating: Phases 5-6.
+
+Δt_couple with TOMAS (AD-3, decision 3): a single TOMAS ``make_step`` per outer interval is used, so
+``dt_couple`` must be small enough to resolve the sub-second H2SO4 condensation transient (highest in
+the first minutes) -- pick a small ``dt_couple`` for TOMAS-active runs. The aerosol het inputs are held
+frozen over each interval (sequential operator splitting, like J), using the state from the end of the
+previous interval; the first interval uses the initial TOMAS state.
 
 Gate source: ``switches.sulfur`` is THE sulfur-gate source here. It is passed to the JAX side
 (``sulfur_chain``) and, for a NumPy comparison, must likewise be passed to ``build_env(sulfur_chain=...)``
@@ -28,7 +38,12 @@ import numpy as np
 
 # model_bridge puts gas_phase_chemistry on sys.path (interim; see DEFERRED) -- import it first.
 from .model_bridge import initial_state, to_model_config
+from .tomas_bridge import (initial_tomas_state, make_microphysics_step, SRTSO4,
+                           BOXVOL_CM3, MW_H2SO4)
+from .aerosol_props import het_inputs
+from .units import conc_to_mass, mass_to_conc
 
+from config import IDX                                       # noqa: E402  (gas model)
 from driver import _abstol                                   # noqa: E402  (gas model)
 from reactions import photolysis_coeffs                      # noqa: E402
 from solar import cos_solar_zenith, photolysis_scale         # noqa: E402  (single SZA source)
@@ -74,22 +89,72 @@ def _frozen_j_values(cfg, t_mid: float):
     return _compute_j_values(cfg, t_mid) if cfg.photolysis == "tuvx" else None
 
 
-def run_coupled(scenario):
-    """Integrate a CoupledScenario with operator splitting. Returns ``(t [s], states [n_t, n_species])``."""
+def run_coupled(scenario, return_aerosol=False):
+    """Integrate a CoupledScenario with operator splitting.
+
+    Returns ``(t [s], states [n_t, n_species])``. With ``return_aerosol=True`` also returns a dict of
+    per-output-time aerosol diagnostics (``SA`` [um^2/cm^3], ``radius_cm``, ``h2so4wp`` [wt%],
+    ``particulate_S`` [molec/cm^3 as H2SO4-equiv]); the arrays are all-NaN when TOMAS is inactive.
+    """
     cfg = to_model_config(scenario)
     y0 = initial_state(scenario)
     sulfur = float(scenario.switches.sulfur)   # single gate source (NumPy match: build_env(sulfur_chain=))
     params = dict(T=cfg.T, M=cfg.M, P=cfg.P, SA=cfg.SA, WTR=cfg.WTR, Yn2o5=cfg.Yn2o5)
     step = make_frozen_step(cfg.opt, atol=jnp.asarray(_abstol(cfg.opt)))
 
+    tomas_step = make_microphysics_step(scenario.switches)
+    tomas_active = tomas_step is not None
+    tstate = initial_tomas_state(scenario) if tomas_active else None
+    het = het_inputs(tstate) if tomas_active else None
+    h2so4_idx = IDX["H2SO4"]
+
+    def _particulate_S(state):
+        # aerosol sulfate mass (H2SO4-equiv kg, AD-3.8) -> molec/cm^3 of sulfur
+        m_so4_kg = float(jnp.sum(state.Mk[:, SRTSO4]))
+        return mass_to_conc(m_so4_kg, BOXVOL_CM3, MW_H2SO4)
+
+    def _aero_record():
+        if not tomas_active:
+            return (np.nan, np.nan, np.nan, np.nan)
+        return (het["SA"], het["radius_cm"], het["h2so4wp"], _particulate_S(tstate))
+
     t_list, x_list = [0.0], [np.asarray(y0)]
+    aero_list = [_aero_record()]
     yc = jnp.asarray(y0)
     for t0, t1 in _outer_intervals(cfg, scenario.days, scenario.dt_couple):
         t_mid = 0.5 * (t0 + t1)
         j_scale = photolysis_scale(_cosz(cfg, t_mid))        # for fallbacks; 0 at night
         override = jnp.asarray(photolysis_coeffs(cfg, j_scale, _frozen_j_values(cfg, t_mid)))
         args = {**params, "j_scale": j_scale, "sulfur_chain": sulfur, "photo_override": override}
+        if tomas_active:   # freeze this interval's aerosol het inputs (end-of-previous-interval state)
+            args = {**args, "SA": het["SA"], "particle_radius": het["radius_cm"],
+                    "h2so4wp": het["h2so4wp"]}
         yc = step(yc, t0, t1, args)
+
+        if tomas_active:
+            # handoff: gas H2SO4 [molec/cm^3] -> Gc[SRTSO4] [kg]; TOMAS depletes it; write back.
+            gas_h2so4_kg = conc_to_mass(float(yc[h2so4_idx]), BOXVOL_CM3, MW_H2SO4)
+            Gc = tstate.Gc.at[SRTSO4].set(gas_h2so4_kg)
+            Nk, Mk, Gc = tomas_step(tstate.Nk, tstate.Mk, Gc, tstate.xk, tstate.temp, tstate.pres,
+                                    tstate.boxvol, tstate.rh, tstate.alpha, float(t1 - t0))
+            if not (bool(jnp.all(jnp.isfinite(Nk))) and bool(jnp.all(jnp.isfinite(Mk)))):
+                raise RuntimeError(
+                    f"TOMAS microphysics produced non-finite output on interval [{t0}, {t1}] "
+                    f"(gas H2SO4 handed in = {float(yc[h2so4_idx]):.3e} molec/cm^3). This is TOMAS's "
+                    f"nucleation-rate overflow for a large H2SO4 slug -- reduce dt_couple so the "
+                    f"per-step gas H2SO4 stays below ~1e9 molec/cm^3 (see docs/CAVEATS.md, AD-3.9).")
+            tstate = tstate._replace(Nk=Nk, Mk=Mk, Gc=Gc)
+            yc = yc.at[h2so4_idx].set(mass_to_conc(float(Gc[SRTSO4]), BOXVOL_CM3, MW_H2SO4))
+            het = het_inputs(tstate)                          # for the next interval
+
         t_list.append(t1)
         x_list.append(np.asarray(yc))
-    return np.asarray(t_list), np.asarray(x_list)
+        aero_list.append(_aero_record())
+
+    t = np.asarray(t_list)
+    x = np.asarray(x_list)
+    if not return_aerosol:
+        return t, x
+    a = np.asarray(aero_list)
+    aero = {"SA": a[:, 0], "radius_cm": a[:, 1], "h2so4wp": a[:, 2], "particulate_S": a[:, 3]}
+    return t, x, aero

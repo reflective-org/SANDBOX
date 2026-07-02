@@ -45,19 +45,23 @@ def surface_area_um2_cm3(state) -> float:
     return area_m2 * 1.0e12 / float(state.boxvol)               # -> um^2 / cm^3
 
 
-def mean_wet_radius_cm(state) -> float:
-    """Number-weighted mean WET radius [cm] = sum(Nk * r_wet) / sum(Nk); ``0.1e-4`` if no particles.
+def effective_wet_radius_cm(state) -> float:
+    """Surface-area-weighted (effective) WET radius [cm] = sum(Nk r^3) / sum(Nk r^2).
 
-    ``0.1e-4`` cm (1 um) is the legacy hard-coded fallback, so an empty state reproduces the old
-    behaviour rather than a degenerate 0 radius.
+    This is the aerosol *effective radius* r_eff (3rd/2nd moment). It is the right single radius for
+    the reacto-diffusive f-factor because heterogeneous uptake is carried by the surface-area-
+    dominant (larger) particles -- a number-weighted mean instead collapses toward the ~1 nm
+    nucleation mode when nucleation is active, which is both unphysical for uptake AND destabilises
+    the f-factor ``coth(r/l) - l/r`` (r << l -> inf - inf). Returns ``0.1e-4`` cm (legacy 1 um) for an
+    empty distribution. See AD-3.4.
     """
     Dpk, _ = _wet_diameters_m(state)
-    ntot = float(jnp.sum(state.Nk))
-    if ntot <= 0.0:
-        return 0.1e-4
     r_m = 0.5 * Dpk
-    r_mean_m = float(jnp.sum(state.Nk * r_m) / ntot)
-    return r_mean_m * 100.0                                     # m -> cm
+    m2 = float(jnp.sum(state.Nk * r_m ** 2))
+    if m2 <= 0.0:
+        return 0.1e-4
+    m3 = float(jnp.sum(state.Nk * r_m ** 3))
+    return (m3 / m2) * 100.0                                    # m -> cm
 
 
 def h2so4_weight_pct(state) -> float:
@@ -78,5 +82,5 @@ def h2so4_weight_pct(state) -> float:
 def het_inputs(state) -> dict:
     """Bundle the three het-chem inputs for one outer step: ``{SA, radius_cm, h2so4wp}``."""
     return {"SA": surface_area_um2_cm3(state),
-            "radius_cm": mean_wet_radius_cm(state),
+            "radius_cm": effective_wet_radius_cm(state),
             "h2so4wp": h2so4_weight_pct(state)}

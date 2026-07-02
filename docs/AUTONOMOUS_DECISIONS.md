@@ -42,16 +42,32 @@ exactly the weight-percent; it does not supply a gas-phase water activity. Mixin
 with the thermodynamic `a_W` is the minimal, physically-cleanest override. Flagged for review: a fully
 self-consistent treatment would reconcile TOMAS's own water uptake with `a_W` (tracked in DEFERRED).
 
-### AD-3.4 — Heterogeneous-chem radius definition
+### AD-3.4 — Heterogeneous-chem radius definition (REVISED to effective radius)
 **Q:** Which single radius represents the polydisperse TOMAS distribution for the reacto-diffusive
 f-factor in `hetgammas_jpl00` (which takes one scalar radius)?
-**Decision:** **Number-weighted mean wet radius** `r = Σ Nk·r_wet,k / Σ Nk` (wet = with equilibrium
-water), in cm.
-**Rationale:** the f-factor `coth(r/l) − l/r` is a per-particle geometric correction; the
-number-weighted mean is the natural single-particle representative and reduces to the old fixed 1 µm
-for a monodisperse 1 µm population. Wet (not dry) because uptake happens on the deliquesced particle
-and the old hard-coded 0.1e-4 cm was a wet stratospheric-sulfate value. Alternatives (area- or
-volume-weighted) noted in DEFERRED as a sensitivity to revisit.
+**Decision:** **Surface-area-weighted (effective) wet radius** `r_eff = Σ Nk·r_wet³ / Σ Nk·r_wet²`
+(the 3rd/2nd moment), in cm. (Initially chose number-weighted; **revised** — see below.)
+**Rationale:** heterogeneous uptake is carried by the surface-area-dominant (larger) particles, so the
+surface-area-weighted mean is the physically correct single representative for the f-factor, and it is
+exactly the standard aerosol *effective radius*. Wet (deliquesced) particle, matching the old 1-µm
+value. **Why revised from number-weighted:** when nucleation is on, the number-weighted mean collapses
+toward the ~1 nm nucleation mode — unphysical for uptake AND numerically fatal: the f-factor
+`coth(r/l) − l/r` becomes `inf − inf → NaN` when r ≪ the reacto-diffusive length l. r_eff stays in the
+accumulation-mode range (~0.05-0.5 µm) for realistic distributions, keeping the f-factor well-posed.
+Empty distribution → 0.1e-4 cm fallback.
+
+### AD-3.9 — dt_couple / gas-H2SO4 stability limit + loud NaN guard
+**Q:** How to handle TOMAS going non-finite under a large H2SO4 slug?
+**Decision:** (a) rely on a **small `dt_couple`** (decision 3) to keep the per-step gas H2SO4 in TOMAS's
+stable range; (b) add an explicit **NaN/inf guard after every TOMAS step** in both the JAX driver and
+the NumPy mirror that RAISES a clear `RuntimeError` (never continue silently — project rule).
+**Rationale:** TOMAS's Ricco-Dunne nucleation rate ∝ [H2SO4]^p overflows to NaN when the gas H2SO4
+handed in is ≳1e9 molec/cm³. Because the operator split produces all of an interval's H2SO4 *before*
+TOMAS consumes it, a large `dt_couple` overestimates the peak H2SO4 TOMAS sees. Realistic stratospheric
+gas H2SO4 is ~1e6-1e8; a small `dt_couple` (≲ a minute for high-SO2 cases) keeps each step's slug well
+below the limit. The guard converts a silent NaN cascade into an actionable error naming `dt_couple`.
+Documented as a stability constraint in CAVEATS.md; a genuinely adaptive TOMAS sub-step schedule is a
+DEFERRED robustness improvement.
 
 ### AD-3.5 — Relative humidity fed to TOMAS
 **Q:** TOMAS water uptake needs an RH (0-1). The gas model specifies water as WTR (ppm). What RH?
@@ -93,4 +109,32 @@ and the budget converts particulate mass → molec/cm³ with MW=98. Caveat (docu
 the nucleation *clamp* branch (gas exhausted) applies a 96/98 factor, a tiny non-conservation that
 only fires when gas H2SO4 is fully depleted within a step — flagged in CAVEATS.md.
 
+### AD-3.10 — TOMAS internal sulfur non-conservation (~1%/day) — coupling handoff is exact
+**Q:** The coupled run does not conserve total (gas+particulate) sulfur to machine precision. Bug, or
+inherent?
+**Finding:** **Inherent to the tomas-jax build.** Measured standalone TOMAS (no gas coupling), injecting
+H2SO4 and stepping nucleation+condensation+coagulation, drifts **−1.3e-2 over 40 steps** in its own
+`Gc[SRTSO4]` + `sum(Mk[:,SRTSO4])`. So TOMAS's mass-number-fixing (MNFIX), the PPM condensation
+redistribution, and nucleation cluster accounting are not strictly sulfur-conserving.
+**Decision:** (a) prove the **coupling layer is exact** — with a perfectly-conserving stub microphysics
+(moves a fixed fraction of `Gc[SRTSO4]` into `Mk[:,SRTSO4]`), the driver conserves total sulfur to
+~1e-12, and with an identity stub the gas-phase budget is untouched — so the handoff / write-back /
+particulate accounting introduce NO spurious source or sink; (b) for the REAL TOMAS run, assert the
+drift is bounded at TOMAS's own level (test tolerance ~2e-2/day) and that the physics is right (aerosol
+is the H2SO4 sink, SA grows). **FLAGGED FOR USER** (see OPEN below) and tracked in DEFERRED.md:
+investigating/fixing tomas-jax's microphysics mass conservation is a tomas-jax change, out of scope for
+the coupling layer.
+
 _(further Phase-3 decisions appended as they arise)_
+
+---
+
+## OPEN — needs user review at wake-up
+
+- **[Phase 3] TOMAS internal sulfur non-conservation (~1%/day).** (AD-3.10) The tomas-jax
+  `feat/marianna-dilution` microphysics loses ~1.3% of sulfur over ~40 nucleation-active steps in its
+  OWN gas+particulate budget. The coupling layer is proven exact (stub tests), so total-S drift in a
+  coupled run is inherited from TOMAS. **Question for you:** is this acceptable for SANDBOX's purposes,
+  or should we (a) investigate/fix mass conservation in tomas-jax (MNFIX / PPM condensation / nucleation
+  cluster accounting), or (b) pin a different tomas-jax branch/commit with better conservation? I have
+  proceeded treating it as a documented caveat (CAVEATS.md) + DEFERRED item so Phases 4-7 can continue.

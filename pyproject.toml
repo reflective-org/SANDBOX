@@ -39,3 +39,6 @@ include = ["tuvx_photolysis*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: end-to-end runs that invoke the real TOMAS microphysics or TUV-x port (deselect with -m 'not slow')",
+]
