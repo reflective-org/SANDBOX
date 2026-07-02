@@ -14,11 +14,10 @@ Rate-constant references are kept as notes.
 
 RATE CONSTANTS: JPL 19-5 (this branch). Gas-phase bimolecular + termolecular rates have been
 updated from the original MATLAB ("JPL-11") set to JPL Publication 19-5 (NASA/JPL Panel for Data
-Evaluation, Evaluation No. 19). Reference temperatures follow JPL 19-5: **bimolecular** Arrhenius
-uses 298 K (k = A*(T/298)^n*exp(-E/RT)); **termolecular** fall-off uses **300 K** (Table 2-1 lists
-k0(300)/kinf(300); ``falloff`` / ``troe`` in ``mechanism.py``). See
-``frank-model/references/NASA-JPL_Evaluation_19-5.pdf`` and ``docs/jpl19-5-sulfur-crosscheck.md``
-(this corrected an earlier, incorrect 298 K termolecular reference). Photolysis J-values and the
+Evaluation, Evaluation No. 19). Reference temperature is **298 K** for BOTH bimolecular
+(k = A*(T/298)^n*exp(-E/RT)) and termolecular (Table 2-1: k0(T)=k0_298*(T/298)^-n; ``falloff`` /
+``troe`` in ``mechanism.py``). See ``frank-model/references/NASA-JPL_Evaluation_19-5.pdf`` (Table 2-1
+header) and ``docs/jpl19-5-sulfur-crosscheck.md``. Photolysis J-values and the
 heterogeneous gammas are unchanged from the MATLAB. Two reactions use the JPL chemical-activation
 form (OH+HNO3, O+NO2): total = k_f + k_int*(1 - k_f/kinf) (JPL 19-5 Table 2-2).
 """
@@ -125,9 +124,9 @@ def _k41(e):  # O1D + N2 -> O + N2   (N2 = 0.79*M, not a tracked species)
 REACTIONS = [
     # --- Chlorine (gas) ---
     react("ClO + NO -> NO2 + Cl",          lambda e: 6.4e-12 * exp(290.0 / e.T), "JPL 19-5 (F130)"),
-    react("ClO + ClO + M -> ClOOCl + M",   _k2, "JPL 19-5 (F10), 300 K ref"),
+    react("ClO + ClO + M -> ClOOCl + M",   _k2, "JPL 19-5 (F10), 298 K ref"),
     react("ClOOCl + M -> ClO + ClO + M",   _k3, "JPL 19-5 (k2 / Keq, Table 3-1 #20)"),
-    react("ClO + NO2 + M -> ClONO2 + M",   lambda e: troe(e, 1.8e-31, -3.4, 1.5e-11, -1.9), "JPL 19-5 (F8), 300 K ref"),
+    react("ClO + NO2 + M -> ClONO2 + M",   lambda e: troe(e, 1.8e-31, -3.4, 1.5e-11, -1.9), "JPL 19-5 (F8), 298 K ref"),
     react("ClONO2 + M -> ClO + NO2 + M",   lambda e: 6.9e-7 * exp(-10909.0 / e.T) * e.M, "Fahey (not in JPL; kept)"),
     react("Cl + O3 -> ClO + O2",           lambda e: 2.3e-11 * exp(-200.0 / e.T), "JPL 19-5 (F68)"),
     react("Cl + CH4 -> HCl + CH3",         lambda e: 7.1e-12 * exp(-1270.0 / e.T), "JPL 19-5 (F75)"),
@@ -154,23 +153,23 @@ REACTIONS = [
     react("O3 -> O2 + O1D",                _k20b, "O3 photolysis (opt-dependent)", kind="photo"),
 
     # --- NOx ---
-    react("NO2 + NO3 + M -> N2O5 + M",     lambda e: troe(e, 2.4e-30, -3.0, 1.6e-12, 0.1), "JPL 19-5 (C7), 300 K ref"),
+    react("NO2 + NO3 + M -> N2O5 + M",     lambda e: troe(e, 2.4e-30, -3.0, 1.6e-12, 0.1), "JPL 19-5 (C7), 298 K ref"),
     react("OH + HNO3 -> H2O + NO3",        _k22, "JPL 19-5 (K2), chemical-activation form"),
-    react("OH + NO2 + M -> HNO3 + M",      lambda e: troe(e, 1.8e-30, -3.0, 2.8e-11, 0.0), "JPL 19-5 (C4), 300 K ref"),
-    react("O + NO + M -> NO2 + M",         lambda e: troe(e, 9.1e-32, -1.5, 3.0e-11, 0.0), "JPL 19-5 (C1), 300 K ref"),
+    react("OH + NO2 + M -> HNO3 + M",      lambda e: troe(e, 1.8e-30, -3.0, 2.8e-11, 0.0), "JPL 19-5 (C4), 298 K ref"),
+    react("O + NO + M -> NO2 + M",         lambda e: troe(e, 9.1e-32, -1.5, 3.0e-11, 0.0), "JPL 19-5 (C1), 298 K ref"),
     react("O + NO2 + M -> NO3 + M",        _k25, "JPL 19-5 (K1), association channel"),
     react("O + NO2 -> NO + O2",            _k26, "JPL 19-5 (K1), chemical-activation channel"),
     react("NO + O3 -> NO2 + O2",           lambda e: 3.0e-12 * exp(-1500.0 / e.T), "JPL 19-5 (C19)"),
     react("NO2 + O3 -> NO3 + O2",          lambda e: 1.2e-13 * exp(-2450.0 / e.T), "JPL 19-5 (C21)"),
-    react("OH + NO + M -> HONO + M",       lambda e: troe(e, 7.1e-31, -2.6, 3.6e-11, -0.1), "JPL 19-5 (C3), 300 K ref"),
+    react("OH + NO + M -> HONO + M",       lambda e: troe(e, 7.1e-31, -2.6, 3.6e-11, -0.1), "JPL 19-5 (C3), 298 K ref"),
     react("OH + HONO -> H2O + NO2",        lambda e: 3.0e-12 * exp(250.0 / e.T), "JPL 19-5 (C7-bimol)"),
     react("NO + NO3 -> 2 NO2",             lambda e: 1.7e-11 * exp(125.0 / e.T), "JPL 19-5 (C20)"),
     react("OH + HNO4 -> H2O + NO2 + O2",   lambda e: 4.5e-13 * exp(610.0 / e.T), "JPL 19-5 (C8)"),
     react("HO2 + NO -> NO2 + OH",          lambda e: 3.44e-12 * exp(260.0 / e.T), "JPL 19-5 (C10), main OH prod"),
-    react("HO2 + NO2 + M -> HNO4 + M",     lambda e: troe(e, 1.9e-31, -3.4, 4.0e-12, -0.3), "JPL 19-5 (C6), 300 K ref"),
+    react("HO2 + NO2 + M -> HNO4 + M",     lambda e: troe(e, 1.9e-31, -3.4, 4.0e-12, -0.3), "JPL 19-5 (C6), 298 K ref"),
 
     # --- HOx, Ox, O(1D) ---
-    react("O + O2 + M -> O3 + M",          lambda e: 6.1e-34 * (e.T / 300.0) ** -2.4 * e.M, "JPL 19-5 (A1), 300 K ref"),
+    react("O + O2 + M -> O3 + M",          lambda e: 6.1e-34 * (e.T / 298.0) ** -2.4 * e.M, "JPL 19-5 (A1), 298 K ref"),
     react("O + O3 -> 2 O2",                lambda e: 8.0e-12 * exp(-2060.0 / e.T), "JPL 19-5"),
     react("OH + O3 -> HO2 + O2",           lambda e: 1.7e-12 * exp(-940.0 / e.T), "JPL 19-5"),
     react("OH + HO2 -> H2O + O2",          lambda e: 4.8e-11 * exp(250.0 / e.T), "JPL 19-5"),
@@ -196,7 +195,7 @@ REACTIONS = [
     react("BrO + ClO -> Br + Cl + O2",     lambda e: 2.3e-12 * exp(260.0 / e.T), "JPL 19-5"),
     react("BrO + ClO -> BrCl + O2",        lambda e: 4.1e-13 * exp(290.0 / e.T), "JPL 19-5"),
     react("BrO + ClO -> Br + OClO",        lambda e: 9.5e-13 * exp(550.0 / e.T), "JPL 19-5"),
-    react("BrO + NO2 + M -> BrONO2 + M",   lambda e: troe(e, 5.5e-31, -3.1, 6.6e-12, -2.9), "JPL 19-5 (G2), 300 K ref"),
+    react("BrO + NO2 + M -> BrONO2 + M",   lambda e: troe(e, 5.5e-31, -3.1, 6.6e-12, -2.9), "JPL 19-5 (G2), 298 K ref"),
 
     # --- More photolysis ---
     photo("HNO4 -> NO2 + HO2",             j45=1.3e-5 * 0.8),

@@ -20,20 +20,21 @@ _KB = 1.3807e-23
 _M_PER_AMU = 1.0 / 6.02e23 / 1000.0
 
 
-def falloff(T, M, k0_300, n0, kinf_300, ninf):
-    """JPL 19-5 termolecular fall-off, **300 K reference**. Returns (k_f, kinf). Pass n0=-n, ninf=-m.
+def falloff(T, M, k0_298, n0, kinf_298, ninf):
+    """JPL 19-5 termolecular fall-off, **298 K reference**. Returns (k_f, kinf). Pass n0=-n, ninf=-m.
 
-    JPL 19-5 tabulates k0(300)/kinf(300) (Table 2-1); see docs/jpl19-5-sulfur-crosscheck.md.
+    JPL 19-5 Table 2-1 tabulates k0(298)/kinf(298) with a (T/298)^-n dependence; see
+    docs/jpl19-5-sulfur-crosscheck.md.
     """
-    k0 = k0_300 * (T / 300.0) ** n0
-    kinf = kinf_300 * (T / 300.0) ** ninf
+    k0 = k0_298 * (T / 298.0) ** n0
+    kinf = kinf_298 * (T / 298.0) ** ninf
     ratio = k0 * M / kinf
     k_f = (k0 * M / (1.0 + ratio)) * 0.6 ** (1.0 / (1.0 + jnp.log10(ratio) ** 2))
     return k_f, kinf
 
 
-def troe(T, M, k0_300, n0, kinf_300, ninf):  # JPL 19-5 termolecular association (300 K ref)
-    return falloff(T, M, k0_300, n0, kinf_300, ninf)[0]
+def troe(T, M, k0_298, n0, kinf_298, ninf):  # JPL 19-5 termolecular association (298 K ref)
+    return falloff(T, M, k0_298, n0, kinf_298, ninf)[0]
 
 
 def khet(gamma, gasmass, T, SA):
@@ -82,7 +83,7 @@ def all_coefficients(p, opt):
     k25 = kf_no2                                                   # -> NO3 (association)
     k26 = (5.3e-12 * exp(200.0 / T)) * (1.0 - kf_no2 / kinf_no2)   # -> NO + O2 (chem. activation)
 
-    # SO2 + OH (+M): JPL 19-5 termolecular (now T-dependent, 300 K ref).
+    # SO2 + OH (+M): JPL 19-5 termolecular (now T-dependent, 298 K ref).
     k68 = troe(T, M, 2.9e-31, -4.1, 1.7e-12, 0.2)
 
     # HO2 + HO2: bimolecular + termolecular[M] + H2O enhancement (JPL 19-5 B13).
@@ -128,7 +129,7 @@ def all_coefficients(p, opt):
         4.5e-13 * exp(610.0 / T),                                  # OH + HNO4
         3.44e-12 * exp(260.0 / T),                                 # HO2 + NO
         troe(T, M, 1.9e-31, -3.4, 4.0e-12, -0.3),               # HO2 + NO2 + M
-        6.1e-34 * (T / 300.0) ** -2.4 * M,                         # O + O2 + M
+        6.1e-34 * (T / 298.0) ** -2.4 * M,                         # O + O2 + M
         8.0e-12 * exp(-2060.0 / T),                                # O + O3
         1.7e-12 * exp(-940.0 / T),                                 # OH + O3
         4.8e-11 * exp(250.0 / T),                                  # OH + HO2

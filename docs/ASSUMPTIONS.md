@@ -21,8 +21,9 @@ if it's not obvious from first principles or the reference, it belongs here.
 - ⚠️ **SO2 + HO2 → SO3 + OH product channel is an ASSUMPTION.** JPL 19-5 (I34) gives only the rate
   **upper limit 1e-18** and **no product recommendation**. We pick SO3+OH; effect on SO2 is ~0.02%,
   so immaterial. Flagged here so it is never treated as JPL-recommended.
-- ⚠️ **Termolecular reference temperature**: JPL 19-5 termolecular is **300 K** (k0(300)); the code's
-  `troe298` uses 298 K. ~1–3% at stratospheric T; mechanism-wide, logged as a separate issue.
+- **Termolecular reference temperature = 298 K** (NOT an assumption — Table 2-1 header:
+  `k0(T)=k0_298 (T/298)^-n`). A prior "fix" to 300 K was wrong and has been reverted; both bimolecular
+  and termolecular use 298 K. See docs/jpl19-5-sulfur-crosscheck.md and DECISIONS.md (2026-07-02).
 
 ## Planned (to be recorded/confirmed as implemented)
 - **Aerosol column placement** for TUV-x: the box is one altitude; how its aerosol OD maps into the
