@@ -11,7 +11,7 @@ import numpy as np
 from config import IDX, ModelConfig
 from driver import initial_concentrations
 from rhs import concs_het
-from reactions import MECHANISM, build_env, _k68
+from reactions import MECHANISM, build_env, _k68, sulfur_chain_active
 
 
 def _state(cfg):
@@ -79,6 +79,18 @@ def test_so2_to_so3_production_rate_matches_k68():
     env = build_env(cfg, x, 1.0)  # j_scale irrelevant to the SO2+OH gas rate
     expect = _k68(env) * x[IDX["SO2"]] * x[IDX["OH"]]
     np.testing.assert_allclose(d[IDX["SO3"]], expect, rtol=1e-12)
+
+
+def test_sulfur_gate_single_source_all_modes():
+    # NumPy and JAX derive the gate from the SAME helper -> they cannot silently disagree in any mode
+    # (the tuvx case was previously chain-ON in NumPy but chain-OFF in the JAX default).
+    from jaxmodel.model import _SULFUR_REFERENCE, _SULFUR_SZA
+    for mode in ("reference", "sza", "tuvx"):
+        env = build_env(_cfg(mode), _state(_cfg(mode)), 1.0)
+        assert env.sulfur_chain == sulfur_chain_active(mode)
+    assert _SULFUR_REFERENCE == float(sulfur_chain_active("reference")) == 0.0
+    assert _SULFUR_SZA == float(sulfur_chain_active("sza")) == 1.0
+    assert sulfur_chain_active("tuvx") is True   # chain ON in tuvx on both backends
 
 
 def test_chain_on_numpy_jax_parity():

@@ -299,6 +299,17 @@ def reference_table() -> str:
 # =======================================================================================
 # Environment builder: compute the heterogeneous gammas from the current state.
 # =======================================================================================
+def sulfur_chain_active(photolysis: str) -> bool:
+    """Single source of truth for the sulfur-chain gate: active in every non-reference mode.
+
+    Used by BOTH the NumPy ``build_env`` (below) and the JAX drivers (``jaxmodel/model.py``) so the
+    two backends can never silently disagree on whether the SO2->SO3->H2SO4 chain is on -- e.g. a
+    ``photolysis="tuvx"`` run is chain-ON on both sides. (The coupled driver will feed this from
+    CoupledScenario.switches.sulfur in Phase 2.4.)
+    """
+    return photolysis != "reference"
+
+
 def build_env(cfg, conc, j_scale: float, j_values: dict | None = None) -> Env:
     """Assemble the Env for one RHS evaluation, computing aerosol gammas from ``conc``.
 
@@ -320,7 +331,7 @@ def build_env(cfg, conc, j_scale: float, j_values: dict | None = None) -> Env:
         "Ybrono2": 0.8,       # fixed (JPL)
     }
     # sulfur chain active in non-reference photolysis modes (sza/tuvx); reference stays faithful
-    sulfur_chain = getattr(cfg, "photolysis", "reference") != "reference"
+    sulfur_chain = sulfur_chain_active(getattr(cfg, "photolysis", "reference"))
     return Env(T=cfg.T, M=M, P=cfg.P, SA=cfg.SA, WTR=cfg.WTR, opt=cfg.opt,
                gammas=gammas, j_scale=j_scale, H2O=conc[IDX["H2O"]], j_values=j_values,
                sulfur_chain=sulfur_chain)
