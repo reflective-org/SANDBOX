@@ -115,6 +115,36 @@ coupling bugs.
 
 ---
 
+### Phase 4 — Aerosol → photolysis radiation (2026-07-02) — **PASS (2/2 lenses)**
+Two independent agents (correctness; tests+physical), each re-deriving from the code + the TOMAS Mie
+source + the TUV-x port.
+
+- **Lens 1 — correctness: PASS (no bugs).** The Mie table (`bhmie_qsca_jax` on x=2πr/λ, fixed bin
+  radii + fixed index) is **bit-exact** vs TOMAS's own `precompute_mie_properties` at 550 nm; units
+  correct (r m→cm, λ nm→m, OD=b_ext·Δz with Δz km→cm); Qsca≤Qext, |g|≤1; SSA≈1 for sulfate. Port
+  injection appends the aerosol radiator before `accumulate` (None reproduces the prior solve exactly);
+  adapter clears `aerosol_props` in a `finally` that re-raises (no swallow, no stale state); NumPy/JAX
+  build identical optics. Enhancement-then-shielding confirmed correct physics (pure absorber → J
+  monotonically drops, so the enhancement is scattering-driven).
+- **Lens 2+3 — tests + physical: PASS.** 62 coupled + 100 gas tests pass, no regression. Bug-injection
+  confirms the tests are genuine (skipping the aerosol append → `test_port_aerosol` fails; ignoring Nk
+  → `test_aerosol_optics` OD∝Nk fails). Physics re-derived: SSA=1.000000, OD∝N (×5.0) and ∝band, OD=0
+  outside band, **boxvol cancels** (OD ratio 1.000000), driver-level J change up to +72 %/−98 %.
+  No error bypass. Coverage gaps flagged → addressed: added a numeric SSA/g scattering-weighting test;
+  the end-to-end `aerosol_to_j` on/off (agent measured a 1265× trajectory change) and the JAX/NumPy
+  aerosol parity are NOT committed as CI tests (a real-TUV-x coupled run solves the full radiation
+  field per interval ~30 s, and the runaway-nucleation OPEN item drives the stiff gas solver to its
+  step cap) — exercised instead by `validate_phase4.py` and confirmed by the agent; the mirror runs
+  byte-identical aerosol code.
+
+**End-to-end** (`validate_phase4.py`): box-altitude J/J0 vs 550 nm column OD shows the scattering
+sulfate aerosol enhancing J to ~1.4× at OD~1-2 then shielding at high OD; deep-UV HNO3 decreases
+monotonically. Plot: `coupled/validation/phase4_j_vs_od.png`. Two items OPEN for the user
+(AUTONOMOUS_DECISIONS.md): AD-4.2 vertical placement (slab bounds set the feedback magnitude) and the
+Phase-3 runaway nucleation (which, with aerosol_to_j on, further stresses the gas solver).
+
+---
+
 **What is CI-enforced vs. a committed artifact** (PR#35 review): the automated test
 (`test_coupled_parity.py`) proves **solver parity under matched J** using a *stubbed* adapter (fast) —
 that is the regression gate. The **real-port** 1.2e-6 agreement above comes from `validate_coupled.py`,

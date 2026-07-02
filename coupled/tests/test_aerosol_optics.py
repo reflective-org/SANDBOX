@@ -65,6 +65,20 @@ def test_optical_depth_placement_and_scaling():
     assert wide.optical_depth.sum() > od.sum()
 
 
+def test_bulk_ssa_and_g_match_scattering_weighted_definition():
+    # assert SSA and g equal their definitions against an independent per-bin recompute (not just ranges)
+    mie = ao.MieTable(_WL)
+    st = _state()
+    b_ext, b_sca, ssa, g = ao.bulk_optics(st, mie)
+    n_cm3 = np.asarray(st.Nk, dtype=float) / float(st.boxvol)
+    geo = np.pi * (mie.radii_m * 100.0) ** 2
+    be = (mie.Qext * (n_cm3 * geo)[None, :]).sum(axis=1)
+    bs = (mie.Qsca * (n_cm3 * geo)[None, :]).sum(axis=1)
+    g_ref = (mie.gsca * mie.Qsca * (n_cm3 * geo)[None, :]).sum(axis=1) / bs
+    np.testing.assert_allclose(ssa, bs / be, rtol=1e-12)
+    np.testing.assert_allclose(g, g_ref, rtol=1e-12)
+
+
 def test_empty_aerosol_gives_zero_od():
     import jax.numpy as jnp
     st = _state()

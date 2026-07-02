@@ -50,3 +50,10 @@ def test_adapter_injects_tomas_aerosol_and_changes_j():
     j_base2 = _compute_j_values(cfg, 0.0, aerosol_props=None)
     for k in j_base:
         assert j_base2[k] == j_base[k], k
+
+# NOTE: end-to-end run_coupled(aerosol_to_j on vs off) and the JAX-vs-NumPy aerosol parity are NOT
+# committed as tests: a real-TUV-x coupled run solves the full radiation field per interval (~30 s
+# each), and with nucleation on the runaway aerosol (OPEN item) drives the stiff gas solver to its
+# step cap. The end-to-end behavior was confirmed by the Phase-4 verification agent (toggling the
+# switch changed the trajectory by up to 1265x) and is exercised by coupled/validate_phase4.py; the
+# NumPy mirror runs byte-identical aerosol-optics code to the JAX driver. See VALIDATION.md / DEFERRED.

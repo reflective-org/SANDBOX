@@ -196,9 +196,10 @@ data for sulfate in the UV; real n varies mildly). Tracked in DEFERRED as a fide
 **Q:** The box is one altitude; the RT solver needs a per-layer aerosol OD profile. Where does the
 box's aerosol go in the ~120-layer column?
 **Decision (default, reversible):** distribute the box's aerosol **uniformly over a configurable
-stratospheric slab** (an altitude band on the CoupledScenario, default centered on the box altitude),
-i.e. every layer in the band gets OD = b_ext(λ)·Δz with the box's extinction coefficient b_ext; layers
-outside the band get 0. Single-layer placement is the degenerate case (band = one layer).
+stratospheric slab** — `CoupledScenario.aerosol_band_km`, default a **fixed (15, 25) km band** (which
+brackets the ~19-20 km box at 68 mbar) — i.e. every layer whose center is in the band gets
+OD = b_ext(λ)·Δz with the box's extinction coefficient b_ext; layers outside the band get 0.
+Single-layer placement is the degenerate case (band = one layer).
 **Rationale:** J at the box altitude responds to aerosol ABOVE it (attenuation of incoming sunlight),
 so putting all aerosol only in the box layer would show almost no J effect — physically the SAI aerosol
 is a vertically-extended layer. A uniform slab with the box's concentration is the standard box-model
