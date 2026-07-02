@@ -18,8 +18,10 @@ at each phase gate.
 - SO2+OH+M→HOSO2 (Table 2-1 I4) + HOSO2+O2→HO2+SO3 (I92) ⇒ net **SO2+OH→SO3+HO2** product confirmed.
 - SO3+2H2O→H2SO4 (I79): **kI = 8.5e-41·exp(+6540/T)·[H2O]²** — confirmed handbook value.
 - SO2+HO2 (I34): rate **<1e-18** upper limit; **no JPL product recommendation** (SO3+OH is our choice).
-- **Discrepancy found:** termolecular reference temperature is **300 K** in JPL 19-5 (Table 2-1
-  k0(300)), but the code used `troe298` (298 K). Fixed on `fix/termolecular-ref-temp-300k` (see that PR).
+- **Termolecular reference temperature = 298 K** (resolved). An initial 298→300 K "fix" was **reverted**
+  after the Phase 1 gate re-read the Table 2-1 header verbatim (`k0(T)=k0_298 (T/298)^-n`); the "300"
+  seen in the PDF was the g-column / older-literature note, not the reference. Code stays at `troe298`.
+  See the Phase 1 gate below and PR#20.
 
 ## Phase gates (3-agent verification)
 
@@ -42,3 +44,46 @@ summary:
 
 End-to-end run (`sulfur_budget.py`, 10-day tuvx, model_input): H2SO4 0 → ~4.8e4 pptv, SO2 −5.0%,
 total-sulfur drift +3.5e-15. Plots in `gas_phase_chemistry/sulfur_budget/`.
+
+### Phase 2 — JAX operator-split coupling driver (2026-07-02) — **PASS (3/3)**
+Three independent agents, each re-deriving from the code/spec (not from the implementer's summary),
+one per lens. Full verdicts below; all three returned PASS.
+
+- **Lens 1 — driver correctness: PASS (6/6).** Verified: (1) J is frozen at each outer-step
+  **midpoint** (2nd-order) with a fresh diffrax solve per interval (never integrating across a J
+  discontinuity); (2) day/night snapping subdivides intervals at terminator crossings incl. polar
+  edge cases, so every interval is fully-day or fully-night and J≡0 at night; (3) `dt_couple` drives
+  the J recompute via the uncached `_frozen_j_values`, bypassing the adapter's 120 s cache; (4) a
+  single SZA source (gas `solar.py`) feeds both the gate and TUV-x; (5) `switches.sulfur` is the one
+  gate source, passed to both backends; (6) J is consumed correctly incl. the O3 opt-split. Minor:
+  no `days<1` guard → **fixed** (`coupled_scenario.py`, `test_days_must_be_at_least_one`).
+- **Lens 2 — tests + parity genuineness: PASS.** Suites green (coupled 24→25, gas 100). Confirmed
+  `test_coupled_parity` is a *genuine* cross-backend test: diffrax Kvaerno5 vs SciPy BDF integrated
+  independently over the same operator-split grid with identical frozen J and sulfur gate, full
+  species trajectories compared. Tolerances are honest/conservative (tightest bulk species `Cl` needs
+  2.3e-4 vs the 2e-3 bound → 8.8× headroom). **Empirically falsified** the "could pass while
+  disagreeing" failure mode: perturbing one backend's J by 10 % pushes required rtol to 0.134, so the
+  assertion fails loudly. Day/night snapping and `switches.sulfur=False` both independently verified.
+  Note (tracked): physical-J parity lives only in the `validate_coupled.py` harness (slow real port),
+  not in CI.
+- **Lens 3 — physical/conservation + no-silent-assumptions: PASS.** Sulfur conserved to machine
+  precision with the chain ON (max rel drift 8.8e-16 sza; 2.0e-15 tuvx). Units bridge exactly
+  invertible (≤4 ULP) and byte-matches TOMAS's formula/Avogadro; the ~0.036 % gas-model Avogadro seam
+  is real and documented. Day/night intervals clean (0 straddling, 0 night intervals with nonzero
+  j_scale). H2O single-sourced from WTR (inconsistent value raises); sulfur gate single-sourced; no
+  `try/except` swallowing or "for simplicity" shortcuts anywhere in the 5 coupled files. **Design
+  nuance flagged (not a defect):** `switches.sulfur=False` swaps in the reference-only legacy SO2
+  lumps (`SO2+OH→HO2`, `SO2+HO2→`) rather than freezing SO2, so total-S is conserved only with the
+  gate ON — MATLAB-faithful and intended → recorded in `CAVEATS.md`.
+
+**End-to-end real-port run** (`validate_coupled.py`, 2-day tuvx, dt_couple=3600 s, 53 outer steps):
+H2SO4 0 → 7.35e3 pptv, SO2 −0.77 %, sulfur drift +1.3e-15, and JAX-vs-NumPy worst relative species
+diff **1.2e-6 (SO2)** under matched J (isolates the solver difference). Plots in `coupled/validation/`
+(`coupled_sulfur.png`, `coupled_conservation.png`, `coupled_jax_vs_numpy.png`).
+
+**What is CI-enforced vs. a committed artifact** (PR#35 review): the automated test
+(`test_coupled_parity.py`) proves **solver parity under matched J** using a *stubbed* adapter (fast) —
+that is the regression gate. The **real-port** 1.2e-6 agreement above comes from `validate_coupled.py`,
+a diagnostic **script** (a real 2-day TUV-x solve is too slow for CI), so it is a manually-run,
+committed artifact (the PNGs), **not** a regression-guarded check. Don't read the committed PNG as a CI
+pass. A CI-cheap real-port smoke test is tracked in `DEFERRED.md`.

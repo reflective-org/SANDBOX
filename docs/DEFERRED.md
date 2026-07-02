@@ -1,12 +1,12 @@
 # Deferred / follow-ups (SANDBOX)
 
-- **Phase 2.4 — sulfur gate source (mostly DONE 2.4b).** The coupled driver now gates on
+- ~~**Phase 2.4 — sulfur gate source.**~~ **DONE (2.4b + 2.5).** The coupled driver gates on
   `CoupledScenario.switches.sulfur` (JAX side), and `build_env` gained a `sulfur_chain=` override so the
-  NumPy side can read the SAME switch — making `switches.sulfur` the single gate source in coupled runs
-  (`sulfur_chain_active(photolysis)` stays the default only for standalone NumPy). Verified OFF+ON in
-  the driver tests. **Remaining for Phase 2.5:** the genuine cross-backend parity harness must drive
-  BOTH backends from `switches.sulfur` (pass it to `build_env(sulfur_chain=...)`), and replace the
-  helper-equality tuvx stand-in with an integrate-and-compare-species tuvx parity test.
+  NumPy side reads the SAME switch — making `switches.sulfur` the single gate source in coupled runs
+  (`sulfur_chain_active(photolysis)` stays the default only for standalone NumPy). Phase 2.5 closed the
+  remainder: the cross-backend parity harness (`reference_numpy.py`) drives BOTH backends from
+  `switches.sulfur`, and `test_coupled_parity.py` is a genuine integrate-and-compare-species tuvx
+  parity test (diffrax vs SciPy BDF, matched frozen J) replacing the helper-equality stand-in.
 - **Phase 2.4 — CoupledScenario integration debts** (from the #29 review):
   - ~~Validate `concentrations` species keys~~ **DONE (2.4a):** `model_bridge.initial_state` raises on
     unknown species.
@@ -21,6 +21,11 @@
   backends now derive the gate from `reactions.sulfur_chain_active(photolysis)` (single source of
   truth); `test_sulfur_gate_single_source_all_modes` covers reference/sza/tuvx, so the previous silent
   NumPy-on / JAX-off disagreement for `tuvx` can't recur.
+- **CI-cheap real-port parity smoke test (PR#35 review, minor).** The regression-guarded parity test
+  (`test_coupled_parity.py`) runs the coupled backends with a *stubbed* adapter (fast). The real
+  TUV-x-port JAX-vs-NumPy agreement (1.2e-6) is only produced by the `validate_coupled.py` script (too
+  slow for CI) and lives as committed PNGs, not a test. A short real-port run (e.g. a few hours, 1
+  outer step) small enough for CI would close the gap so real-port parity is regression-guarded too.
 - **Sulfur test coverage (minor):** no test pins the `SO2+HO2->SO3+OH` (I34, 1e-18) coefficient
   magnitude; the I79 analytic test reuses the implementation constant so it checks structure, not the
   constant's value. Low priority (both are cross-checked against JPL in docs/jpl19-5-sulfur-crosscheck.md).
