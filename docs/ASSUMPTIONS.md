@@ -7,8 +7,8 @@ if it's not obvious from first principles or the reference, it belongs here.
 - **O3 treated as photolyzing 100% to O(1D)** in the box model (per the reference MATLAB
   `concs_het.m`); its single O3 rate = the O(1D)-*channel* J, not the total. Confirmed numerically
   (J(O1D) ≈ 5e-5 vs J(O3P) ≈ 5e-4 at 20 km/45°).
-- **SO2+HO2 rate = 1e-18** (JPL 19-5 upper limit; JPL gives no recommended value). Its effect on SO2
-  is ~0.02% at stratospheric conditions.
+- **SO2+HO2 rate = 1e-18** (JPL 19-5 upper limit; JPL gives no recommended value). Removing it changes
+  final SO2 by ~0.02% over a 10-day run (its instantaneous share of SO2 loss is ~0.001%) — immaterial.
 - Heterogeneous chemistry uses a **hard-coded aerosol radius 0.1e-4 cm** and **prescribed constant
   surface area** — to be replaced by TOMAS-derived values (Phase 3).
 
@@ -19,8 +19,8 @@ if it's not obvious from first principles or the reference, it belongs here.
 - **SO2 + OH → SO3 + HO2**: net product SO3+HO2 is JPL-faithful (I4 rate-limiting + I92 fast); the
   HOSO2 intermediate is lumped (steady-state) — standard, not a physics assumption.
 - ⚠️ **SO2 + HO2 → SO3 + OH product channel is an ASSUMPTION.** JPL 19-5 (I34) gives only the rate
-  **upper limit 1e-18** and **no product recommendation**. We pick SO3+OH; effect on SO2 is ~0.02%,
-  so immaterial. Flagged here so it is never treated as JPL-recommended.
+  **upper limit 1e-18** and **no product recommendation**. We pick SO3+OH; removing the reaction
+  shifts final SO2 by ~0.02% (10-day run), so immaterial. Flagged so it is never treated as JPL-given.
 - **Termolecular reference temperature = 298 K** (NOT an assumption — Table 2-1 header:
   `k0(T)=k0_298 (T/298)^-n`). A prior "fix" to 300 K was wrong and has been reverted; both bimolecular
   and termolecular use 298 K. See docs/jpl19-5-sulfur-crosscheck.md and DECISIONS.md (2026-07-02).
