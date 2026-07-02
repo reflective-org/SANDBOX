@@ -21,24 +21,27 @@ from dataclasses import dataclass, field
 # ---------------------------------------------------------------------------------------
 # Species ordering
 # ---------------------------------------------------------------------------------------
-# The state vector `x` has 34 entries. The order below MUST match the column order used in
-# the MATLAB code so that a Python run can be compared directly against the MATLAB/Octave
-# output. The reference order is the comment block at the top of ``concs_het.m``:
+# The state vector `x` has 36 entries. Entries 1-34 MUST match the column order used in the
+# MATLAB code so that a Python run can be compared directly against the MATLAB/Octave output.
+# The reference order is the comment block at the top of ``concs_het.m``:
 #
 #   x = [Cl, ClO, ClOOCl, ClONO2, HCl, Cl2, NO, NO2, O, O2, O3, CH3, CH4, HNO3, H2O, HOCl,
 #        N2O5, NO3, OH, HO2, O1D, HONO, HNO4, OClO, Br, BrO, BrONO2, BrCl, HBr, HOBr,
 #        HNO3aq, C2H6, SO2, H2O2]
 #
-# (SO2 and H2O2 are the two species "FK" added at the end.)
+# (SO2 and H2O2 are the two species "FK" added at the end of the original 34.)
+# SO3 and H2SO4 (35-36) are APPENDED for the gas-phase sulfur-oxidation chain (SO2->SO3->H2SO4);
+# keeping them last leaves indices 1-34 unchanged, so reference-mode results are unaffected.
 SPECIES = [
     "Cl", "ClO", "ClOOCl", "ClONO2", "HCl", "Cl2", "NO", "NO2",   # 1-8
     "O", "O2", "O3", "CH3", "CH4", "HNO3", "H2O", "HOCl",         # 9-16
     "N2O5", "NO3", "OH", "HO2", "O1D", "HONO", "HNO4", "OClO",    # 17-24
     "Br", "BrO", "BrONO2", "BrCl", "HBr", "HOBr", "HNO3aq",       # 25-31
     "C2H6", "SO2", "H2O2",                                        # 32-34
+    "SO3", "H2SO4",                                               # 35-36 (sulfur chain; appended)
 ]
 
-N_SPECIES = len(SPECIES)  # 34
+N_SPECIES = len(SPECIES)  # 36
 
 # Name -> position in the state vector (0-based, unlike MATLAB's 1-based indexing).
 IDX = {name: i for i, name in enumerate(SPECIES)}

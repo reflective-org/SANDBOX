@@ -9,7 +9,7 @@ the new rates) is covered by test_jax_dcdt.py; this file checks rate-independent
 
 import numpy as np
 
-from config import IDX, ModelConfig
+from config import IDX, N_SPECIES, ModelConfig
 from driver import initial_concentrations
 from rhs import concs_het
 
@@ -20,7 +20,7 @@ def test_dcdt_finite_day_and_night():
     for sza in (1, 0):
         cfg.SZA = sza
         d = concs_het(0.0, x0, cfg)
-        assert d.shape == (34,)
+        assert d.shape == (N_SPECIES,)
         assert np.all(np.isfinite(d))
 
 
