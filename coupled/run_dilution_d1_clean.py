@@ -16,7 +16,9 @@ to PLUME-INTEGRATED masses (d1_plume_mass plot + the injected-SO2 line in d1_inp
 
 Each run writes to its own clearly-named directory, coupled/analyses/d1_clean_<nbins>bin/
 (d1_clean.npz + d1_inputs.md + d1_observations.csv + plots).
-Run: python -m coupled.run_dilution_d1_clean [nbins]     (nbins = 40 default, or 80)
+
+Run:    python -m coupled.run_dilution_d1_clean [nbins]          (nbins = 40 default, or 80)
+Replot: python -m coupled.run_dilution_d1_clean [nbins] replot   (figures from the saved npz)
 """
 
 import os
@@ -26,6 +28,17 @@ import numpy as np
 import matplotlib
 
 matplotlib.use("Agg")
+# Publication style: only x/y axes (no top/right spines), recessive grid/ticks, clear fonts.
+matplotlib.rcParams.update({
+    "figure.dpi": 110, "savefig.dpi": 150,
+    "font.size": 11, "axes.titlesize": 12.5, "axes.labelsize": 11.5,
+    "xtick.labelsize": 10, "ytick.labelsize": 10,
+    "axes.spines.top": False, "axes.spines.right": False,
+    "axes.edgecolor": "#3a3a3a", "axes.linewidth": 1.0,
+    "xtick.color": "#3a3a3a", "ytick.color": "#3a3a3a",
+    "axes.grid": True, "grid.alpha": 0.22, "grid.linewidth": 0.6,
+    "legend.frameon": False,
+})
 import matplotlib.pyplot as plt
 
 from coupled import CoupledScenario
@@ -82,12 +95,12 @@ def _bin_diam_edges_um(xk):
 
 def _save(fig, name):
     fig.tight_layout()
-    fig.savefig(os.path.join(_OUT, name), dpi=120)
+    fig.savefig(os.path.join(_OUT, name))
     plt.close(fig)
 
 
 def _write_inputs_md(sc, het0):
-    """The full input table (for the group) -- everything the run consumes, in one file.
+    """ONE sectioned input table (copyable as a single block) -- everything the run consumes.
 
     ``het0`` = het_inputs(initial TomasState): the initial-distribution surface area / r_eff / wt%
     that the FIRST interval's heterogeneous chemistry actually uses (the scenario SA field is inert
@@ -95,82 +108,107 @@ def _write_inputs_md(sc, het0):
     """
     so2_conc = _SO2_PPT * 1e-12 * _M_AIR
     so2_kg = so2_conc * 1e6 * _V0_M3 / _AVOG * 0.064
-    conc_rows = "\n".join(
-        f"| {n} | {v:.4g} | {v * 1e-12 * _M_AIR:.3e} |" for n, v in sc.concentrations.items())
-    bg_rows = "\n".join(
-        f"| {n} | {v:.4g} | {v * 1e-12 * _M_AIR:.3e} |" for n, v in sc.dilution_background.items())
-    md = f"""# Dilution D1 -- input variables
-
-## Environment (box at ~20 km)
-| variable | value |
-|---|---|
-| Temperature T | {sc.T} K |
-| Pressure P | {sc.P} mbar (box altitude from the USSA profile) |
-| Water vapour | {sc.WTR} ppm  ->  RH = {100 * tb.rh_from_scenario(sc):.2f}% over liquid (Tabazadeh a_w; ~1.8% over ice) |
-| Air density M | {_M_AIR:.4e} molec/cm^3 |
-| N2O5+H2O uptake Yn2o5 | {sc.Yn2o5} |
-| O3-photolysis mode opt | {sc.opt} |
-
-## Location / date / schedule
-| variable | value |
-|---|---|
-| Latitude, longitude | {sc.latitude} N, {sc.longitude} E |
-| Day of year | {sc.day_of_year} (~June 21) |
-| Start | {sc.start_utc_hour:.1f} UTC |
-| Duration | {sc.days} days |
-| Output step DT | {sc.DT:.0f} s |
-| Outer coupling step dt_couple | {sc.dt_couple:.0f} s (TUV-x J + optics frozen per interval, midpoint) |
-| Micro-step (gas<->TOMAS) | adaptive, eps={sc.micro_eps}, floor={sc.micro_floor_s:g} s, cap={sc.micro_cap_s:g} s |
-
-## Plume geometry
-| variable | value |
-|---|---|
-| Initial volume V0 | 10 m x 10 m x 30 km = {_V0_M3:.3g} m^3 |
-| Injected SO2 | {_SO2_PPT:.3g} pptv = {so2_conc:.3e} molec/cm^3 = **{so2_kg:.0f} kg SO2 in V0** |
-| Role of V0 | intensive dynamics use only V(t)/V0; V0 converts conc -> plume-integrated mass |
-
-## Initial gas composition (species not listed start at 0; NO NH3/ammonium anywhere)
-| species | pptv | molec/cm^3 |
-|---|---|---|
-{conc_rows}
-| H2O | {sc.WTR * 1e6:.3g} (from WTR) | {sc.WTR * 1e-6 * _M_AIR:.3e} |
-
-## Dilution (regime D1 'Low Kz', Schumann plume expansion)
-| item | value |
-|---|---|
-| V(t)/V0 | max(1, t^0.8) for t < 1e4 s, then 1585 * exp(2.811e-9 (t-1e4)^1.5) |
-| k_dil | interval-averaged d ln V / dt |
-| Background zeroed species | {", ".join(sc.dilution_zero_species)} |
-| Background overrides | table below; all other species keep their initial value |
-
-| background species | pptv | molec/cm^3 |
-|---|---|---|
-{bg_rows}
-
-## Aerosol (TOMAS)
-| item | value |
-|---|---|
-| Bins | {sc.tomas_nbins} ({"mass-doubling" if sc.tomas_nbins == 40 else "sqrt(2) mass ratio"}), dry Dp 1.7 nm - 17.5 um |
-| Initial + background distribution | Marianna 'redcircles' clean stratosphere (N ~ 3 cm^-3) |
-| Initial surface area (from that distribution; used by the first het-chem interval) | {het0["SA"]:.3f} um^2/cm^3 (r_eff = {het0["radius_cm"] * 1e4:.3f} um, {het0["h2so4wp"]:.1f} wt%) |
-| Nucleation | Dunne 2016 binary H2SO4-H2O, neutral + ion-induced; ion_pair_rate = {sc.ion_pair_rate:g} pairs/cm^3/s; NH3 = 0 (ternary off); no organics (Riccobono channel = 0); fn_scale = {sc.nucleation_rate_scale:g} |
-| Condensation | PPM ('ppm_jit'), accommodation alpha = {sc.condensation_alpha:g} |
-| Coagulation | Brownian + Fuchs non-continuum correction |
-| Water uptake | Tabazadeh 1997 pure H2SO4/H2O ('h2so4_tabazadeh') |
-| TOMAS SO2 chemistry | OFF (gas model owns sulfur) |
-
-## Couplings (all ON)
-sulfur chain (SO2->SO3->H2SO4 via OH), nucleation, condensation, coagulation,
-aerosol->photolysis (plume layer {sc.aerosol_thickness_km:g} km thick, pressure-anchored at the box altitude),
-heating->T (SW only, no LW cooling), dilution.
-
-## Solvers / numerics
-gas: Diffrax Kvaerno5, rtol 1e-3, per-species atol 1e-6 (jitted, LU root finder; bit-identical to reference);
-photolysis: TUV-x port (machine-precision vs Fortran), config tuv_5_4_no_aerosol.json + dynamic TOMAS
-aerosol radiator; heating and J share ONE radiation solve per interval.
-"""
+    rows = [("**Environment (box at ~20 km)**", "", "")]
+    rows += [
+        ("", "Temperature T", f"{sc.T} K"),
+        ("", "Pressure P", f"{sc.P} mbar (box altitude from the USSA profile)"),
+        ("", "Water vapour", f"{sc.WTR} ppm -> RH = {100 * tb.rh_from_scenario(sc):.2f}% over liquid "
+            "(Tabazadeh a_w; ~1.8% over ice)"),
+        ("", "Air density M", f"{_M_AIR:.4e} molec/cm^3"),
+        ("", "N2O5+H2O uptake Yn2o5", f"{sc.Yn2o5}"),
+        ("", "O3-photolysis mode opt", f"{sc.opt}"),
+        ("**Location / date / schedule**", "", ""),
+        ("", "Latitude, longitude", f"{sc.latitude} N, {sc.longitude} E"),
+        ("", "Day of year", f"{sc.day_of_year} (~June 21)"),
+        ("", "Start", f"{sc.start_utc_hour:.1f} UTC"),
+        ("", "Duration", f"{sc.days} days"),
+        ("", "Output step DT", f"{sc.DT:.0f} s"),
+        ("", "Outer coupling step dt_couple", f"{sc.dt_couple:.0f} s (TUV-x J + optics frozen per "
+            "interval, midpoint)"),
+        ("", "Micro-step (gas<->TOMAS)", f"adaptive, eps={sc.micro_eps}, "
+            f"floor={sc.micro_floor_s:g} s, cap={sc.micro_cap_s:g} s"),
+        ("**Plume geometry**", "", ""),
+        ("", "Initial volume V0", f"10 m x 10 m x 30 km = {_V0_M3:.3g} m^3"),
+        ("", "Injected SO2", f"{_SO2_PPT:.3g} pptv = {so2_conc:.3e} molec/cm^3 = "
+            f"**{so2_kg:.0f} kg SO2 in V0**"),
+        ("", "Role of V0", "intensive dynamics use only V(t)/V0; V0 converts conc -> "
+            "plume-integrated mass (verified: results identical for 1 m^3 vs 3e6 m^3)"),
+        ("**Initial gas composition** (unlisted species start at 0; NO NH3/ammonium anywhere)", "", ""),
+    ]
+    rows += [("", n, f"{v:.4g} pptv = {v * 1e-12 * _M_AIR:.3e} molec/cm^3")
+             for n, v in sc.concentrations.items()]
+    rows += [
+        ("", "H2O", f"{sc.WTR * 1e6:.3g} pptv (from WTR) = {sc.WTR * 1e-6 * _M_AIR:.3e} molec/cm^3"),
+        ("**Dilution** (regime D1 'Low Kz', Schumann plume expansion)", "", ""),
+        ("", "V(t)/V0", "max(1, t^0.8) for t < 1e4 s, then 1585 * exp(2.811e-9 (t-1e4)^1.5)"),
+        ("", "k_dil", "interval-averaged d ln V / dt"),
+        ("", "Background zeroed species", ", ".join(sc.dilution_zero_species)),
+    ]
+    rows += [("", f"Background {n}", f"{v:.4g} pptv = {v * 1e-12 * _M_AIR:.3e} molec/cm^3")
+             for n, v in sc.dilution_background.items()]
+    rows += [
+        ("", "Background (all other species)", "keep their initial value; background aerosol = the "
+            "initial distribution"),
+        ("**Aerosol (TOMAS)**", "", ""),
+        ("", "Bins", f"{sc.tomas_nbins} "
+            f"({'mass-doubling' if sc.tomas_nbins == 40 else 'sqrt(2) mass ratio'}), "
+            "dry Dp 1.7 nm - 17.5 um"),
+        ("", "Initial + background distribution", "Marianna 'redcircles' clean stratosphere "
+            "(obs 220-230 ppbv, STP -> ambient x0.069; N ~ 3 cm^-3)"),
+        ("", "Initial surface area (used by the first het-chem interval)",
+            f"{het0['SA']:.3f} um^2/cm^3 (r_eff = {het0['radius_cm'] * 1e4:.3f} um, "
+            f"{het0['h2so4wp']:.1f} wt%)"),
+        ("", "Nucleation", f"Dunne 2016 binary H2SO4-H2O, neutral + ion-induced; ion_pair_rate = "
+            f"{sc.ion_pair_rate:g} pairs/cm^3/s; NH3 = 0 (ternary off); no organics; "
+            f"fn_scale = {sc.nucleation_rate_scale:g}"),
+        ("", "Condensation", f"PPM ('ppm_jit'), accommodation alpha = {sc.condensation_alpha:g}"),
+        ("", "Coagulation", "Brownian + Fuchs non-continuum correction"),
+        ("", "Water uptake", "Tabazadeh 1997 pure H2SO4/H2O ('h2so4_tabazadeh')"),
+        ("", "TOMAS SO2 chemistry", "OFF (gas model owns sulfur)"),
+        ("**Couplings (all ON)**", "", ""),
+        ("", "Processes", "sulfur chain (SO2->SO3->H2SO4 via OH), nucleation, condensation, "
+            "coagulation, aerosol->photolysis, heating->T (SW only), dilution"),
+        ("", "Aerosol -> photolysis", f"plume layer {sc.aerosol_thickness_km:g} km thick, "
+            "pressure-anchored at the box altitude"),
+        ("**Solvers / numerics**", "", ""),
+        ("", "Gas", "Diffrax Kvaerno5, rtol 1e-3, per-species atol 1e-6 (jitted, LU root finder; "
+            "bit-identical to reference)"),
+        ("", "Photolysis", "TUV-x port (machine precision vs Fortran), tuv_5_4_no_aerosol.json + "
+            "dynamic TOMAS aerosol radiator; heating and J share ONE radiation solve per interval"),
+    ]
+    lines = ["# Dilution D1 -- input variables", "",
+             "| Section | Variable | Value |", "|---|---|---|"]
+    lines += [f"| {a} | {b} | {c} |" for a, b, c in rows]
     with open(os.path.join(_OUT, "d1_inputs.md"), "w") as f:
-        f.write(md)
+        f.write("\n".join(lines) + "\n")
+
+
+def _export_observations(sc):
+    """Save the digitized Marianna observations (dN/dlogDp) as data + a comparison plot.
+
+    The source figure reports cm^-3 STP; the simulation uses AMBIENT concentrations, so both are
+    written (ambient = STP * (P/P_STP)*(T_STP/T), the same factor the initial state uses).
+    """
+    import background_aerosol_distribution as bad
+    fac = bad.stp_to_ambient_factor(sc.T, sc.P * 100.0)
+    obs = {"330-340 ppbv (triangles)": bad._DATA1,
+           "310-320 ppbv (diamonds)": bad._DATA4,
+           "220-230 ppbv (circles; THIS RUN)": bad._DATA3}
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+    lines = [f"# Marianna observations, dN/dlogDp; ambient = STP * {fac:.4f} "
+             f"(T={sc.T} K, P={sc.P} mbar)", "# obs, Dp_um, dNdlogDp_cm3_STP, dNdlogDp_cm3_ambient"]
+    for (label, d), color in zip(obs.items(), ("C3", "C4", "C0")):
+        ax.plot(d[:, 0], d[:, 1], "o-", ms=3.5, lw=1.5, color=color, label=f"{label} (STP)")
+        ax.plot(d[:, 0], d[:, 1] * fac, "--", lw=1.3, color=color, alpha=0.6)
+        for row in d:
+            lines.append(f"{label.split(' ')[0]}, {row[0]:.4g}, {row[1]:.4g}, {row[1] * fac:.4g}")
+    ax.set_xscale("log")
+    ax.set_xlabel("diameter [um]"); ax.set_ylabel("dN/dlogDp [cm$^{-3}$]")
+    ax.set_title("Digitized observations: solid = as published (STP), dashed = ambient at 20 km")
+    ax.legend(fontsize=8.5)
+    _save(fig, "d1_observations.png")
+    with open(os.path.join(_OUT, "d1_observations.csv"), "w") as f:
+        f.write("\n".join(lines) + "\n")
 
 
 def _reaction_rates(sc, x, aero, jrec, t):
@@ -204,41 +242,223 @@ def _reaction_rates(sc, x, aero, jrec, t):
     return rates
 
 
-def _export_observations(sc):
-    """Save the digitized Marianna observations (dN/dlogDp) as data + a comparison plot.
+def _make_plots(d):
+    """All figures from the (run or npz-loaded) data dict ``d``."""
+    days, x, M = d["days"], d["x"], d["M"]
+    dp_mid, dNdlogDp = d["dp_mid"], d["dNdlogDp"]
+    total_n, mass_ug_m3 = d["total_n"], d["mass_ug_m3"]
 
-    The source figure reports cm^-3 STP; the simulation uses AMBIENT concentrations, so both are
-    written (ambient = STP * (P/P_STP)*(T_STP/T), the same factor the initial state uses).
-    """
-    import background_aerosol_distribution as bad
-    fac = bad.stp_to_ambient_factor(sc.T, sc.P * 100.0)
-    obs = {"330-340 ppbv (triangles)": bad._DATA1,
-           "310-320 ppbv (diamonds)": bad._DATA4,
-           "220-230 ppbv (circles; THIS RUN)": bad._DATA3}
-    fig, ax = plt.subplots(figsize=(8, 5.5))
-    lines = [f"# Marianna observations, dN/dlogDp; ambient = STP * {fac:.4f} "
-             f"(T={sc.T} K, P={sc.P} mbar)", "# obs, Dp_um, dNdlogDp_cm3_STP, dNdlogDp_cm3_ambient"]
-    for (label, d), color in zip(obs.items(), ("C3", "C4", "C0")):
-        ax.plot(d[:, 0], d[:, 1], "o-", ms=3, lw=1.2, color=color, label=f"{label} (STP)")
-        ax.plot(d[:, 0], d[:, 1] * fac, "--", lw=1.2, color=color, alpha=0.6)
-        for row in d:
-            lines.append(f"{label.split(' ')[0]}, {row[0]:.4g}, {row[1]:.4g}, {row[1] * fac:.4g}")
-    ax.set_xscale("log")
-    ax.set_xlabel("diameter [um]"); ax.set_ylabel("dN/dlogDp [cm$^{-3}$]")
-    ax.set_title("Digitized observations: solid = as published (STP), dashed = ambient at 20 km")
-    ax.legend(fontsize=8); ax.grid(alpha=0.3, which="both")
-    _save(fig, "d1_observations.png")
-    with open(os.path.join(_OUT, "d1_observations.csv"), "w") as f:
-        f.write("\n".join(lines) + "\n")
+    def ppt(name):
+        return x[:, IDX[name]] / M * 1e12
+
+    def conc(name):
+        return x[:, IDX[name]]
+
+    # 1) initial size distribution (Marianna 'redcircles' background, dry diameter)
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.step(dp_mid, dNdlogDp[0], where="mid", lw=1.8, color="C0")
+    ax.set_xscale("log"); ax.set_yscale("log")
+    ax.set_xlabel("dry diameter [um]"); ax.set_ylabel("dN/dlogDp [cm$^{-3}$]")
+    ax.set_title(f"Initial aerosol (Marianna 'redcircles'): N = {total_n[0]:.2f} cm$^{{-3}}$, "
+                 f"m = {mass_ug_m3[0]:.3f} ug m$^{{-3}}$")
+    _save(fig, "d1_initial_size_dist.png")
+
+    # 2) banana plot -- sequential (perceptually uniform) colormap for the magnitude, log color scale
+    fig, ax = plt.subplots(figsize=(9.5, 5.2))
+    pm = ax.pcolormesh(days, dp_mid, np.maximum(dNdlogDp, 1e-3).T, shading="auto",
+                       norm=matplotlib.colors.LogNorm(vmin=1e-1, vmax=max(1e2, dNdlogDp.max())),
+                       cmap="viridis", rasterized=True)
+    ax.set_yscale("log"); ax.set_ylabel("dry diameter [um]"); ax.set_xlabel("day")
+    ax.set_title("Aerosol size distribution dN/dlogDp [cm$^{-3}$]")
+    ax.grid(False)
+    cb = fig.colorbar(pm, ax=ax, label="dN/dlogDp [cm$^{-3}$]", pad=0.015)
+    cb.outline.set_visible(False)
+    _save(fig, "d1_banana.png")
+
+    # 3) size-distribution snapshots
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for d_day, color in zip((0.0, 0.5, 1.0, 2.0, 5.0, 10.0),
+                            plt.cm.viridis(np.linspace(0.05, 0.92, 6))):
+        i = int(np.argmin(np.abs(days - d_day)))
+        ax.step(dp_mid, dNdlogDp[i], where="mid", lw=1.6, color=color, label=f"{days[i]:.1f} d")
+    ax.set_xscale("log"); ax.set_yscale("log")
+    ax.set_xlabel("dry diameter [um]"); ax.set_ylabel("dN/dlogDp [cm$^{-3}$]")
+    ax.set_title("Size distributions"); ax.legend(fontsize=9, title="time")
+    _save(fig, "d1_size_distributions.png")
+
+    # 4) EVERY gas-phase species separately (pptv)
+    names = list(IDX)
+    ncols, nrows = 6, int(np.ceil(len(names) / 6))
+    fig, axs = plt.subplots(nrows, ncols, figsize=(3.0 * ncols, 2.2 * nrows), sharex=True)
+    for ax, name in zip(axs.flat, names):
+        y = ppt(name)
+        ax.plot(days, np.maximum(y, 1e-12), lw=1.1)
+        if np.nanmax(y) > 0:
+            ax.set_yscale("log")
+        ax.set_title(name, fontsize=9.5)
+        ax.tick_params(labelsize=7.5)
+    for ax in axs.flat[len(names):]:
+        ax.axis("off")
+    for ax in axs[-1, :]:
+        ax.set_xlabel("day", fontsize=8.5)
+    fig.suptitle("Gas-phase species [pptv]", y=1.001)
+    _save(fig, "d1_species_all.png")
+
+    # 5) photolysis coefficients J(t) actually used, per reaction
+    j_days, J, j_eqs = d["j_tmid"] / 86400.0, d["J"], d["j_equations"]
+    ncols = 5
+    nrows = int(np.ceil(len(j_eqs) / ncols))
+    fig, axs = plt.subplots(nrows, ncols, figsize=(3.4 * ncols, 2.3 * nrows), sharex=True)
+    for ax, k in zip(axs.flat, range(len(j_eqs))):
+        ax.plot(j_days, np.maximum(J[:, k], 1e-30), lw=1.0)
+        ax.set_yscale("log")
+        ax.set_title(str(j_eqs[k]), fontsize=8.5)
+        ax.tick_params(labelsize=7.5)
+    for ax in axs.flat[len(j_eqs):]:
+        ax.axis("off")
+    for ax in axs[-1, :]:
+        ax.set_xlabel("day", fontsize=8.5)
+    fig.suptitle("Frozen photolysis coefficients J(t) used by the gas solve [s$^{-1}$]", y=1.001)
+    _save(fig, "d1_photolysis_J.png")
+
+    # 6) per-reaction rates (all active reactions)
+    rates, eqs = d["rates"], d["rate_equations"]
+    ncols = 6
+    nrows = int(np.ceil(len(eqs) / ncols))
+    fig, axs = plt.subplots(nrows, ncols, figsize=(3.2 * ncols, 2.2 * nrows), sharex=True)
+    for ax, k in zip(axs.flat, range(len(eqs))):
+        ax.plot(days, np.maximum(rates[:, k], 1e-12), lw=1.0)
+        ax.set_yscale("log")
+        ax.set_title(str(eqs[k]), fontsize=7.5)
+        ax.tick_params(labelsize=7.5)
+    for ax in axs.flat[len(eqs):]:
+        ax.axis("off")
+    for ax in axs[-1, :]:
+        ax.set_xlabel("day", fontsize=8.5)
+    fig.suptitle("Reaction rates [molec cm$^{-3}$ s$^{-1}$]", y=1.001)
+    _save(fig, "d1_reaction_rates.png")
+
+    # 7) dilution alone: plume volume + rate
+    V, kdil = d["V"], d["kdil"]
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4.4))
+    a1.plot(days, V, lw=1.8); a1.set_yscale("log")
+    a1.set_title("plume volume V(t)/V$_0$ (D1 'Low Kz', Schumann)"); a1.set_xlabel("day")
+    a2.plot(days[1:], kdil, lw=1.6, color="C1"); a2.set_yscale("log")
+    a2.set_title("dilution rate k$_{dil}$(t) [s$^{-1}$]"); a2.set_xlabel("day")
+    _save(fig, "d1_dilution.png")
+
+    # 8) surface area alone
+    fig, ax = plt.subplots(figsize=(7.5, 4.8))
+    ax.plot(days, d["SA"], lw=1.8, color="C2")
+    ax.set_yscale("log"); ax.set_xlabel("day"); ax.set_ylabel("SA [um$^2$ cm$^{-3}$]")
+    ax.set_title("Aerosol surface area (wet)")
+    _save(fig, "d1_surface_area.png")
+
+    # 9) H2SO4: gas vs particle
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(days, np.maximum(ppt("H2SO4"), 1e-12), lw=1.6, label="gas H2SO4")
+    ax.plot(days, np.maximum(d["particulate_S"] / M * 1e12, 1e-12), lw=1.6,
+            label="particulate sulfate (H2SO4-equiv)")
+    ax.set_yscale("log"); ax.set_xlabel("day"); ax.set_ylabel("pptv")
+    ax.set_title("Sulfuric acid: gas vs particle")
+    ax2 = ax.secondary_yaxis("right", functions=(lambda p: p * 1e-12 * M, lambda c: c / M * 1e12))
+    ax2.set_ylabel("molec cm$^{-3}$")
+    ax.legend()
+    _save(fig, "d1_h2so4_gas_particle.png")
+
+    # 10) totals: number, dry sulfate mass, surface area
+    fig, axs = plt.subplots(1, 3, figsize=(14, 4.4))
+    axs[0].plot(days, total_n, lw=1.6); axs[0].set_title("total number [cm$^{-3}$]")
+    axs[1].plot(days, mass_ug_m3, lw=1.6, color="C3")
+    axs[1].set_title("dry sulfate mass [ug m$^{-3}$]")
+    axs[2].plot(days, d["SA"], lw=1.6, color="C2"); axs[2].set_title("surface area [um$^2$ cm$^{-3}$]")
+    for a in axs:
+        a.set_yscale("log"); a.set_xlabel("day")
+    fig.suptitle("Aerosol totals (per cm$^3$ of plume air)")
+    _save(fig, "d1_totals.png")
+
+    # 11) plume-integrated masses (uses V0)
+    fig, ax = plt.subplots(figsize=(8.5, 5))
+    ax.plot(days, d["so2_kg"], lw=1.8, label="SO2 (gas)")
+    ax.plot(days, np.maximum(d["h2so4_kg"], 1e-12), lw=1.5, label="H2SO4 (gas)")
+    ax.plot(days, d["sulfate_kg"], lw=1.8, label="particulate sulfate (H2SO4-equiv)")
+    ax.set_yscale("log"); ax.set_xlabel("day"); ax.set_ylabel("mass in plume [kg]")
+    ax.set_title(f"Plume-integrated mass (V$_0$ = 10m x 10m x 30km = {_V0_M3:.1e} m$^3$)\n"
+                 "dilution entrains background SO2/aerosol as the plume grows")
+    ax.legend()
+    _save(fig, "d1_plume_mass.png")
+
+    # 12) OH alone [molec/cm^3]
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    ax.plot(days, np.maximum(conc("OH"), 1e-2), lw=1.4, color="C0")
+    ax.axhline(5.0e5, color="k", ls=":", lw=1.1, label="background (5e5)")
+    ax.set_yscale("log"); ax.set_xlabel("day"); ax.set_ylabel("OH [molec cm$^{-3}$]")
+    ax.set_title("OH"); ax.legend()
+    _save(fig, "d1_OH.png")
+
+    # 13) SO2 alone
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    ax.plot(days, conc("SO2"), lw=1.8, color="C3")
+    ax.axhline(15.0e-12 * M, color="k", ls=":", lw=1.1, label="background (15 pptv)")
+    ax.set_yscale("log"); ax.set_xlabel("day"); ax.set_ylabel("SO2 [molec cm$^{-3}$]")
+    ax2 = ax.secondary_yaxis("right", functions=(lambda c: c / M * 1e12, lambda p: p * 1e-12 * M))
+    ax2.set_ylabel("pptv")
+    ax.set_title("SO2"); ax.legend()
+    _save(fig, "d1_SO2.png")
+
+    # 14) total H2SO4 (gas + particulate H2SO4-equivalent) [molec/cm^3]
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    total_h2so4 = conc("H2SO4") + d["particulate_S"]
+    ax.plot(days, total_h2so4, lw=1.9, color="k", label="total (gas + particle)")
+    ax.plot(days, np.maximum(conc("H2SO4"), 1e-2), lw=1.2, alpha=0.75, label="gas")
+    ax.plot(days, d["particulate_S"], lw=1.2, alpha=0.75, label="particulate (H2SO4-equiv)")
+    ax.set_yscale("log"); ax.set_xlabel("day"); ax.set_ylabel("H2SO4 [molec cm$^{-3}$]")
+    ax.set_title("Total sulfuric acid"); ax.legend()
+    _save(fig, "d1_H2SO4_total.png")
+
+    # 15) ozone alone
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    ax.plot(days, ppt("O3") / 1e6, lw=1.6, color="C2")
+    ax.set_xlabel("day"); ax.set_ylabel("O3 [ppmv]")
+    ax2 = ax.secondary_yaxis("right", functions=(lambda p: p * 1e-6 * M / 1e12,
+                                                 lambda c: c * 1e12 / (1e-6 * M)))
+    ax2.set_ylabel("O3 [10$^{12}$ molec cm$^{-3}$]")
+    ax.set_title("Ozone")
+    _save(fig, "d1_O3.png")
+
+    # 16) aerosol properties + box temperature (heating)
+    fig, axs = plt.subplots(1, 3, figsize=(14, 4.4))
+    axs[0].plot(days, d["radius_cm"] * 1e4, lw=1.6)
+    axs[0].set_yscale("log"); axs[0].set_title("effective wet radius r$_{eff}$ [um]")
+    axs[1].plot(days, d["h2so4wp"], lw=1.6, color="C1"); axs[1].set_title("aerosol H2SO4 [wt%]")
+    axs[2].plot(days, d["T"], lw=1.6, color="C3"); axs[2].set_title("box temperature [K]")
+    for a in axs:
+        a.set_xlabel("day")
+    fig.suptitle("Aerosol composition / heating response")
+    _save(fig, "d1_aerosol_props.png")
 
 
-def main(nbins=40):
+def main(nbins=40, replot=False):
     global _OUT
     _OUT = os.path.join(os.path.dirname(__file__), "analyses", f"d1_clean_{nbins}bin")
     os.makedirs(_OUT, exist_ok=True)
     sc = _scenario(nbins)
     _write_inputs_md(sc, het_inputs(tb.initial_tomas_state(sc)))
     _export_observations(sc)
+
+    if replot:
+        r = np.load(os.path.join(_OUT, "d1_clean.npz"))
+        d = dict(days=r["t"] / 86400.0, x=r["x"], M=float(r["M"]), dp_mid=r["dp_mid_um"],
+                 dNdlogDp=r["dNdlogDp"], total_n=r["total_n"], mass_ug_m3=r["mass_ug_m3"],
+                 SA=r["SA"], radius_cm=r["radius_cm"], h2so4wp=r["h2so4wp"],
+                 particulate_S=r["particulate_S"], T=r["T"], V=r["V_ratio"], kdil=r["kdil"],
+                 j_tmid=r["J_tmid"], J=r["J"], j_equations=list(r["J_equations"]),
+                 rates=r["rates"], rate_equations=list(r["rate_equations"]),
+                 so2_kg=r["so2_kg"], h2so4_kg=r["h2so4_kg"], sulfate_kg=r["sulfate_kg"])
+        _make_plots(d)
+        print(f"replotted 16 figures from the saved npz -> {_OUT}/")
+        return
+
     print(f"Running Dilution-1 clean-stratosphere ({nbins} bins; 20 km, 30N, summer, 10 d, "
           f"full coupling) -> {_OUT}/ ...")
     try:
@@ -251,12 +471,6 @@ def main(nbins=40):
         raise
     days = t / 86400.0
     M = x[0, IDX["O2"]] / 0.21
-
-    def ppt(name):
-        return x[:, IDX[name]] / M * 1e12
-
-    def conc(name):
-        return x[:, IDX[name]]                                    # molec/cm^3
 
     # dN/dlogDp on fixed diameter bins: n_cm3(t,bin) / dlogDp(bin)
     edges = _bin_diam_edges_um(st_final.xk)
@@ -286,197 +500,24 @@ def main(nbins=40):
              rates=rates, rate_equations=[r.equation for r in MECHANISM.active],
              V0_m3=_V0_M3, so2_kg=so2_kg, h2so4_kg=h2so4_kg, sulfate_kg=sulfate_kg)
 
-    # 1) initial size distribution (Marianna 'redcircles' background, dry diameter)
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.step(dp_mid, dNdlogDp[0], where="mid", lw=1.8, color="C0")
-    ax.set_xscale("log"); ax.set_yscale("log")
-    ax.set_xlabel("dry diameter [um]"); ax.set_ylabel("dN/dlogDp [cm$^{-3}$]")
-    ax.set_title(f"Initial aerosol (Marianna 'redcircles' background): "
-                 f"N = {total_n[0]:.2f} cm$^{{-3}}$, m = {mass_ug_m3[0]:.3f} ug m$^{{-3}}$")
-    ax.grid(alpha=0.3, which="both")
-    _save(fig, "d1_initial_size_dist.png")
+    _make_plots(dict(days=days, x=x, M=M, dp_mid=dp_mid, dNdlogDp=dNdlogDp, total_n=total_n,
+                     mass_ug_m3=mass_ug_m3, SA=np.asarray(aero["SA"], float),
+                     radius_cm=np.asarray(aero["radius_cm"], float),
+                     h2so4wp=np.asarray(aero["h2so4wp"], float),
+                     particulate_S=np.asarray(aero["particulate_S"], float),
+                     T=np.asarray(aero["T"], float), V=V, kdil=kdil,
+                     j_tmid=jrec["t_mid"], J=jrec["J"], j_equations=jrec["equations"],
+                     rates=rates, rate_equations=[r.equation for r in MECHANISM.active],
+                     so2_kg=so2_kg, h2so4_kg=h2so4_kg, sulfate_kg=sulfate_kg))
 
-    # 2) banana plot
-    fig, ax = plt.subplots(figsize=(9, 5))
-    pm = ax.pcolormesh(days, dp_mid, np.maximum(dNdlogDp, 1e-3).T, shading="auto",
-                       norm=matplotlib.colors.LogNorm(vmin=1e-1, vmax=max(1e2, dNdlogDp.max())),
-                       cmap="turbo")
-    ax.set_yscale("log"); ax.set_ylabel("dry diameter [um]"); ax.set_xlabel("day")
-    ax.set_title("Dilution 1 (clean strat): aerosol size distribution dN/dlogDp [cm$^{-3}$]")
-    fig.colorbar(pm, ax=ax, label="dN/dlogDp [cm$^{-3}$]")
-    _save(fig, "d1_banana.png")
-
-    # 3) size-distribution snapshots
-    fig, ax = plt.subplots(figsize=(8, 5))
-    for d in (0.0, 0.5, 1.0, 2.0, 5.0, 10.0):
-        i = int(np.argmin(np.abs(days - d)))
-        ax.step(dp_mid, dNdlogDp[i], where="mid", lw=1.4, label=f"{days[i]:.1f} d")
-    ax.set_xscale("log"); ax.set_yscale("log")
-    ax.set_xlabel("dry diameter [um]"); ax.set_ylabel("dN/dlogDp [cm$^{-3}$]")
-    ax.set_title("Size distributions"); ax.legend(fontsize=8); ax.grid(alpha=0.3, which="both")
-    _save(fig, "d1_size_distributions.png")
-
-    # 4) EVERY gas-phase species separately (pptv)
-    names = list(IDX)
-    ncols, nrows = 6, int(np.ceil(len(names) / 6))
-    fig, axs = plt.subplots(nrows, ncols, figsize=(3.0 * ncols, 2.2 * nrows), sharex=True)
-    for ax, name in zip(axs.flat, names):
-        y = ppt(name)
-        ax.plot(days, np.maximum(y, 1e-12), lw=1.0)
-        if np.nanmax(y) > 0:
-            ax.set_yscale("log")
-        ax.set_title(name, fontsize=9)
-        ax.tick_params(labelsize=7)
-        ax.grid(alpha=0.25)
-    for ax in axs.flat[len(names):]:
-        ax.axis("off")
-    for ax in axs[-1, :]:
-        ax.set_xlabel("day", fontsize=8)
-    fig.suptitle("Dilution 1: gas-phase species [pptv]", y=1.001)
-    _save(fig, "d1_species_all.png")
-
-    # 5) photolysis coefficients J(t) actually used, per reaction
-    j_days = jrec["t_mid"] / 86400.0
-    n_j = len(jrec["equations"])
-    ncols = 5
-    nrows = int(np.ceil(n_j / ncols))
-    fig, axs = plt.subplots(nrows, ncols, figsize=(3.4 * ncols, 2.3 * nrows), sharex=True)
-    for ax, k in zip(axs.flat, range(n_j)):
-        ax.plot(j_days, np.maximum(jrec["J"][:, k], 1e-30), lw=0.9)
-        ax.set_yscale("log")
-        ax.set_title(jrec["equations"][k], fontsize=8)
-        ax.tick_params(labelsize=7)
-        ax.grid(alpha=0.25)
-    for ax in axs.flat[n_j:]:
-        ax.axis("off")
-    for ax in axs[-1, :]:
-        ax.set_xlabel("day", fontsize=8)
-    fig.suptitle("Frozen photolysis coefficients J(t) used by the gas solve [s$^{-1}$]", y=1.001)
-    _save(fig, "d1_photolysis_J.png")
-
-    # 6) per-reaction rates (all active reactions)
-    eqs = [r.equation for r in MECHANISM.active]
-    ncols = 6
-    nrows = int(np.ceil(len(eqs) / ncols))
-    fig, axs = plt.subplots(nrows, ncols, figsize=(3.2 * ncols, 2.2 * nrows), sharex=True)
-    for ax, k in zip(axs.flat, range(len(eqs))):
-        ax.plot(days, np.maximum(rates[:, k], 1e-12), lw=0.9)
-        ax.set_yscale("log")
-        ax.set_title(eqs[k], fontsize=7)
-        ax.tick_params(labelsize=7)
-        ax.grid(alpha=0.25)
-    for ax in axs.flat[len(eqs):]:
-        ax.axis("off")
-    for ax in axs[-1, :]:
-        ax.set_xlabel("day", fontsize=8)
-    fig.suptitle("Reaction rates [molec cm$^{-3}$ s$^{-1}$]", y=1.001)
-    _save(fig, "d1_reaction_rates.png")
-
-    # 7) dilution alone: plume volume + rate
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4.2))
-    a1.plot(days, V, lw=1.6); a1.set_yscale("log")
-    a1.set_title("plume volume V(t)/V$_0$ (D1 'Low Kz', Schumann)"); a1.set_xlabel("day")
-    a2.plot(days[1:], kdil, lw=1.4, color="C1"); a2.set_yscale("log")
-    a2.set_title("dilution rate k$_{dil}$(t) [s$^{-1}$]"); a2.set_xlabel("day")
-    for a in (a1, a2):
-        a.grid(alpha=0.3)
-    _save(fig, "d1_dilution.png")
-
-    # 8) surface area alone
-    fig, ax = plt.subplots(figsize=(7, 4.5))
-    ax.plot(days, aero["SA"], lw=1.6, color="C2")
-    ax.set_yscale("log"); ax.set_xlabel("day"); ax.set_ylabel("SA [um$^2$ cm$^{-3}$]")
-    ax.set_title("Aerosol surface area (wet)"); ax.grid(alpha=0.3)
-    _save(fig, "d1_surface_area.png")
-
-    # 9) H2SO4: gas vs particle
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(days, np.maximum(ppt("H2SO4"), 1e-12), lw=1.5, label="gas H2SO4")
-    ax.plot(days, np.maximum(aero["particulate_S"] / M * 1e12, 1e-12), lw=1.5,
-            label="particulate sulfate (H2SO4-equiv)")
-    ax.set_yscale("log"); ax.set_xlabel("day"); ax.set_ylabel("pptv")
-    ax.set_title("Sulfuric acid: gas vs particle")
-    ax2 = ax.secondary_yaxis("right", functions=(lambda p: p * 1e-12 * M, lambda c: c / M * 1e12))
-    ax2.set_ylabel("molec cm$^{-3}$")
-    ax.legend(); ax.grid(alpha=0.3)
-    _save(fig, "d1_h2so4_gas_particle.png")
-
-    # 10) totals: number, dry sulfate mass, surface area
-    fig, axs = plt.subplots(1, 3, figsize=(14, 4.2))
-    axs[0].plot(days, total_n, lw=1.5); axs[0].set_title("total number [cm$^{-3}$]")
-    axs[1].plot(days, mass_ug_m3, lw=1.5, color="C3"); axs[1].set_title("dry sulfate mass [ug m$^{-3}$]")
-    axs[2].plot(days, aero["SA"], lw=1.5, color="C2"); axs[2].set_title("surface area [um$^2$ cm$^{-3}$]")
-    for a in axs:
-        a.set_yscale("log"); a.set_xlabel("day"); a.grid(alpha=0.3)
-    fig.suptitle("Aerosol totals (per cm$^3$ of plume air)")
-    _save(fig, "d1_totals.png")
-
-    # 11) plume-integrated masses (uses V0): conc x V0*V(t)/V0
-    fig, ax = plt.subplots(figsize=(8.5, 5))
-    ax.plot(days, so2_kg, lw=1.6, label="SO2 (gas)")
-    ax.plot(days, np.maximum(h2so4_kg, 1e-12), lw=1.4, label="H2SO4 (gas)")
-    ax.plot(days, sulfate_kg, lw=1.6, label="particulate sulfate (H2SO4-equiv)")
-    ax.set_yscale("log"); ax.set_xlabel("day"); ax.set_ylabel("mass in plume [kg]")
-    ax.set_title(f"Plume-integrated mass (V$_0$ = 10m x 10m x 30km = {_V0_M3:.1e} m$^3$)\n"
-                 "note: dilution entrains background SO2/aerosol as the plume grows")
-    ax.legend(); ax.grid(alpha=0.3)
-    _save(fig, "d1_plume_mass.png")
-
-    # 12) OH alone [molec/cm^3]
-    fig, ax = plt.subplots(figsize=(8, 4.8))
-    ax.plot(days, np.maximum(conc("OH"), 1e-2), lw=1.2, color="C0")
-    ax.axhline(5.0e5, color="k", ls=":", lw=1.0, label="background (5e5)")
-    ax.set_yscale("log"); ax.set_xlabel("day"); ax.set_ylabel("OH [molec cm$^{-3}$]")
-    ax.set_title("OH"); ax.legend(); ax.grid(alpha=0.3)
-    _save(fig, "d1_OH.png")
-
-    # 13) SO2 alone
-    fig, ax = plt.subplots(figsize=(8, 4.8))
-    ax.plot(days, conc("SO2"), lw=1.5, color="C3")
-    ax.axhline(15.0e-12 * M, color="k", ls=":", lw=1.0, label="background (15 pptv)")
-    ax.set_yscale("log"); ax.set_xlabel("day"); ax.set_ylabel("SO2 [molec cm$^{-3}$]")
-    ax2 = ax.secondary_yaxis("right", functions=(lambda c: c / M * 1e12, lambda p: p * 1e-12 * M))
-    ax2.set_ylabel("pptv")
-    ax.set_title("SO2"); ax.legend(); ax.grid(alpha=0.3)
-    _save(fig, "d1_SO2.png")
-
-    # 14) total H2SO4 (gas + particulate H2SO4-equivalent) [molec/cm^3]
-    fig, ax = plt.subplots(figsize=(8, 4.8))
-    total_h2so4 = conc("H2SO4") + aero["particulate_S"]
-    ax.plot(days, total_h2so4, lw=1.6, color="k", label="total (gas + particle)")
-    ax.plot(days, np.maximum(conc("H2SO4"), 1e-2), lw=1.0, alpha=0.7, label="gas")
-    ax.plot(days, aero["particulate_S"], lw=1.0, alpha=0.7, label="particulate (H2SO4-equiv)")
-    ax.set_yscale("log"); ax.set_xlabel("day"); ax.set_ylabel("H2SO4 [molec cm$^{-3}$]")
-    ax.set_title("Total sulfuric acid"); ax.legend(); ax.grid(alpha=0.3)
-    _save(fig, "d1_H2SO4_total.png")
-
-    # 15) ozone alone
-    fig, ax = plt.subplots(figsize=(8, 4.8))
-    ax.plot(days, ppt("O3") / 1e6, lw=1.4, color="C2")
-    ax.set_xlabel("day"); ax.set_ylabel("O3 [ppmv]")
-    ax2 = ax.secondary_yaxis("right", functions=(lambda p: p * 1e-6 * M / 1e12,
-                                                 lambda c: c * 1e12 / (1e-6 * M)))
-    ax2.set_ylabel("O3 [10$^{12}$ molec cm$^{-3}$]")
-    ax.set_title("Ozone"); ax.grid(alpha=0.3)
-    _save(fig, "d1_O3.png")
-
-    # 16) aerosol properties + box temperature (heating)
-    fig, axs = plt.subplots(1, 3, figsize=(14, 4.2))
-    axs[0].plot(days, aero["radius_cm"] * 1e4, lw=1.5)
-    axs[0].set_yscale("log"); axs[0].set_title("effective wet radius r$_{eff}$ [um]")
-    axs[1].plot(days, aero["h2so4wp"], lw=1.5, color="C1"); axs[1].set_title("aerosol H2SO4 [wt%]")
-    axs[2].plot(days, aero["T"], lw=1.5, color="C3"); axs[2].set_title("box temperature [K]")
-    for a in axs:
-        a.set_xlabel("day"); a.grid(alpha=0.3)
-    fig.suptitle("Aerosol composition / heating response")
-    _save(fig, "d1_aerosol_props.png")
-
-    print(f"steps={len(t)}  SO2 {ppt('SO2')[0]:.3g}->{ppt('SO2')[-1]:.1f} pptv  "
-          f"H2SO4 max {np.max(ppt('H2SO4')):.2f} pptv  total N max {total_n.max():.2e}/cm3  "
-          f"SA max {np.nanmax(aero['SA']):.3f} um2/cm3  mass max {mass_ug_m3.max():.3f} ug/m3  "
+    so2_ppt = x[:, IDX["SO2"]] / M * 1e12
+    print(f"steps={len(t)}  SO2 {so2_ppt[0]:.3g}->{so2_ppt[-1]:.1f} pptv  "
+          f"total N max {total_n.max():.2e}/cm3  SA max {np.nanmax(aero['SA']):.3f} um2/cm3  "
           f"sulfate max {sulfate_kg.max():.1f} kg (of {so2_kg[0] * 98 / 64:.0f} kg potential)")
     print(f"wrote npz + d1_inputs.md + 16 plots to {_OUT}/")
 
 
 if __name__ == "__main__":
-    main(nbins=int(sys.argv[1]) if len(sys.argv) > 1 else 40)
+    args = [a for a in sys.argv[1:]]
+    main(nbins=int(args[0]) if args and args[0].isdigit() else 40,
+         replot=("replot" in args))
