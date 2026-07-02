@@ -12,9 +12,19 @@ if it's not obvious from first principles or the reference, it belongs here.
 - Heterogeneous chemistry uses a **hard-coded aerosol radius 0.1e-4 cm** and **prescribed constant
   surface area** — to be replaced by TOMAS-derived values (Phase 3).
 
+## Sulfur chain — JPL 19-5 confirmed (see docs/jpl19-5-sulfur-crosscheck.md)
+- **SO3 + H2O → H2SO4** rate: **confirmed = JPL 19-5 I79**, `kI = 8.5e-41·exp(+6540/T)·[H2O]²` s⁻¹
+  (implement coeff `8.5e-41·exp(+6540/T)·[H2O]`; mass action supplies the extra [H2O]). Not an
+  assumption — handbook value. Product is H2SO4.
+- **SO2 + OH → SO3 + HO2**: net product SO3+HO2 is JPL-faithful (I4 rate-limiting + I92 fast); the
+  HOSO2 intermediate is lumped (steady-state) — standard, not a physics assumption.
+- ⚠️ **SO2 + HO2 → SO3 + OH product channel is an ASSUMPTION.** JPL 19-5 (I34) gives only the rate
+  **upper limit 1e-18** and **no product recommendation**. We pick SO3+OH; effect on SO2 is ~0.02%,
+  so immaterial. Flagged here so it is never treated as JPL-recommended.
+- ⚠️ **Termolecular reference temperature**: JPL 19-5 termolecular is **300 K** (k0(300)); the code's
+  `troe298` uses 298 K. ~1–3% at stratospheric T; mechanism-wide, logged as a separate issue.
+
 ## Planned (to be recorded/confirmed as implemented)
-- **SO3 + H2O → H2SO4** rate: intend the Lovejoy/JPL water-catalyzed value (`k·[H2O]`, 2nd order in
-  H2O). SO3 lifetime ≪ 1 s here, so results are insensitive; **confirm against JPL 19-5** (Phase 1).
 - **Aerosol column placement** for TUV-x: the box is one altitude; how its aerosol OD maps into the
   radiative-transfer column (single layer vs scaled profile) — Phase 4.
 - **Condensation "sticking" knob = accommodation coefficient `alpha`** (TOMAS) — confirm this is the
