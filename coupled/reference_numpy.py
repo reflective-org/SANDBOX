@@ -72,11 +72,13 @@ def run_coupled_numpy(scenario):
             return None
         return aerosol_optical_props(tstate, _wl_nm, _height_edges, _band_km, mie=mie_table)
 
+    env_pts = cd._envelope_pts(scenario.dt_couple)   # same per-run envelope grid as the JAX driver
     t_list, x_list, yc = [0.0], [y.copy()], y.copy()
     for t0, t1 in intervals:
         t_mid = 0.5 * (t0 + t1)
-        j_scale = cd.photolysis_scale(cd._cosz(cfg, t_mid))
-        jv = cd._frozen_j_values(cfg, t_mid, aerosol_props=_aerosol_props())   # same J as JAX driver
+        j_scale = float(cd.photolysis_scale(cd._cosz(cfg, t_mid)))
+        # same single radiation solve as the JAX driver: J + heating from one field
+        jv, heat_res = cd._frozen_j_and_heating(cfg, t_mid, aerosol_props=_aerosol_props())
         # freeze this interval's aerosol het inputs on the ModelConfig (TOMAS-derived, or leave
         # cfg.SA / defaults when TOMAS is inactive) -- mirrors the JAX driver's args overrides.
         if tomas_active:
@@ -101,7 +103,7 @@ def run_coupled_numpy(scenario):
             # the SAME shared micro_consume the JAX driver uses. Mirror the JAX driver's host-interpolated
             # envelope: sample H2SO4 on the same fine grid ONCE, then np.interp in the loop (identical
             # stepping across backends; also avoids a per-micro-step SciPy dense-eval call).
-            ts_grid = cd._envelope_grid(t0, t1)
+            ts_grid = cd._envelope_grid(t0, t1, env_pts)
             env_grid = np.asarray(sol.sol(ts_grid))[h2so4_idx]
             tstate, removal_kg, dt_micro, _n = cd.micro_consume(
                 lambda tt: float(np.interp(tt, ts_grid, env_grid)), t0, t1, tstate, tomas_step,
@@ -113,10 +115,9 @@ def run_coupled_numpy(scenario):
 
         if heating_active:   # mirror the JAX driver's radiative-heating -> box T update
             from . import heating as _heating
-            aer = _aerosol_props() if aerosol_to_j else None
-            dTdt = _heating.box_dTdt(cfg, np.asarray(yc), t_mid, aerosol_props=aer,
-                                     tstate=(tstate if tomas_active else None),
-                                     mie=(mie_table if tomas_active else None))
+            dTdt = _heating.dTdt_from_heating(cfg, np.asarray(yc), heat_res,
+                                              tstate=(tstate if tomas_active else None),
+                                              mie=(mie_table if tomas_active else None))
             cfg.T = float(cfg.T + dTdt * (t1 - t0))
             cfg.M = air_number_density(cfg.P, cfg.T)
 

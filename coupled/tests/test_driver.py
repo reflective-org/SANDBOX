@@ -54,12 +54,12 @@ def test_run_coupled_sza_conserves_sulfur():
 
 
 def test_run_coupled_tuvx_wires_absolute_J(monkeypatch):
-    # stub the adapter's uncached J compute so no real TUV-x solve runs; give every photo reaction a
-    # positive J -> the tuvx branch must produce H2SO4 and conserve sulfur.
+    # stub the adapter's uncached J+heating compute so no real TUV-x solve runs; give every photo
+    # reaction a positive J -> the tuvx branch must produce H2SO4 and conserve sulfur.
     from reactions import MECHANISM
     photo = [r.equation for r in MECHANISM.active if r.kind == "photo"]
-    monkeypatch.setattr(cd, "_compute_j_values",
-                        lambda cfg, t, aerosol_props=None: {eq: 1.0e-4 for eq in photo})
+    monkeypatch.setattr(cd, "compute_j_and_heating",
+                        lambda cfg, t, aerosol_props=None: ({eq: 1.0e-4 for eq in photo}, None))
     from config import IDX
     sc = _scn(photolysis="tuvx", start_utc_hour=6.0)          # daytime start so J is on
     t, x = cd.run_coupled(sc)
@@ -73,8 +73,8 @@ def test_switches_sulfur_false_disables_chain(monkeypatch):
     # switches.sulfur=False must turn the chain OFF in the coupled driver: no H2SO4, SO2 ~flat.
     from reactions import MECHANISM
     photo = [r.equation for r in MECHANISM.active if r.kind == "photo"]
-    monkeypatch.setattr(cd, "_compute_j_values",
-                        lambda cfg, t, aerosol_props=None: {eq: 1.0e-4 for eq in photo})
+    monkeypatch.setattr(cd, "compute_j_and_heating",
+                        lambda cfg, t, aerosol_props=None: ({eq: 1.0e-4 for eq in photo}, None))
     from config import IDX
     sc = _scn(photolysis="tuvx", start_utc_hour=6.0, switches=Switches(**{**_GAS_ONLY, "sulfur": False}))
     t, x = cd.run_coupled(sc)

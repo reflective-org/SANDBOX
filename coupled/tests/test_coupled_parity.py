@@ -30,8 +30,9 @@ def test_coupled_tuvx_numpy_jax_parity(monkeypatch):
     from reactions import MECHANISM
     photo = [r.equation for r in MECHANISM.active if r.kind == "photo"]
     # distinct positive absolute J per photolysis reaction; both backends read this same stub
-    monkeypatch.setattr(cd, "_compute_j_values",
-                        lambda cfg, t, aerosol_props=None: {eq: 1.0e-4 * (k + 1) for k, eq in enumerate(photo)})
+    monkeypatch.setattr(cd, "compute_j_and_heating",
+                        lambda cfg, t, aerosol_props=None: (
+                            {eq: 1.0e-4 * (k + 1) for k, eq in enumerate(photo)}, None))
 
     # gas-only parity (isolate the gas solver): TOMAS/aerosol/heating/dilution OFF -- otherwise the
     # all-on default would move sulfur into particles and the gas-only-S invariant below would not hold

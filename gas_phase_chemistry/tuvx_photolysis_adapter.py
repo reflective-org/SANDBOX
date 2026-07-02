@@ -90,6 +90,18 @@ def compute_box_heating(cfg, t_seconds, aerosol_props=None):
     wavelength_centers_nm)`` interpolated to the box altitude, or ``None`` at night (sza>=90).
     One radiation solve; ``aerosol_props`` (if given) is injected and cleared (try/finally).
     """
+    return compute_j_and_heating(cfg, t_seconds, aerosol_props=aerosol_props)[1]
+
+
+def compute_j_and_heating(cfg, t_seconds, aerosol_props=None):
+    """ONE radiation solve -> ``(j_values, heating)`` at the box altitude for one solar time.
+
+    ``j_values`` is the ``_compute_j_values`` dict ``{equation: J}`` (zeros at night); ``heating`` is
+    the ``compute_box_heating`` tuple ``(h_box, flux_box, wl_centers_nm)`` or ``None`` at night.
+    Photolysis and heating need the SAME radiation field (same SZA, same aerosol), so callers that
+    want both (the coupled driver's outer step) pay for the solve once instead of twice.
+    ``aerosol_props`` is injected and cleared (try/finally).
+    """
     import numpy as np
     from solar import solar_zenith_angle
 
@@ -97,7 +109,7 @@ def compute_box_heating(cfg, t_seconds, aerosol_props=None):
     day_of_year = cfg.day_of_year + total_hours / 24.0
     sza = solar_zenith_angle(cfg.latitude, cfg.longitude, day_of_year, total_hours % 24.0)
     if sza >= 90.0:
-        return None
+        return {eq: 0.0 for eq in REACTION_MAP}, None  # night: mapped reactions off, no heating
     config_path = str(getattr(cfg, "tuvx_config", _DEFAULT_CONFIG))
     data_root = str(getattr(cfg, "tuvx_data_root", _TUVX_ROOT))
     calc = _calculator(config_path, data_root)
@@ -105,14 +117,17 @@ def compute_box_heating(cfg, t_seconds, aerosol_props=None):
     esd = _earth_sun_distance(day_of_year)
     calc.aerosol_props = aerosol_props
     try:
-        heating, flux = calc.heating_and_actinic_flux(sza, esd)
+        # branching=True applies the JPL product-branching quantum yields for HNO4 and ClOOCl
+        profile, heating, flux = calc.rates_heating_and_actinic_flux(sza, esd, branching=True)
     finally:
         calc.aerosol_props = None
+    j_out = {eq: float(np.interp(altitude, calc.height_edges_km, profile[tuvx_name]))
+             for eq, tuvx_name in REACTION_MAP.items() if tuvx_name in profile}
     h_box = {n: float(np.interp(altitude, calc.height_edges_km, hr)) for n, hr in heating.items()}
     flux_box = np.array([np.interp(altitude, calc.height_edges_km, flux[:, k])
                          for k in range(flux.shape[1])])
     wl = np.asarray(calc.wl_edges, dtype=float)
-    return h_box, flux_box, 0.5 * (wl[:-1] + wl[1:])
+    return j_out, (h_box, flux_box, 0.5 * (wl[:-1] + wl[1:]))
 
 
 def calculator_grids(cfg):

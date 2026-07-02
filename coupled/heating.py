@@ -35,9 +35,18 @@ def box_dTdt(cfg, conc, t_seconds, aerosol_props=None, tstate=None, mie=None):
     includes the aerosol iff ``aerosol_props`` was passed).
     """
     res = compute_box_heating(cfg, t_seconds, aerosol_props=aerosol_props)
-    if res is None:
+    return dTdt_from_heating(cfg, conc, res, tstate=tstate, mie=mie)
+
+
+def dTdt_from_heating(cfg, conc, heating_result, tstate=None, mie=None):
+    """``box_dTdt`` from a precomputed ``compute_box_heating`` result (``None`` = night -> 0.0).
+
+    Lets the coupled driver reuse the outer step's single radiation solve (via the adapter's
+    ``compute_j_and_heating``) instead of solving again for heating.
+    """
+    if heating_result is None:
         return 0.0                      # night: no shortwave heating
-    h_box, flux_box, wl_nm = res
+    h_box, flux_box, wl_nm = heating_result
     o3 = float(conc[IDX["O3"]])                                   # molec/cm^3
     h_gas = o3 * float(sum(h_box.values()))                       # J/cm^3/s
     h_aer = 0.0

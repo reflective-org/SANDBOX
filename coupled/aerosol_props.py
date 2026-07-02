@@ -40,18 +40,18 @@ def _wet_diameters_m(state):
     return Dpk, Mk_wet
 
 
-def surface_area_um2_cm3(state) -> float:
+def surface_area_um2_cm3(state, _wet=None) -> float:
     """Total aerosol surface area [um^2 / cm^3 of air] = sum_k N_k * pi * Dp_wet,k^2 / boxvol.
 
     ``sum(Nk * pi * Dp^2)`` is [m^2 / grid-cell]; divide by ``boxvol`` [cm^3] and convert
     m^2 -> um^2 (x1e12).  (Returns 0 for an empty distribution.)
     """
-    Dpk, _ = _wet_diameters_m(state)
+    Dpk, _ = _wet if _wet is not None else _wet_diameters_m(state)
     area_m2 = float(jnp.sum(state.Nk * math.pi * Dpk ** 2))     # m^2 per grid cell
     return area_m2 * 1.0e12 / float(state.boxvol)               # -> um^2 / cm^3
 
 
-def effective_wet_radius_cm(state) -> float:
+def effective_wet_radius_cm(state, _wet=None) -> float:
     """Surface-area-weighted (effective) WET radius [cm] = sum(Nk r^3) / sum(Nk r^2).
 
     This is the aerosol *effective radius* r_eff (3rd/2nd moment). It is the right single radius for
@@ -61,7 +61,7 @@ def effective_wet_radius_cm(state) -> float:
     the f-factor ``coth(r/l) - l/r`` (r << l -> inf - inf). Returns ``0.1e-4`` cm (legacy 1 um) for an
     empty distribution. See AD-3.4.
     """
-    Dpk, _ = _wet_diameters_m(state)
+    Dpk, _ = _wet if _wet is not None else _wet_diameters_m(state)
     r_m = 0.5 * Dpk
     m2 = float(jnp.sum(state.Nk * r_m ** 2))
     if m2 <= 0.0:
@@ -70,13 +70,13 @@ def effective_wet_radius_cm(state) -> float:
     return (m3 / m2) * 100.0                                    # m -> cm
 
 
-def h2so4_weight_pct(state) -> float:
+def h2so4_weight_pct(state, _wet=None) -> float:
     """H2SO4 weight-percent of the aerosol = 100 * M_H2SO4 / (M_H2SO4 + M_H2O).
 
     ``M_H2SO4`` is ``sum(Mk[:,SRTSO4])`` directly (H2SO4-equiv mass, AD-3.8); ``M_H2O`` is the
     equilibrium water at the state's RH. Returns 0 if there is no sulfate.
     """
-    _Dpk, Mk_wet = _wet_diameters_m(state)
+    _Dpk, Mk_wet = _wet if _wet is not None else _wet_diameters_m(state)
     m_so4 = float(jnp.sum(state.Mk[:, _SRTSO4]))
     m_h2o = float(jnp.sum(Mk_wet[:, _SRTH2O]))
     denom = m_so4 + m_h2o
@@ -86,7 +86,12 @@ def h2so4_weight_pct(state) -> float:
 
 
 def het_inputs(state) -> dict:
-    """Bundle the three het-chem inputs for one outer step: ``{SA, radius_cm, h2so4wp}``."""
-    return {"SA": surface_area_um2_cm3(state),
-            "radius_cm": effective_wet_radius_cm(state),
-            "h2so4wp": h2so4_weight_pct(state)}
+    """Bundle the three het-chem inputs for one outer step: ``{SA, radius_cm, h2so4wp}``.
+
+    The wet-particle equilibrium (``_wet_diameters_m``, an eager JAX compute + device sync) is
+    evaluated ONCE and shared by all three diagnostics.
+    """
+    wet = _wet_diameters_m(state)
+    return {"SA": surface_area_um2_cm3(state, _wet=wet),
+            "radius_cm": effective_wet_radius_cm(state, _wet=wet),
+            "h2so4wp": h2so4_weight_pct(state, _wet=wet)}

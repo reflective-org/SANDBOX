@@ -177,30 +177,38 @@ def make_frozen_step(opt, atol=1e-6, rtol=1e-3, first_step=1e-10, max_steps=1_00
     envelope is interpolated on the HOST inside the micro-loop. ``save_ts`` takes precedence over dense.
 
     Performance (``jit_grid`` + ``forward_only``): an EAGER ``diffeqsolve`` re-traces its Python wrapper
-    every call (~1.2 s/call for this mechanism); wrapping the grid-save solve in ``jax.jit`` drops that
-    to ~40 ms after the first (shape-cached) call. ``forward_only`` additionally uses an LU root finder
-    (~3x faster than the gradient-safe least-squares default; bit-identical for a forward run) -> ~15 ms
-    /call. Use ``jit_grid``/``forward_only`` ONLY when the ``save_ts`` grid has a FIXED length across
-    calls (so jit compiles once) and no gradients are taken through the solve -- exactly the coupled
-    driver's case. The eager dense/final paths are unchanged (gradient-safe default root finder).
+    every call (~1.2 s/call for this mechanism); wrapping the fixed-shape solves (the ``save_ts`` grid
+    solve AND the endpoint-only ``SaveAt(t1=True)`` solve) in ``jax.jit`` drops that to ~40 ms after
+    the first (shape-cached) call. ``forward_only`` additionally uses an LU root finder (~3x faster
+    than the gradient-safe least-squares default; bit-identical for a forward run) -> ~15 ms/call.
+    Use ``jit_grid``/``forward_only`` ONLY when the ``save_ts`` grid has a FIXED length across calls
+    (so jit compiles once) and no gradients are taken through the solve -- exactly the coupled
+    driver's case. The eager dense path is unchanged (gradient-safe default root finder).
     """
     term = ODETerm(make_frozen_vf(opt))
     solver = _stiff_solver(forward_only=forward_only)
-    solver_grad = _stiff_solver(forward_only=False)   # gradient-safe for the dense/final eager paths
+    solver_grad = _stiff_solver(forward_only=False)   # gradient-safe for the eager dense path
     ctrl = PIDController(rtol=rtol, atol=atol)
     dense_saveat = SaveAt(t1=True, dense=True) if dense else SaveAt(t1=True)
 
     def _grid_solve(y0, t0, t1, args, save_ts):
         return diffeqsolve(term, solver, t0=t0, t1=t1, dt0=first_step, y0=y0, args=args,
                            stepsize_controller=ctrl, saveat=SaveAt(ts=save_ts), max_steps=max_steps)
+
+    def _end_solve(y0, t0, t1, args):   # endpoint-only: fixed output shape, so jit-safe like the grid
+        return diffeqsolve(term, solver, t0=t0, t1=t1, dt0=first_step, y0=y0, args=args,
+                           stepsize_controller=ctrl, saveat=SaveAt(t1=True), max_steps=max_steps)
     if jit_grid:
         _grid_solve = jax.jit(_grid_solve)
+        _end_solve = jax.jit(_end_solve)
 
     def step(y0, t0, t1, args, save_ts=None):
         y0 = jnp.asarray(y0)
         if save_ts is not None:                       # coupled driver's envelope path (jit + LU capable)
             return _grid_solve(y0, t0, t1, args, jnp.asarray(save_ts))
+        if not dense:                                 # gas-only endpoint path (jit + LU capable)
+            return _end_solve(y0, t0, t1, args).ys[-1]
         sol = diffeqsolve(term, solver_grad, t0=t0, t1=t1, dt0=first_step, y0=y0, args=args,
                           stepsize_controller=ctrl, saveat=dense_saveat, max_steps=max_steps)
-        return sol if dense else sol.ys[-1]
+        return sol
     return step

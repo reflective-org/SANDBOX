@@ -53,7 +53,7 @@ from config import IDX, air_number_density                   # noqa: E402  (gas 
 from driver import _abstol                                   # noqa: E402  (gas model)
 from reactions import photolysis_coeffs                      # noqa: E402
 from solar import cos_solar_zenith, photolysis_scale         # noqa: E402  (single SZA source)
-from tuvx_photolysis_adapter import (_compute_j_values, calculator_grids,  # noqa: E402
+from tuvx_photolysis_adapter import (compute_j_and_heating, calculator_grids,  # noqa: E402
                                      _box_altitude_km, _TUVX_ROOT)
 from jaxmodel.model import make_frozen_step                  # noqa: E402
 
@@ -85,16 +85,22 @@ def _outer_intervals(cfg, days: int, dt_couple: float) -> list[tuple[float, floa
                 m = 0.5 * (a + b)
                 a, b = (m, b) if np.sign(_cosz(cfg, m)) == sa else (a, m)
             edges.add(0.5 * (a + b))
-    E = sorted(e for e in edges if 0.0 <= e <= total)
+    # plain floats throughout: terminator edges come out of the bisection as np.float64, and the
+    # weak/strong scalar-dtype flip on (t0, t1) would retrace the jitted gas solve at each transition.
+    E = sorted(float(e) for e in edges if 0.0 <= e <= total)
     return list(zip(E[:-1], E[1:]))
 
 
-def _frozen_j_values(cfg, t_mid: float, aerosol_props=None):
-    """Absolute per-reaction J at the interval midpoint (uncached -> dt_couple drives the recompute,
-    bypassing the adapter's 120 s cache). ``None`` in non-tuvx modes (photolysis_coeffs then uses
-    j45*j_scale). ``aerosol_props`` (Phase 4) injects the TOMAS aerosol radiator for this solve. The
-    adapter returns zeros at night."""
-    return _compute_j_values(cfg, t_mid, aerosol_props=aerosol_props) if cfg.photolysis == "tuvx" else None
+def _frozen_j_and_heating(cfg, t_mid: float, aerosol_props=None):
+    """Frozen per-reaction J AND box-heating inputs at the interval midpoint, from ONE TUV-x radiation
+    solve (uncached -> dt_couple drives the recompute, bypassing the adapter's 120 s cache).
+    ``(None, None)`` in non-tuvx modes (photolysis_coeffs then uses j45*j_scale; heating requires
+    tuvx). ``aerosol_props`` (Phase 4) injects the TOMAS aerosol radiator for this solve -- the SAME
+    frozen (end-of-previous-interval) aerosol now feeds both J and heating. The adapter returns
+    zeros / ``None`` at night."""
+    if cfg.photolysis != "tuvx":
+        return None, None
+    return compute_j_and_heating(cfg, t_mid, aerosol_props=aerosol_props)
 
 
 # H2SO4 number density [molec/cm^3] below which gaseous sulfuric acid is negligible for nucleation --
@@ -183,18 +189,19 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
     return tstate._replace(Nk=Nk, Mk=Mk, Gc=Gc), removal_kg, max(dt, floor), n_micro
 
 
-#: number of points the gas H2SO4 envelope is saved on per outer step. FIXED (not proportional to the
-#: interval length) so the jitted grid-save solve keeps a constant input shape and compiles ONCE. The
-#: envelope is smooth/monotone, so ~2 s spacing over a 600 s step interpolates it well within micro_eps;
-#: shorter (terminator-snapped) intervals just get a denser grid at no extra cost.
-_ENVELOPE_GRID_PTS = 301
+def _envelope_pts(dt_couple: float) -> int:
+    """Point count for the per-outer-step H2SO4 envelope grid: ~2 s spacing at the run's dt_couple,
+    in [301, 1025]. Constant PER RUN (not per interval) so the jitted grid-save solve keeps one input
+    shape and compiles once; terminator-snapped (shorter) intervals just get a denser grid. The
+    envelope is smooth/monotone, so ~2 s spacing interpolates it well within micro_eps -- the fine
+    down-to-micro_floor_s resolution is needed for the TOMAS handoff, NOT for the envelope shape."""
+    return int(np.clip(round(dt_couple / 2.0) + 1, 301, 1025))
 
 
-def _envelope_grid(t0, t1):
-    """Times [t0..t1] (inclusive, fixed length ``_ENVELOPE_GRID_PTS``) to save the gas H2SO4 envelope on
-    for the micro-loop's host interpolation (the fine down-to-micro_floor_s resolution is needed for the
-    TOMAS handoff, NOT for the smooth envelope shape)."""
-    return np.linspace(t0, t1, _ENVELOPE_GRID_PTS)
+def _envelope_grid(t0, t1, n_pts: int = 301):
+    """Times [t0..t1] (inclusive, fixed length ``n_pts``) to save the gas H2SO4 envelope on for the
+    micro-loop's host interpolation."""
+    return np.linspace(t0, t1, n_pts)
 
 
 def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_dist=False):
@@ -288,11 +295,16 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     aero_list = [_aero_record()]
     nk_list, dp_list = ([_sizedist_record()[0]], [_sizedist_record()[1]]) if (
         return_size_dist and tomas_active) else (None, None)
+    env_pts = _envelope_pts(scenario.dt_couple)     # per-run constant -> one jit compile
     yc = jnp.asarray(y0)
     for t0, t1 in _outer_intervals(cfg, scenario.days, scenario.dt_couple):
         t_mid = 0.5 * (t0 + t1)
-        j_scale = photolysis_scale(_cosz(cfg, t_mid))        # for fallbacks; 0 at night
-        jv = _frozen_j_values(cfg, t_mid, aerosol_props=_aerosol_props())
+        # plain float: photolysis_scale returns 0.0 (float) at night but np.float64 by day, and the
+        # weak/strong dtype flip would force an extra one-time trace of the jitted gas solve.
+        j_scale = float(photolysis_scale(_cosz(cfg, t_mid)))   # for fallbacks; 0 at night
+        # ONE TUV-x radiation solve per interval feeds BOTH the frozen J and the heating step (same
+        # SZA, same frozen end-of-previous-interval aerosol; previously heating solved again).
+        jv, heat_res = _frozen_j_and_heating(cfg, t_mid, aerosol_props=_aerosol_props())
         override = jnp.asarray(photolysis_coeffs(cfg, j_scale, jv))
         args = {**params, "j_scale": j_scale, "sulfur_chain": sulfur, "photo_override": override}
         if tomas_active:   # freeze this interval's aerosol het inputs (end-of-previous-interval state)
@@ -304,7 +316,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
             # interpolating the envelope on the HOST (np.interp) -- no per-micro-step device call. Final
             # gas H2SO4 = envelope(t1) minus cumulative TOMAS removal. Two-level split that keeps
             # nucleation from seeing a whole interval's H2SO4 at once (docs/time-integration-plan).
-            ts_grid = _envelope_grid(t0, t1)
+            ts_grid = _envelope_grid(t0, t1, env_pts)
             sol = step(yc, t0, t1, args, save_ts=ts_grid)
             env_grid = np.asarray(sol.ys[:, h2so4_idx])       # smooth H2SO4 envelope [molec/cm^3]
             tstate, removal_kg, dt_micro, n_micro = micro_consume(
@@ -322,12 +334,12 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         if heating_active:
             # radiative heating -> box T (forward-Euler over the interval). The updated T feeds the
             # NEXT interval's chemistry (rate constants) and M (ideal gas at fixed P; species number
-            # densities kept -- fixed-volume box, AD-5.3). Aerosol optics enter the heating solve iff
-            # aerosol_to_j; aerosol SW absorption (b_abs) is included whenever TOMAS is active.
-            aer = _aerosol_props() if aerosol_to_j else None
-            dTdt = _heating.box_dTdt(cfg, np.asarray(yc), t_mid, aerosol_props=aer,
-                                     tstate=(tstate if tomas_active else None),
-                                     mie=(mie_table if tomas_active else None))
+            # densities kept -- fixed-volume box, AD-5.3). The actinic flux comes from THIS interval's
+            # single radiation solve (heat_res, frozen midpoint J's field -- with the aerosol radiator
+            # iff aerosol_to_j); aerosol SW absorption (b_abs) is included whenever TOMAS is active.
+            dTdt = _heating.dTdt_from_heating(cfg, np.asarray(yc), heat_res,
+                                              tstate=(tstate if tomas_active else None),
+                                              mie=(mie_table if tomas_active else None))
             cfg.T = float(cfg.T + dTdt * (t1 - t0))
             cfg.M = air_number_density(cfg.P, cfg.T)
             params["T"], params["M"] = cfg.T, cfg.M
