@@ -76,34 +76,36 @@ class Env:
 # Reference-temperature convention for the termolecular (fall-off) rate constants
 # ------------------------------------------------------------------------------
 # NASA/JPL Panel for Data Evaluation, Evaluation No. 19 (JPL Publication 19-5),
-# Section 2 "Termolecular Reactions". JPL tabulates the low/high-pressure limits at a
-# **300 K reference** (Table 2-1 columns are k0(300), n, kinf(300), m; the notes write the
-# limits as (T/300)^-n -- e.g. ko = 4 x 10^-28 (T/300)^-7.0; note F17 "k0(300) and kinf(300)"):
-#       k0(T)   = k0(300)   * (T/300)^n0      [cm^6 molecule^-2 s^-1]   (pass n0 = -n)
-#       kinf(T) = kinf(300) * (T/300)^ninf    [cm^3 molecule^-1 s^-1]   (pass ninf = -m)
+# Section 2 "Termolecular Reactions". JPL 19-5 tabulates the low/high-pressure limits at a
+# **298 K reference**. Table 2-1's own column header reads verbatim:
+#       k0(T) = k0_298 (T/298)^-n ,   kinf(T) = kinf_298 (T/298)^-m
+# and Secs. 2.3/2.5 write the temperature dependence as (298/T)^n / (298/T)^m. The tabulated
+# parameters are k0(298), n, kinf(298), m; the extra table columns are k(298 K,1 atm), the
+# uncertainty factor f(298 K), and the g-factor (the uncertainty temperature-extrapolation
+# parameter in f(T)=f(298)*exp(g*|1/T-1/298|)) -- g is NOT a reference temperature.
+#       k0(T)   = k0_298   * (T/298)^n0      [cm^6 molecule^-2 s^-1]   (pass n0 = -n)
+#       kinf(T) = kinf_298 * (T/298)^ninf    [cm^3 molecule^-1 s^-1]   (pass ninf = -m)
 #       kf(T,M) = [kinf*k0*M / (kinf + k0*M)] * 0.6^{1/(1+(log10(k0*M/kinf))^2)}
-# NOTE: only *termolecular* reactions use 300 K. The *bimolecular* Arrhenius form uses a 298 K
-# reference (k = A*(T/298)^n*exp(-E/RT); JPL 19-5 p. 1-6). See docs/jpl19-5-sulfur-crosscheck.md
-# for the cross-check that corrected an earlier (wrong) 298 K termolecular reference.
-# Source PDF (bundled): frank-model/references/NASA-JPL_Evaluation_19-5.pdf (Table 2-1).
-def falloff(e: Env, k0_300: float, n0: float, kinf_300: float, ninf: float,
+# Both termolecular AND bimolecular use 298 K in JPL 19-5. See docs/jpl19-5-sulfur-crosscheck.md.
+# Source PDF (bundled): frank-model/references/NASA-JPL_Evaluation_19-5.pdf (Table 2-1 header).
+def falloff(e: Env, k0_298: float, n0: float, kinf_298: float, ninf: float,
             Fc: float = 0.6):
-    """JPL 19-5 termolecular fall-off (**300 K reference**). Returns ``(k_f, kinf)``.
+    """JPL 19-5 termolecular fall-off (**298 K reference**). Returns ``(k_f, kinf)``.
 
-    k0(T) = k0_300*(T/300)^n0, kinf(T) = kinf_300*(T/300)^ninf (pass n0 = -n, ninf = -m for
+    k0(T) = k0_298*(T/298)^n0, kinf(T) = kinf_298*(T/298)^ninf (pass n0 = -n, ninf = -m for
     the JPL table's n, m). ``k_f`` is the association rate constant; ``kinf`` is returned too
     because the chemical-activation reactions (Table 2-2) need it for k_int*(1 - k_f/kinf).
     """
-    k0 = k0_300 * (e.T / 300.0) ** n0
-    kinf = kinf_300 * (e.T / 300.0) ** ninf
+    k0 = k0_298 * (e.T / 298.0) ** n0
+    kinf = kinf_298 * (e.T / 298.0) ** ninf
     ratio = k0 * e.M / kinf
     k_f = (k0 * e.M / (1.0 + ratio)) * Fc ** (1.0 / (1.0 + math.log10(ratio) ** 2))
     return k_f, kinf
 
 
-def troe(e: Env, k0_300: float, n0: float, kinf_300: float, ninf: float, Fc: float = 0.6) -> float:
-    """JPL 19-5 termolecular association (Troe) rate constant, 300 K reference (``k_f``); see ``falloff``."""
-    return falloff(e, k0_300, n0, kinf_300, ninf, Fc)[0]
+def troe(e: Env, k0_298: float, n0: float, kinf_298: float, ninf: float, Fc: float = 0.6) -> float:
+    """JPL 19-5 termolecular association (Troe) rate constant, 298 K reference (``k_f``); see ``falloff``."""
+    return falloff(e, k0_298, n0, kinf_298, ninf, Fc)[0]
 
 
 def khet(gamma: float, gasmass: float, T: float, SA: float) -> float:

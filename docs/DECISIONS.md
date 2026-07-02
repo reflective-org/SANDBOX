@@ -2,16 +2,16 @@
 
 ADR-style. Newest first. Each: decision, date, rationale, alternatives.
 
-## 2026-07-02 — Fix termolecular reference temperature to 300 K
-The JPL 19-5 cross-check (docs/jpl19-5-sulfur-crosscheck.md) found the code applied `troe298`/
-`falloff298` (298 K) to **termolecular** reactions, but JPL 19-5 tabulates termolecular limits at
-**300 K** (Table 2-1 k0(300)/kinf(300); notes write `(T/300)^-n`; note F17 "k0(300)"). Only
-*bimolecular* Arrhenius uses 298 K. Fixed: renamed to `falloff`/`troe` (300 K) in `mechanism.py`
-and `jaxmodel/rates.py`; also corrected the `O+O2+M→O3` special form (`(T/298)^-2.4` → `(T/300)`).
-Impact ≈ (300/298)^n ≈ 1–3% at stratospheric T. NumPy↔JAX RHS parity preserved (test_jax_dcdt,
-rtol 1e-9); the cross-integrator trajectory test got a relaxed per-species bound for stiff trace
-odd-species (NO3/O/O1D) — an integrator artifact, not a model change. Alternatives: keep 298 K
-(rejected — contradicts JPL 19-5).
+## 2026-07-02 — Termolecular reference temperature is 298 K (RETRACTS the 300 K change)
+**Correction.** A prior entry/PR (#17) changed the termolecular reference from 298 K → 300 K on the
+belief that JPL 19-5 tabulates k0(300). That was **wrong** and has been reverted to **298 K**. The
+Table 2-1 column header reads `k0(T)=k0_298 (T/298)^-n`, `k∞(T)=k∞_298 (T/298)^-m`, and Secs. 2.3/2.5
+give the dependence as `(298/T)^n`. The "300" seen earlier was the g-factor (uncertainty temperature-
+extrapolation parameter, `f(T)=f(298)exp(g|1/T-1/298|)`) and a few notes quoting older 300 K literature
+(PDF: `(T/298)` 50× vs `(T/300)` 10×). Reverted `falloff`/`troe` and the `O+O2+M` form to `(T/298)`;
+kept the generic function names. Both bimolecular and termolecular use 298 K. NumPy↔JAX parity holds.
+Lesson: read the table header, not the notes/columns, and keep reference-temperature changes out of
+feature PRs. See docs/jpl19-5-sulfur-crosscheck.md.
 
 ## 2026-07-01 — Model name & repo
 **SANDBOX** (Stratospheric Aerosol-aNd-chemistry Differentiable BOX); repo

@@ -28,13 +28,22 @@ O3+SO2→SO3+O2 (<2e-22, I11); ClO+SO2→Cl+SO3 (<4e-18, I59).
   channel is our assumption; JPL explicitly declines to recommend products.** Recorded in
   `ASSUMPTIONS.md`. (Effect on SO2 is ~0.02%, so the product choice is immaterial to results.)
 
-## ⚠️ Discrepancy found: termolecular reference temperature
+## Reference temperature: 298 K (BOTH bimolecular and termolecular)
 
-JPL 19-5 **bimolecular** uses `k(T)=A·(T/298)^n·exp(−E/RT)` (298 K; PDF line 644), but **termolecular**
-Table 2-1 tabulates **k0(300)/k∞(300)** (300 K reference; confirmed by note F17). The current mechanism
-applies `troe298`/`falloff298` (298 K) to termolecular reactions and its docstring claims JPL 19-5 uses
-298 K for termolecular — that appears **incorrect**; termolecular should scale as `(T/300)^−n`.
-Impact ≈ `(300/298)^n` ≈ 1–3% at stratospheric T (e.g. ~3% for n=4.1 at 210 K). This affects **all**
-termolecular reactions, not just sulfur, so it is logged as a **separate issue/decision** (mechanism-
-wide; touches MATLAB-faithfulness) rather than fixed inside Phase 1. For the new `SO2+OH→SO3+HO2` we
-reuse `_k68` to stay consistent with the existing SO2+OH reaction.
+An earlier revision of this doc wrongly claimed JPL 19-5 termolecular used a 300 K reference and a
+"fix" changed the code 298→300 K. **That was incorrect and has been reverted.** The primary source is
+unambiguous — the Table 2-1 column header reads verbatim:
+
+> **Low-Pressure Limit** `k0(T) = k0_298 (T/298)^-n`  **High-Pressure Limit** `k∞(T) = k∞_298 (T/298)^-m`
+> columns: `k0_298 | n | k∞_298 | m | k(298 K,1 atm) | f(298 K) | g | Note`
+
+and Secs. 2.3/2.5 state the temperature dependence as `(298/T)^n` / `(298/T)^m`. So termolecular limits
+are tabulated at **298 K**, same as the bimolecular Arrhenius form (`A·(T/298)^n·exp(−E/RT)`).
+
+What misled the earlier pass: (1) the last table column is the **g-factor** (the uncertainty
+temperature-extrapolation parameter in `f(T)=f(298)·exp(g·|1/T−1/298|)`) — e.g. I4's `g=100`, F17's
+`g=300` — **not** a reference temperature; and (2) a handful of reaction *notes* quote older literature
+fits written as `(T/300)^-n`. Across the PDF, `(T/298)` appears 50× vs `(T/300)` 10× (all in notes).
+
+**Conclusion:** the original `(T/298)` form was correct; the code uses 298 K for all termolecular
+reactions (`falloff`/`troe` in `mechanism.py`). The new `SO2+OH→SO3+HO2` reuses `_k68` (I4) at 298 K.
