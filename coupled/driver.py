@@ -89,12 +89,14 @@ def _frozen_j_values(cfg, t_mid: float):
     return _compute_j_values(cfg, t_mid) if cfg.photolysis == "tuvx" else None
 
 
-def run_coupled(scenario, return_aerosol=False):
+def run_coupled(scenario, return_aerosol=False, return_state=False):
     """Integrate a CoupledScenario with operator splitting.
 
     Returns ``(t [s], states [n_t, n_species])``. With ``return_aerosol=True`` also returns a dict of
     per-output-time aerosol diagnostics (``SA`` [um^2/cm^3], ``radius_cm``, ``h2so4wp`` [wt%],
     ``particulate_S`` [molec/cm^3 as H2SO4-equiv]); the arrays are all-NaN when TOMAS is inactive.
+    With ``return_state=True`` also appends the final ``TomasState`` (or ``None`` if TOMAS inactive),
+    e.g. for plotting the evolved size distribution. Extra outputs are appended in that order.
     """
     cfg = to_model_config(scenario)
     y0 = initial_state(scenario)
@@ -153,8 +155,11 @@ def run_coupled(scenario, return_aerosol=False):
 
     t = np.asarray(t_list)
     x = np.asarray(x_list)
-    if not return_aerosol:
-        return t, x
-    a = np.asarray(aero_list)
-    aero = {"SA": a[:, 0], "radius_cm": a[:, 1], "h2so4wp": a[:, 2], "particulate_S": a[:, 3]}
-    return t, x, aero
+    out = [t, x]
+    if return_aerosol:
+        a = np.asarray(aero_list)
+        out.append({"SA": a[:, 0], "radius_cm": a[:, 1], "h2so4wp": a[:, 2],
+                    "particulate_S": a[:, 3]})
+    if return_state:
+        out.append(tstate)
+    return tuple(out) if len(out) > 2 else (t, x)

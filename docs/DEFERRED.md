@@ -30,6 +30,18 @@
   magnitude; the I79 analytic test reuses the implementation constant so it checks structure, not the
   constant's value. Low priority (both are cross-checked against JPL in docs/jpl19-5-sulfur-crosscheck.md).
 
+- **TOMAS microphysics sulfur conservation (Phase 3, AD-3.10).** tomas-jax `feat/marianna-dilution`
+  loses ~1%/day of sulfur internally (MNFIX / PPM condensation redistribution / nucleation cluster
+  accounting). The SANDBOX coupling is exact; fixing this is a tomas-jax change. Options to weigh:
+  patch mass conservation in tomas-jax, or pin a better-conserving branch/commit. **Flagged for user.**
+- **TOMAS internal sub-step schedule (Phase 3, AD-3.9).** Instead of relying on a small global
+  `dt_couple`, give the TOMAS step an internal fine→coarse sub-step schedule so large outer steps stay
+  stable through the H2SO4 transient (removes the ~1e9 molec/cm³ nucleation-overflow constraint).
+- **Self-consistent aerosol water for the γ's (Phase 3, AD-3.3).** Reconcile TOMAS's own water uptake
+  with the gas-phase water activity `a_W` used in `hetgammas_jpl00` (currently a_W stays thermodynamic).
+- **Het-uptake radius weighting (Phase 3, AD-3.4).** Effective (surface-area-weighted) radius is used;
+  a size-resolved uptake (sum over bins) or an alternate weighting is a sensitivity to revisit.
+- **Package tomas_jax** (like gas_phase_chemistry) to remove the `coupled/tomas_bridge` sys.path insert.
 - **Exact `aerosol.F90` port** (fractional-source OD interpolation + Ångström scaling). Not needed for
   the coupling (TOMAS supplies spectral optics directly), but required for config-static aerosol
   parity with Fortran TUV-x.

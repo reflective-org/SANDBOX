@@ -10,7 +10,24 @@ if it's not obvious from first principles or the reference, it belongs here.
 - **SO2+HO2 rate = 1e-18** (JPL 19-5 upper limit; JPL gives no recommended value). Removing it changes
   final SO2 by ~0.02% over a 10-day run (its instantaneous share of SO2 loss is ~0.001%) — immaterial.
 - Heterogeneous chemistry uses a **hard-coded aerosol radius 0.1e-4 cm** and **prescribed constant
-  surface area** — to be replaced by TOMAS-derived values (Phase 3).
+  surface area** *only when TOMAS is off*; with Phase 3 coupling these come from TOMAS.
+
+## TOMAS coupling (Phase 3) — see AUTONOMOUS_DECISIONS.md AD-3.x for full rationale
+- **Aerosol population = TOMAS-only**, initialized from the tomas-jax Marianna 'redcircles' background
+  distribution; SA + radius come entirely from the evolving state (user decision).
+- **Het-chem radius = surface-area-weighted effective radius** r_eff = ΣN r³/ΣN r² (wet), one scalar
+  for the whole distribution (AD-3.4). Number-weighted was rejected (collapses to the nucleation mode
+  and breaks the reacto-diffusive f-factor).
+- **H2SO4 weight-percent from TOMAS** SO4/H2O mass (user decision); at fixed RH it is essentially RH-
+  determined (equilibrium water tracks sulfate), consistent with the thermodynamic `h2so4wp_at`.
+- **a_W (water activity) stays thermodynamic** (`pH2O/p0`), not from TOMAS (AD-3.3).
+- **RH fed to TOMAS = gas-model water activity a_W** (AD-3.5), single-sourcing water across models.
+- **TOMAS `Mk[:,SRTSO4]` is H2SO4-equivalent mass** (MW 98), verified from the 1:1 condensation
+  transfer — so the budget uses MW 98 and no 96/98 conversion (AD-3.8).
+- **boxvol = 1 m³** (cancels for intensive outputs, AD-3.7); **schemes** = Marianna-validated
+  ppm_jit / ricco_dunne / h2so4_tabazadeh (AD-3.6).
+- **Single TOMAS step per outer interval** (small `dt_couple`, AD-3.9) rather than an internal
+  sub-step schedule (user decision to shrink dt_couple globally).
 
 ## Sulfur chain — JPL 19-5 confirmed (see docs/jpl19-5-sulfur-crosscheck.md)
 - **SO3 + H2O → H2SO4** rate: **confirmed = JPL 19-5 I79**, `kI = 8.5e-41·exp(+6540/T)·[H2O]²` s⁻¹
