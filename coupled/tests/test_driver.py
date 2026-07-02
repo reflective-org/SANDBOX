@@ -59,3 +59,17 @@ def test_run_coupled_tuvx_wires_absolute_J(monkeypatch):
     assert x[-1, IDX["H2SO4"]] > 0.0                           # H2SO4 produced via the chain
     S = _total_sulfur(x)
     assert abs(S[-1] / S[0] - 1.0) < 1e-6
+
+
+def test_switches_sulfur_false_disables_chain(monkeypatch):
+    # switches.sulfur=False must turn the chain OFF in the coupled driver: no H2SO4, SO2 ~flat.
+    from reactions import MECHANISM
+    from coupled import Switches
+    photo = [r.equation for r in MECHANISM.active if r.kind == "photo"]
+    monkeypatch.setattr(cd, "_compute_j_values",
+                        lambda cfg, t: {eq: 1.0e-4 for eq in photo})
+    from config import IDX
+    sc = _scn(photolysis="tuvx", start_utc_hour=6.0, switches=Switches(sulfur=False))
+    t, x = cd.run_coupled(sc)
+    assert np.all(x[:, IDX["H2SO4"]] == 0.0)                   # chain off -> no H2SO4 ever
+    assert np.all(x[:, IDX["SO3"]] == 0.0)

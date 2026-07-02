@@ -11,6 +11,15 @@ the fallback ``j_scale``. ``switches.sulfur`` drives the gas sulfur gate.
 
 TOMAS microphysics / dilution / heating are NOT here yet -- they slot into this same outer loop in
 Phases 3-6.
+
+Gate source: ``switches.sulfur`` is THE sulfur-gate source here. It is passed to the JAX side
+(``sulfur_chain``) and, for a NumPy comparison, must likewise be passed to ``build_env(sulfur_chain=...)``
+so both backends read the same flag (see the 2.5 parity harness). ``reactions.sulfur_chain_active``
+remains the default mode->gate derivation for STANDALONE NumPy runs only.
+
+NOTE on ``photolysis="reference"``: this driver always uses the continuous SZA ``j_scale`` (like
+``sza``); it does NOT reproduce the NumPy driver's fixed-45-degree, day/night-gated MATLAB reference
+behavior. Use ``reference`` here only for continuous-SZA testing, not for MATLAB-faithful comparison.
 """
 
 from __future__ import annotations
@@ -69,7 +78,7 @@ def run_coupled(scenario):
     """Integrate a CoupledScenario with operator splitting. Returns ``(t [s], states [n_t, n_species])``."""
     cfg = to_model_config(scenario)
     y0 = initial_state(scenario)
-    sulfur = float(scenario.switches.sulfur)                 # switches.sulfur -> the gas sulfur gate
+    sulfur = float(scenario.switches.sulfur)   # single gate source (NumPy match: build_env(sulfur_chain=))
     params = dict(T=cfg.T, M=cfg.M, P=cfg.P, SA=cfg.SA, WTR=cfg.WTR, Yn2o5=cfg.Yn2o5)
     step = make_frozen_step(cfg.opt, atol=jnp.asarray(_abstol(cfg.opt)))
 
