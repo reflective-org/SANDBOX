@@ -94,6 +94,8 @@ class CoupledScenario:
             raise ValueError(f"photolysis must be one of {PHOTOLYSIS_MODES}, got {self.photolysis!r}")
         if self.dt_couple <= 0:
             raise ValueError(f"dt_couple must be > 0, got {self.dt_couple}")
+        if self.days < 1:
+            raise ValueError(f"days must be >= 1, got {self.days}")
         if self.dt_couple > self.DT:
             raise ValueError(f"dt_couple ({self.dt_couple}) must be <= output step DT ({self.DT})")
         # dt_couple drives sub-stepping within an output interval, so DT must be a whole multiple of it

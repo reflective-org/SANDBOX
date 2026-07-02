@@ -67,6 +67,14 @@ def test_unknown_switch_key_raises_friendly_valueerror():
         CoupledScenario(switches={"sulfer": True})
 
 
+def test_days_must_be_at_least_one():
+    with pytest.raises(ValueError):
+        CoupledScenario(days=0)     # a zero/negative run length is a config error, not a no-op
+    with pytest.raises(ValueError):
+        CoupledScenario(days=-1)
+    CoupledScenario(days=1)          # one day is the minimum valid run
+
+
 def test_dt_couple_must_not_exceed_DT():
     with pytest.raises(ValueError):
         CoupledScenario(DT=600.0, dt_couple=900.0)
