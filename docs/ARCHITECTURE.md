@@ -34,4 +34,19 @@ reuse `tomas-jax` `molec_cm3_to_kg_gridcell`).
 - TOMAS gas: `tomas_jax` `make_step([...])` (omit `so2_chemistry`); optics via
   `radiative_forcing.precompute_mie_properties` / `compute_optical_depth`.
 
+## Implemented so far (Phases 1-3)
+Steps 2-4 of the loop are live in `coupled/driver.py` (`run_coupled`); the NumPy mirror
+(`coupled/reference_numpy.py`) reproduces it for cross-backend parity. Per outer interval:
+- **Gas chem** integrates on the JAX backend with frozen midpoint J and the previous interval's
+  aerosol het inputs (SA / effective radius / H2SO4 wt%).
+- **Handoff**: `coupled/units.py` converts gas H2SO4 → `Gc[SRTSO4]`; `coupled/tomas_bridge.py` builds
+  the initial `TomasState` (Marianna dist) and the SO2-off `make_step`.
+- **Microphysics**: TOMAS advances the interval; `coupled/aerosol_props.py` derives SA (µm²/cm³),
+  effective wet radius r_eff = ΣN r³/ΣN r² (cm), and H2SO4 wt% for the next interval; depleted H2SO4
+  returns to the gas. A loud guard raises if TOMAS returns non-finite (dt_couple stability, AD-3.9).
+
+Steps 1 (aerosol→J), 5 (heating), 6 (dilution) are Phases 4-6. TOMAS is active iff any of
+`switches.{nucleation,condensation,coagulation}` is on; else the Phase-2 gas-only path (prescribed
+`cfg.SA`) runs. Phase-3 design calls: `DECISIONS.md` + `AUTONOMOUS_DECISIONS.md` (AD-3.x).
+
 See `docs/master-plan.md` for the full plan and phase breakdown.
