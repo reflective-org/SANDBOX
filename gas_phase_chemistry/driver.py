@@ -41,7 +41,7 @@ _PRESETS_PPT = {
 
 
 def initial_concentrations(P: float, M: float, WTR: float) -> np.ndarray:
-    """Build the 34-species initial state (molec/cm^3) for pressure level ``P``.
+    """Build the 36-species initial state (molec/cm^3) for pressure level ``P``.
 
     ``WTR`` is water vapour in ppmv; ``M`` is the air number density.
     """
@@ -161,7 +161,7 @@ def run(cfg: ModelConfig | None = None, td: float = 14.0, tn: float = 10.0,
         days: int = 5, DT: float = 600.0):
     """Run the model from the pressure-level preset initial conditions.
 
-    ``states`` is (n_times, 34) in molec/cm^3, in ``config.SPECIES`` order. Set
+    ``states`` is (n_times, 36) in molec/cm^3, in ``config.SPECIES`` order. Set
     ``days=2, DT=600`` to reproduce the committed fixture.
     """
     if cfg is None:
@@ -185,5 +185,5 @@ def run_scenario(scenario):
 
 
 def to_pptv(states: np.ndarray, M: float) -> dict:
-    """Convert a (n_times, 34) state array to a dict of pptv time series by species name."""
+    """Convert a (n_times, 36) state array to a dict of pptv time series by species name."""
     return {name: states[:, IDX[name]] / M * 1e12 for name in SPECIES}
