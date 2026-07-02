@@ -81,4 +81,16 @@ model's Tabazadeh-based `h2so4wp_at`.
 surface area per cm³, weight-percent); the units bridge already matches TOMAS's constant. 1 m³ matches
 the tomas-jax examples so cross-checks against them are apples-to-apples.
 
+### AD-3.8 — TOMAS `Mk[:,SRTSO4]` is H2SO4-equivalent mass (no 96/98 conversion)
+**Q:** Is TOMAS's aerosol sulfate mass stored as SO4 (96 g/mol) or H2SO4 (98 g/mol)? This drives both
+the heterogeneous-chem weight-percent and the Phase-3.5 sulfur budget.
+**Decision:** Treat `Mk[:,SRTSO4]` as **H2SO4-equivalent mass** (MW 98).
+**Rationale:** verified in `tomas_jax/solvers/condensation.py:192-211` — condensation moves the gaseous
+H2SO4 mass (`Gc[SRTSO4]`, MW 98) into `Mk[:,SRTSO4]` **1:1** with no MW conversion, and normal-branch
+nucleation depletes gas by exactly the SO4 mass it adds. So particulate sulfur (kg) equals the H2SO4
+mass condensed/nucleated; the weight-percent is `100·M_SO4/(M_SO4+M_H2O)` with `M_SO4` taken directly,
+and the budget converts particulate mass → molec/cm³ with MW=98. Caveat (documented, edge case only):
+the nucleation *clamp* branch (gas exhausted) applies a 96/98 factor, a tiny non-conservation that
+only fires when gas H2SO4 is fully depleted within a step — flagged in CAVEATS.md.
+
 _(further Phase-3 decisions appended as they arise)_
