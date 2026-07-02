@@ -48,17 +48,11 @@ def test_bad_dt_couple_raises():
         CoupledScenario(dt_couple=0.0)
 
 
-def test_enabling_unimplemented_switch_raises():
-    # A config can't silently claim a capability the model doesn't have yet.
-    with pytest.raises(NotImplementedError):
-        CoupledScenario(switches=Switches(dilution=True))       # Phase 6, not yet wired
-    with pytest.raises(NotImplementedError):
-        CoupledScenario(switches={"dilution": True})            # the only remaining unwired switch
-
-
-def test_implemented_microphysics_switches_allowed():
-    # Phase 3 wired the TOMAS microphysics trio -> enabling them must NOT raise.
-    CoupledScenario(switches=Switches(nucleation=True, condensation=True, coagulation=True))
+def test_all_switches_implemented_and_allowed():
+    # Phases 3-6 wired every process switch; enabling all of them must NOT raise.
+    CoupledScenario(switches=Switches(sulfur=True, nucleation=True, condensation=True,
+                                      coagulation=True, aerosol_to_j=True, heating_to_t=True,
+                                      dilution=True))
 
 
 def test_unknown_key_rejected():

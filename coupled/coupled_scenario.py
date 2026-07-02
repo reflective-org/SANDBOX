@@ -21,11 +21,10 @@ from dataclasses import asdict, dataclass, field
 #: Photolysis drivers understood by the model (validated -> no silent mis-gate of the sulfur chain).
 PHOTOLYSIS_MODES = ("reference", "sza", "tuvx")
 
-#: Process switches that are actually wired today. Others are accepted in the schema but must be
-#: False until their phase lands (Phase 6: dilution). Phase 3 wired the TOMAS microphysics trio;
-#: Phase 4 wired aerosol_to_j; Phase 5 wired heating_to_t (radiative heating -> box temperature).
+#: Process switches that are actually wired today. Phase 3 wired the TOMAS microphysics trio; Phase 4
+#: aerosol_to_j; Phase 5 heating_to_t; Phase 6 dilution -- so all switches are now implemented.
 _IMPLEMENTED_SWITCHES = frozenset(
-    {"sulfur", "nucleation", "condensation", "coagulation", "aerosol_to_j", "heating_to_t"})
+    {"sulfur", "nucleation", "condensation", "coagulation", "aerosol_to_j", "heating_to_t", "dilution"})
 
 
 @dataclass
@@ -77,6 +76,11 @@ class CoupledScenario:
     # --- photolysis ---
     photolysis: str = "tuvx"
 
+    # --- dilution (Phase 6) ---
+    # First-order relaxation rate [1/s] toward the initial (background) box state when
+    # switches.dilution is on (AD-6.2; default ~ 1/(10 days)). The V(t) schedule is deferred.
+    dilution_rate: float = 1.157e-6
+
     # --- aerosol -> photolysis (Phase 4) ---
     # Altitude band (km) over which the box aerosol is spread in the TUV-x radiative-transfer column
     # when switches.aerosol_to_j is on (AD-4.2, FLAGGED OPEN -- the band sets the feedback magnitude).
@@ -106,6 +110,8 @@ class CoupledScenario:
         if len(band) != 2 or band[0] >= band[1] or band[0] < 0.0:
             raise ValueError(f"aerosol_band_km must be (lo, hi) km with 0 <= lo < hi, got {band}")
         self.aerosol_band_km = band
+        if self.dilution_rate < 0.0:
+            raise ValueError(f"dilution_rate must be >= 0, got {self.dilution_rate}")
         if self.dt_couple > self.DT:
             raise ValueError(f"dt_couple ({self.dt_couple}) must be <= output step DT ({self.DT})")
         # dt_couple drives sub-stepping within an output interval, so DT must be a whole multiple of it
