@@ -6,15 +6,23 @@ import numpy as np
 
 import coupled.driver as cd
 from coupled import CoupledScenario
+from coupled.coupled_scenario import Switches
 
 _COMP = {"O2": 2.1e11, "O3": 1.18e6, "CH4": 1.6e6, "SO2": 9.5e5, "ClO": 10.0,
          "ClONO2": 127.0, "HCl": 777.0, "N2O5": 20.0, "NO": 450.0, "NO2": 450.0,
          "OH": 0.5, "HO2": 3.0}
 
+# gas-only switches: this file tests the gas-level driver mechanics (outer-grid snapping, gas sulfur
+# conservation, the sulfur gate). TOMAS/aerosol/heating/dilution are tested in their own files, and
+# leaving them at the all-on default would (a) break the gas-only-S invariant and (b) be slow.
+_GAS_ONLY = dict(sulfur=True, nucleation=False, condensation=False, coagulation=False,
+                 aerosol_to_j=False, heating_to_t=False, dilution=False)
+
 
 def _scn(**kw):
     base = dict(P=68.0, T=210.0, WTR=5.0, latitude=0.0, longitude=0.0, day_of_year=80,
-                start_utc_hour=0.0, days=1, DT=43200.0, dt_couple=43200.0, concentrations=_COMP)
+                start_utc_hour=0.0, days=1, DT=43200.0, dt_couple=43200.0, concentrations=_COMP,
+                switches=Switches(**_GAS_ONLY))
     base.update(kw)
     return CoupledScenario(**base)
 
@@ -64,12 +72,11 @@ def test_run_coupled_tuvx_wires_absolute_J(monkeypatch):
 def test_switches_sulfur_false_disables_chain(monkeypatch):
     # switches.sulfur=False must turn the chain OFF in the coupled driver: no H2SO4, SO2 ~flat.
     from reactions import MECHANISM
-    from coupled import Switches
     photo = [r.equation for r in MECHANISM.active if r.kind == "photo"]
     monkeypatch.setattr(cd, "_compute_j_values",
                         lambda cfg, t, aerosol_props=None: {eq: 1.0e-4 for eq in photo})
     from config import IDX
-    sc = _scn(photolysis="tuvx", start_utc_hour=6.0, switches=Switches(sulfur=False))
+    sc = _scn(photolysis="tuvx", start_utc_hour=6.0, switches=Switches(**{**_GAS_ONLY, "sulfur": False}))
     t, x = cd.run_coupled(sc)
     assert np.all(x[:, IDX["H2SO4"]] == 0.0)                   # chain off -> no H2SO4 ever
     assert np.all(x[:, IDX["SO3"]] == 0.0)

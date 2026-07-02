@@ -25,6 +25,8 @@ def _sc(**kw):
     base.update(kw)
     sc = CoupledScenario(**base)
     sc.switches.nucleation = sc.switches.condensation = sc.switches.coagulation = True
+    # Phase-3 scope (TOMAS coupling only): keep radiation feedback + dilution OFF (they default ON now).
+    sc.switches.aerosol_to_j = sc.switches.heating_to_t = sc.switches.dilution = False
     return sc
 
 

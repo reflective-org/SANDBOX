@@ -25,6 +25,10 @@ def _sc(**kw):
     base.update(kw)
     sc = CoupledScenario(**base)
     sc.switches.nucleation = sc.switches.condensation = sc.switches.coagulation = True
+    # this file isolates the TOMAS H2SO4-handoff sulfur budget: keep radiation feedback + dilution OFF
+    # (dilution relaxes toward the background = a sulfur source/sink that would break the S-conservation
+    # asserts; all-on is the new default so these must be turned off explicitly).
+    sc.switches.aerosol_to_j = sc.switches.heating_to_t = sc.switches.dilution = False
     return sc
 
 
