@@ -267,7 +267,7 @@ def _make_plots(d):
     fig, ax = plt.subplots(figsize=(9.5, 5.2))
     pm = ax.pcolormesh(days, dp_mid, np.maximum(dNdlogDp, 1e-3).T, shading="auto",
                        norm=matplotlib.colors.LogNorm(vmin=1e-1, vmax=max(1e2, dNdlogDp.max())),
-                       cmap="viridis", rasterized=True)
+                       cmap="inferno", rasterized=True)
     ax.set_yscale("log"); ax.set_ylabel("dry diameter [um]"); ax.set_xlabel("day")
     ax.set_title("Aerosol size distribution dN/dlogDp [cm$^{-3}$]")
     ax.grid(False)
