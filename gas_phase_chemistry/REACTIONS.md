@@ -86,7 +86,7 @@ In code: `reactions.BY_RNUMBER["R26"]` or `reactions.BY_KLABEL["k22"]`; list eve
 | R74 | k68 | gas | SO2 + OH -> HO2 | reference-only lump (sulfur dropped); JPL 19-5 I4 |
 | R75 | k69 | gas | CH4 + OH -> HO2 | JPL 19-5 (D14, OH+CH4); product lumped to HO2 |
 | R76 | k70 | gas | HO2 + HO2 -> H2O2 | JPL 19-5 (B13): bimol + termol[M] + H2O enhancement |
-| R77 | k71 | gas | H2O2 -> 2 OH | FK: constant, not day/night gated |
+| R77 | k71 | photo | H2O2 -> 2 OH | JPL94 xs; TUV-x J in tuvx mode |
 | R78 | k72 | gas | SO2 + HO2 -> | reference-only null sink; UPPER LIMIT (JPL 19-5 I34) |
 | R79 | k73 | gas | SO2 + OH -> SO3 + HO2 | net of JPL 19-5 I4 (SO2+OH+M->HOSO2, rate-limiting) + I92 (HOSO2+O2->HO2+SO3) |
 | R80 | k74 | gas | SO2 + HO2 -> SO3 + OH | JPL 19-5 I34 rate (upper limit); PRODUCTS ARE AN ASSUMPTION -- JPL recommends none |

@@ -34,4 +34,39 @@ reuse `tomas-jax` `molec_cm3_to_kg_gridcell`).
 - TOMAS gas: `tomas_jax` `make_step([...])` (omit `so2_chemistry`); optics via
   `radiative_forcing.precompute_mie_properties` / `compute_optical_depth`.
 
+## Implemented so far (Phases 1-3)
+Steps 2-4 of the loop are live in `coupled/driver.py` (`run_coupled`); the NumPy mirror
+(`coupled/reference_numpy.py`) reproduces it for cross-backend parity. Per outer interval:
+- **Gas chem** integrates on the JAX backend with frozen midpoint J and the previous interval's
+  aerosol het inputs (SA / effective radius / H2SO4 wt%).
+- **Handoff**: `coupled/units.py` converts gas H2SO4 → `Gc[SRTSO4]`; `coupled/tomas_bridge.py` builds
+  the initial `TomasState` (Marianna dist) and the SO2-off `make_step`.
+- **Microphysics**: TOMAS advances the interval; `coupled/aerosol_props.py` derives SA (µm²/cm³),
+  effective wet radius r_eff = ΣN r³/ΣN r² (cm), and H2SO4 wt% for the next interval; depleted H2SO4
+  returns to the gas. A loud guard raises if TOMAS returns non-finite (dt_couple stability, AD-3.9).
+
+**Step 1 (aerosol→J) is live (Phase 4):** `coupled/aerosol_optics.py` builds spectral OD/SSA/g from the
+TomasState (per-wavelength Mie on fixed bin radii) over the `aerosol_band_km` slab; the driver injects
+it into the TUV-x port `_solve` via the adapter behind `switches.aerosol_to_j`, so J responds to the
+aerosol (scattering enhancement then shielding).
+
+Steps 5 (heating, Phase 5) and 6 (dilution, Phase 6 -- `coupled/dilution.py`, relax gas+aerosol to the initial background) are live. TOMAS is active iff any of
+`switches.{nucleation,condensation,coagulation}` is on; else the Phase-2 gas-only path (prescribed
+`cfg.SA`) runs. Phase-3 design calls: `DECISIONS.md` + `AUTONOMOUS_DECISIONS.md` (AD-3.x).
+
+## Running the coupled model (single input)
+`CoupledScenario` is the single input (one YAML/JSON): environment, location/date, schedule
+(`dt_couple`), `photolysis`, per-process `switches`, `dilution_rate`, `aerosol_band_km`, the three
+sensitivity knobs (`nucleation_rate_scale`, `condensation_alpha`, `coag_kernel_scale`), and the initial
+gas composition. Example: `coupled/scenarios/coupled_full.yaml`.
+```python
+from coupled import CoupledScenario
+from coupled.driver import run_coupled
+sc = CoupledScenario.load("coupled/scenarios/coupled_full.yaml")
+t, x, aero = run_coupled(sc, return_aerosol=True)   # x: (n_t, 36) gas; aero: SA/radius_cm/h2so4wp/particulate_S/T
+```
+Toggling switches reproduces every sub-case (gas-only → +microphysics → +aerosol→J → +heating →
++dilution); see `coupled/validate_phase7.py`. `coupled/reference_numpy.run_coupled_numpy` is the
+SciPy-BDF mirror for cross-backend checks.
+
 See `docs/master-plan.md` for the full plan and phase breakdown.

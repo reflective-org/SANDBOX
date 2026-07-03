@@ -22,6 +22,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "pytest-xdist>=3.0",     # run the coupled suite across cores: pytest coupled/tests -n auto
+    "pytest-timeout>=2.1",   # cap any single test (catches a hung coupled run): --timeout=300
     "matplotlib>=3.7",
 ]
 # the chemistry model's optional differentiable (Diffrax) Phase-B solver (gas_phase_chemistry/jaxmodel)
@@ -39,3 +41,6 @@ include = ["tuvx_photolysis*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: end-to-end runs that invoke the real TOMAS microphysics or TUV-x port (deselect with -m 'not slow')",
+]

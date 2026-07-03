@@ -44,19 +44,26 @@ def _reaction_rates(conc, coeffs):
     return jnp.stack(terms)
 
 
-def build_params(T, M, P, SA, WTR, Yn2o5, conc, j_scale, sulfur_chain=0.0):
+def build_params(T, M, P, SA, WTR, Yn2o5, conc, j_scale, sulfur_chain=0.0,
+                 particle_radius=0.1e-4, h2so4wp=None):
     """Assemble the rate-function parameter dict, computing aerosol gammas from ``conc``.
 
     ``sulfur_chain`` (0.0/1.0) gates the gas-phase SO2->SO3->H2SO4 chain: 0 = reference mode
     (legacy SO2 reactions, sulfur dropped), 1 = non-reference (the chain). Default 0 keeps the
     JAX model reference-faithful and matches the NumPy default (photolysis="reference").
+
+    ``particle_radius`` (cm) and ``h2so4wp`` (H2SO4 weight percent) are the Phase-3 TOMAS-coupling
+    aerosol overrides -- MUST mirror NumPy ``reactions.build_env``. Defaults (0.1e-4 cm and ``None``
+    -> thermodynamic weight percent) reproduce the standalone behaviour byte-for-byte; the coupled
+    driver passes TOMAS-derived values per outer step. ``a_W`` always stays from the thermodynamics.
     """
     HCl_ppb = conc[IDX["HCl"]] / M * 1e9
     ClONO2_ppb = conc[IDX["ClONO2"]] / M * 1e9
     H2O_ppm = conc[IDX["H2O"]] / M * 1e6
-    h2so4wp, _ml, a_W = _aerosol.h2so4wp_at(T, P, H2O_ppm)
+    h2so4wp_thermo, _ml, a_W = _aerosol.h2so4wp_at(T, P, H2O_ppm)
+    wp = h2so4wp_thermo if h2so4wp is None else h2so4wp
     Yhocl, Yclnh2o, Yclnhcl = _gammas.hetgammas_jpl00(
-        T, P, h2so4wp, a_W, HCl_ppb, ClONO2_ppb, 0.1e-4, 0)
+        T, P, wp, a_W, HCl_ppb, ClONO2_ppb, particle_radius, 0)
     return dict(T=T, M=M, P=P, SA=SA, WTR=WTR, j_scale=j_scale,
                 H2O=conc[IDX["H2O"]],   # for the HO2+HO2 water enhancement
                 sulfur_chain=sulfur_chain,

@@ -173,7 +173,7 @@ def all_coefficients(p, opt):
         k68 * s_ref,                                               # SO2 + OH -> HO2 (reference-only lump)
         2.45e-12 * exp(-1775.0 / T),                               # CH4 + OH (JPL 19-5 D14)
         k70,                                                       # HO2 + HO2 (JPL 19-5 B13)
-        1e-5,                                                      # H2O2 -> 2OH (FK, constant)
+        1.0e-5 * j,                                                # H2O2 -> 2OH (photolysis, j45=1e-5)
         1.0e-18 * s_ref,                                           # SO2 + HO2 -> (reference-only null sink)
         # --- gas-phase sulfur chain (non-reference modes only); order matches reactions.REACTIONS ---
         k68 * s_new,                                               # SO2 + OH -> SO3 + HO2 (I4+I92 net)

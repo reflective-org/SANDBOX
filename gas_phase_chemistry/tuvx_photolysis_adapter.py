@@ -46,6 +46,7 @@ REACTION_MAP = {
     "BrCl -> Br + Cl": "BrCl+hv->Br+Cl",
     "HONO -> OH + NO": "HNO2+hv->OH+NO",
     "HOBr -> OH + Br": "HOBr+hv->OH+Br",
+    "H2O2 -> 2 OH": "H2O2+hv->OH+OH",
     # O2 photolysis is handled via the Lyman-alpha/Schumann-Runge band parameterization
     "O2 -> 2 O": "O2+hv->O+O",
     # O3 photolysis: the model treats O3 as photolyzing 100% to O(1D) (concs_het.m L145-152),
@@ -83,6 +84,63 @@ def _calculator(config_path: str, data_root: str):
     return PhotolysisCalculator.from_tuvx_json(config_path, data_root=data_root)
 
 
+def compute_box_heating(cfg, t_seconds, aerosol_props=None):
+    """Photochemical-heating inputs at the box altitude for one solar time (Phase 5).
+
+    Returns ``(heating_per_absorber {reaction: J s-1 per molec}, box_actinic_flux [n_wl],
+    wavelength_centers_nm)`` interpolated to the box altitude, or ``None`` at night (sza>=90).
+    One radiation solve; ``aerosol_props`` (if given) is injected and cleared (try/finally).
+    """
+    return compute_j_and_heating(cfg, t_seconds, aerosol_props=aerosol_props)[1]
+
+
+def compute_j_and_heating(cfg, t_seconds, aerosol_props=None):
+    """ONE radiation solve -> ``(j_values, heating)`` at the box altitude for one solar time.
+
+    ``j_values`` is the ``_compute_j_values`` dict ``{equation: J}`` (zeros at night); ``heating`` is
+    the ``compute_box_heating`` tuple ``(h_box, flux_box, wl_centers_nm)`` or ``None`` at night.
+    Photolysis and heating need the SAME radiation field (same SZA, same aerosol), so callers that
+    want both (the coupled driver's outer step) pay for the solve once instead of twice.
+    ``aerosol_props`` is injected and cleared (try/finally).
+    """
+    import numpy as np
+    from solar import solar_zenith_angle
+
+    total_hours = cfg.start_utc_hour + t_seconds / 3600.0
+    day_of_year = cfg.day_of_year + total_hours / 24.0
+    sza = solar_zenith_angle(cfg.latitude, cfg.longitude, day_of_year, total_hours % 24.0)
+    if sza >= 90.0:
+        return {eq: 0.0 for eq in REACTION_MAP}, None  # night: mapped reactions off, no heating
+    config_path = str(getattr(cfg, "tuvx_config", _DEFAULT_CONFIG))
+    data_root = str(getattr(cfg, "tuvx_data_root", _TUVX_ROOT))
+    calc = _calculator(config_path, data_root)
+    altitude = _box_altitude_km(float(cfg.P), data_root)
+    esd = _earth_sun_distance(day_of_year)
+    calc.aerosol_props = aerosol_props
+    try:
+        # branching=True applies the JPL product-branching quantum yields for HNO4 and ClOOCl
+        profile, heating, flux = calc.rates_heating_and_actinic_flux(sza, esd, branching=True)
+    finally:
+        calc.aerosol_props = None
+    j_out = {eq: float(np.interp(altitude, calc.height_edges_km, profile[tuvx_name]))
+             for eq, tuvx_name in REACTION_MAP.items() if tuvx_name in profile}
+    h_box = {n: float(np.interp(altitude, calc.height_edges_km, hr)) for n, hr in heating.items()}
+    flux_box = np.array([np.interp(altitude, calc.height_edges_km, flux[:, k])
+                         for k in range(flux.shape[1])])
+    wl = np.asarray(calc.wl_edges, dtype=float)
+    return j_out, (h_box, flux_box, 0.5 * (wl[:-1] + wl[1:]))
+
+
+def calculator_grids(cfg):
+    """(wavelength_centers_nm, height_edges_km) of the port's cached calculator, for aerosol optics."""
+    import numpy as np
+    config_path = str(getattr(cfg, "tuvx_config", _DEFAULT_CONFIG))
+    data_root = str(getattr(cfg, "tuvx_data_root", _TUVX_ROOT))
+    calc = _calculator(config_path, data_root)
+    wl = np.asarray(calc.wl_edges, dtype=float)
+    return 0.5 * (wl[:-1] + wl[1:]), np.asarray(calc.height_edges_km, dtype=float)
+
+
 @lru_cache(maxsize=1)
 def _box_altitude_km(pressure_mbar: float, data_root: str) -> float:
     from tuvx_photolysis import data, geometry
@@ -110,7 +168,7 @@ TIME_QUANTUM_S = 120.0
 _J_CACHE: dict = {}
 
 
-def _compute_j_values(cfg, t_seconds: float) -> dict:
+def _compute_j_values(cfg, t_seconds: float, aerosol_props=None) -> dict:
     from solar import solar_zenith_angle
 
     config_path = str(getattr(cfg, "tuvx_config", _DEFAULT_CONFIG))
@@ -128,8 +186,15 @@ def _compute_j_values(cfg, t_seconds: float) -> dict:
     altitude = _box_altitude_km(float(cfg.P), data_root)
     esd = _earth_sun_distance(day_of_year)
 
-    # branching=True applies the JPL product-branching quantum yields for HNO4 and ClOOCl
-    profile = calc.rate_constants_profile(sza, esd, branching=True)  # {tuvx_name: J[n_levels]}
+    # Phase 4: inject a dynamic aerosol radiator (from the TOMAS aerosol) for this solve. The
+    # calculator is cached/shared, so set it, solve, and ALWAYS clear it (try/finally re-raises --
+    # it does not swallow errors) so no stale aerosol leaks into a later no-aerosol solve.
+    calc.aerosol_props = aerosol_props
+    try:
+        # branching=True applies the JPL product-branching quantum yields for HNO4 and ClOOCl
+        profile = calc.rate_constants_profile(sza, esd, branching=True)  # {tuvx_name: J[n_levels]}
+    finally:
+        calc.aerosol_props = None
     import numpy as np
 
     out = {}

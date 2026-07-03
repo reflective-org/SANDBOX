@@ -81,6 +81,139 @@ H2SO4 0 → 7.35e3 pptv, SO2 −0.77 %, sulfur drift +1.3e-15, and JAX-vs-NumPy 
 diff **1.2e-6 (SO2)** under matched J (isolates the solver difference). Plots in `coupled/validation/`
 (`coupled_sulfur.png`, `coupled_conservation.png`, `coupled_jax_vs_numpy.png`).
 
+### Phase 3 — TOMAS microphysics coupling (2026-07-02) — **PASS (3/3)**
+Three independent agents, one per lens, each re-deriving from the code + the TOMAS/gas sources (not the
+implementer's summary). All three returned PASS; two found real issues that were fixed before the gate.
+
+- **Lens 1 — correctness vs TOMAS: PASS (bug found + fixed).** Verified make_step is called with
+  'so2_chemistry' OMITTED (the only internal H2SO4 source, `so2_chemistry.py:245`, never runs); the
+  units handoff is exact (Avogadro/MW match TOMAS; `.set` write-back, no double-count); `Mk[:,SRTSO4]`
+  is H2SO4-equiv mass (1:1 condensation transfer, AD-3.8); SA/r_eff formulas match a hand recompute
+  exactly; NumPy↔JAX het-seam parity holds; rh = a_W. **Found a real bug:** the diagnostics recomputed
+  wet water with the ISORROPIA scheme while the step used Tabazadeh (1.3-1.8× SA error) → **fixed** to
+  `calc_equilibrium_water_h2so4` (AD-3.11).
+- **Lens 2 — tests & coverage: PASS.** Re-ran suites: coupled 47 passed (incl. slow real-TOMAS), gas
+  100 passed, no regression. Confirmed the coupling-conservation test is genuine by injecting
+  drop/double-count stubs (both drift 2.6e-2 → fail as they should); het-seam parity has ~4 orders of
+  headroom and catches a 2× radius mismatch; TOMAS-on cross-backend parity tolerances are honest
+  (tightest headroom 3.8×, ClOOCl). Flagged coverage gaps → **closed** with `test_phase3_coverage.py`
+  (NaN guard both backends, pinned RH, run-level SO2-off, NumPy switch-off).
+- **Lens 3 — physical & conservation: PASS (doc corrections).** Independently: sulfur budget drift
+  −4.3e-4/day (bounded); H2SO4 is terminal in the gas mechanism with TOMAS its sole sink (no
+  double-count); NaN guard verified firing (5.9e10 slug → clear RuntimeError); no try/except bypass;
+  boxvol invariance exact for conc/radius/wt%, ~1e-4 for SA (TOMAS floor). **Corrected two doc claims:**
+  the drift is the 96/98 nucleation clamp firing *every daytime step* (not generic MNFIX, not an edge
+  case — AD-3.10/3.8 fixed), and r_eff *collapses to ~5 nm* under a runaway nucleation burst (N≈1.6e10
+  cm⁻³, AD-3.4 fixed + flagged OPEN for user).
+
+**End-to-end run** (`validate_phase3.py`, 2 d, dt_couple=3600 s, SO2=1e4 pptv, all microphysics on):
+SO2 2.34e10→2.22e10, particulate S ×12, SA 0.39→30.8 µm²/cm³, max gas H2SO4 6.6e6 (stable), total-S
+drift −8.9e-4 (TOMAS clamp, coupling handoff exact). Plots in `coupled/validation/phase3_*.png`.
+**Two items flagged OPEN for the user** in AUTONOMOUS_DECISIONS.md: (1) TOMAS's every-step clamp
+sulfur loss, (2) the runaway homogeneous nucleation (implausible N) — both tomas-jax behaviors, not
+coupling bugs.
+
+---
+
+### Phase 4 — Aerosol → photolysis radiation (2026-07-02) — **PASS (2/2 lenses)**
+Two independent agents (correctness; tests+physical), each re-deriving from the code + the TOMAS Mie
+source + the TUV-x port.
+
+- **Lens 1 — correctness: PASS (no bugs).** The Mie table (`bhmie_qsca_jax` on x=2πr/λ, fixed bin
+  radii + fixed index) is **bit-exact** vs TOMAS's own `precompute_mie_properties` at 550 nm; units
+  correct (r m→cm, λ nm→m, OD=b_ext·Δz with Δz km→cm); Qsca≤Qext, |g|≤1; SSA≈1 for sulfate. Port
+  injection appends the aerosol radiator before `accumulate` (None reproduces the prior solve exactly);
+  adapter clears `aerosol_props` in a `finally` that re-raises (no swallow, no stale state); NumPy/JAX
+  build identical optics. Enhancement-then-shielding confirmed correct physics (pure absorber → J
+  monotonically drops, so the enhancement is scattering-driven).
+- **Lens 2+3 — tests + physical: PASS.** 62 coupled + 100 gas tests pass, no regression. Bug-injection
+  confirms the tests are genuine (skipping the aerosol append → `test_port_aerosol` fails; ignoring Nk
+  → `test_aerosol_optics` OD∝Nk fails). Physics re-derived: SSA=1.000000, OD∝N (×5.0) and ∝band, OD=0
+  outside band, **boxvol cancels** (OD ratio 1.000000), driver-level J change up to +72 %/−98 %.
+  No error bypass. Coverage gaps flagged → addressed: added a numeric SSA/g scattering-weighting test;
+  the end-to-end `aerosol_to_j` on/off (agent measured a 1265× trajectory change) and the JAX/NumPy
+  aerosol parity are NOT committed as CI tests (a real-TUV-x coupled run solves the full radiation
+  field per interval ~30 s, and the runaway-nucleation OPEN item drives the stiff gas solver to its
+  step cap) — exercised instead by `validate_phase4.py` and confirmed by the agent; the mirror runs
+  byte-identical aerosol code.
+
+**End-to-end** (`validate_phase4.py`): box-altitude J/J0 vs 550 nm column OD shows the scattering
+sulfate aerosol enhancing J to ~1.4× at OD~1-2 then shielding at high OD; deep-UV HNO3 decreases
+monotonically. Plot: `coupled/validation/phase4_j_vs_od.png`. Two items OPEN for the user
+(AUTONOMOUS_DECISIONS.md): AD-4.2 vertical placement (slab bounds set the feedback magnitude) and the
+Phase-3 runaway nucleation (which, with aerosol_to_j on, further stresses the gas solver).
+
+---
+
+### Phase 5 — Radiative heating → temperature (2026-07-02) — **PASS (2 independent lenses)**
+Two independent agents each re-derived the kernel from `heating_rates.F90`, checked units, ran the 8
+targeted tests, and did bug-injection. Both PASS, no bugs. (Two earlier agent runs were killed by the
+harness exactly when they launched pytest — not a finding; re-run to completion.)
+
+- **Lens 1 — correctness vs Fortran: PASS.** The energy formula `max(0, hc(1/λ − 1/λ_thr))` and the
+  heating sum `Σ actinic·energy·σφ` are character-for-character the Fortran (`heating_rates.F90:224-226,
+  298-303`); `hc` matches `constants.F90`; **negative actinic flux is zeroed** (matches Fortran); O3
+  energy terms 310.32/1179.87 correct; both O3 channels used, O2 correctly deferred (AD-5.1).
+- **Lens 2 (consolidated) — units + tests + physical: PASS.** dT/dt units verified K/s
+  (H_gas=[O3]·Σheat, H_aer=Σflux·b_abs·E_photon, /(n_air·cp), cp=3.5kB correct); night gating via
+  `compute_box_heating→None` with a `try/finally` that re-raises (no swallow); T-update + M recompute
+  matched in the NumPy mirror. **8/8 targeted tests pass; bug-injection** (`box_dTdt→0`) makes the
+  "T rises" test FAIL (non-vacuous), reverted clean. Diurnal O3 heating ≈0.24 K/day at noon/19 km
+  (plausible); SW-only/no-LW-cooling/monotonic-T limitation prominently documented (CAVEATS + AD-5.4
+  OPEN); `heating_to_t` defaults OFF (surfaced, not hidden).
+
+**End-to-end** (`validate_phase5.py`): diurnal heating 0.24 K/day (0 at night); a 3-day coupled run
+with `heating_to_t` warms the box 210.00→210.30 K. Plots `coupled/validation/phase5_*.png`.
+**OPEN for the user (AD-5.4):** no longwave cooling (T not a closed energy balance) and no LW aerosol
+heating (dominant strat-sulfate term) — heating is shortwave-only. Doc-wording nit found + fixed (the
+formula text no longer reads as if etfl is applied twice; code applies it once, correctly).
+
+---
+
+### Phase 6 — Dilution (2026-07-02) — **PASS (independent verification)**
+An independent agent re-derived the formula vs TOMAS, checked the wiring in both backends, ran the
+targeted tests, and did bug-injection.
+- **Formula:** `dilute_gas = conc_bg + (conc−conc_bg)·exp(−k·dt)` is byte-for-byte TOMAS's
+  `dilution_step` exponential; `dilute_aerosol` calls the actual `tomas_jax` `dilution_step` on
+  Nk/Mk/Gc toward the background TomasState. Exact for constant k over the interval.
+- **Wiring:** both backends capture background = the INITIAL state before the loop and apply dilution
+  LAST each interval behind `switches.dilution` (het inputs refreshed from the diluted aerosol);
+  structural mirrors. `dilution_rate` validated ≥0; all 7 switches now implemented.
+- **Tests:** 19 passed (dilution 5, driver_dilution 3, scenario 11). Genuine: dilution-off is
+  byte-identical to no-switch; strong dilution suppresses H2SO4 to <1e-3 of no-dilution; passive tracer
+  matches `exp(−k t)` to rtol 1e-12. **Bug-injection** (flip `−k`→`+k`) makes the decay + monotonic
+  tests fail; reverted, `git diff` clean.
+- **No silent assumptions:** no try/except; background=initial, constant rate (V(t) deferred), no
+  temperature dilution — all documented (AD-6.x, CAVEATS, DEFERRED).
+- Coverage gaps (minor): no JAX↔NumPy parity test with dilution ON; `dilute_aerosol` not exercised
+  through a full TOMAS-active `run_coupled`.
+
+**End-to-end** (`validate_phase6.py`): passive-tracer relaxation matches the analytic `exp(−k t)` to
+5e-14; a 3-day coupled run with dilution keeps SO2 near background and suppresses H2SO4 (13947→3679
+pptv). Plots `coupled/validation/phase6_*.png`.
+
+---
+
+### Phase 7 — Single unified input + sensitivity knobs (2026-07-02) — **PASS (after fixing a found bug)**
+Independent verification initially returned **FAIL** and caught a real defect, now fixed + covered.
+- **Bug found:** `nucleation_rate_scale` was threaded to the TOMAS step (`fn_scale`) in the JAX driver
+  but NOT in the NumPy mirror (`reference_numpy.py`) — a silent no-op there — and no test threaded the
+  knob through either driver (the unit test called the TOMAS step directly). **Fixed:** the mirror now
+  passes `fn_scale=nuc_scale`; added `test_nucleation_knob_threaded_to_tomas_step_in_both_drivers` (a
+  recording stub asserting BOTH drivers pass `fn_scale`; fast+stable, would fail without the fix).
+- **Otherwise PASS:** `condensation_alpha`→`TomasState.alpha` correct; `coag_kernel_scale` RAISES if
+  ≠1.0 (honest fail-loud — tomas-jax has no such knob); `coupled_full.yaml` loads/validates/round-trips
+  and exercises the full coupling (16 tests green); the sub-case demo (`validate_phase7.py`) drives one
+  scenario through gas-only→+microphysics→+aerosol→J→+heating→+dilution via switches; no try/except
+  swallowing; OPEN items summarized for the user. Confirmed `git diff` clean after the (reverted) agent
+  bug-injection.
+
+**End-to-end** (`validate_phase7.py`): one input, progressive physics — gas-only H2SO4 240 pptv →
++microphysics 14.7 (condensation sink) → +heating T 210.1 K → +dilution 8.1 pptv / SA 0.55. Plot
+`coupled/validation/phase7_subcases.png`.
+
+---
+
 **What is CI-enforced vs. a committed artifact** (PR#35 review): the automated test
 (`test_coupled_parity.py`) proves **solver parity under matched J** using a *stubbed* adapter (fast) —
 that is the regression gate. The **real-port** 1.2e-6 agreement above comes from `validate_coupled.py`,

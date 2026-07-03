@@ -30,11 +30,48 @@
   magnitude; the I79 analytic test reuses the implementation constant so it checks structure, not the
   constant's value. Low priority (both are cross-checked against JPL in docs/jpl19-5-sulfur-crosscheck.md).
 
+- **TOMAS microphysics sulfur conservation (Phase 3, AD-3.10).** tomas-jax `feat/marianna-dilution`
+  loses ~1%/day of sulfur internally (MNFIX / PPM condensation redistribution / nucleation cluster
+  accounting). The SANDBOX coupling is exact; fixing this is a tomas-jax change. Options to weigh:
+  patch mass conservation in tomas-jax, or pin a better-conserving branch/commit. **Flagged for user.**
+- **TOMAS internal sub-step schedule (Phase 3, AD-3.9).** Instead of relying on a small global
+  `dt_couple`, give the TOMAS step an internal fine→coarse sub-step schedule so large outer steps stay
+  stable through the H2SO4 transient (removes the ~1e9 molec/cm³ nucleation-overflow constraint).
+- **Self-consistent aerosol water for the γ's (Phase 3, AD-3.3).** Reconcile TOMAS's own water uptake
+  with the gas-phase water activity `a_W` used in `hetgammas_jpl00` (currently a_W stays thermodynamic).
+- **Het-uptake radius weighting (Phase 3, AD-3.4).** Effective (surface-area-weighted) radius is used;
+  a size-resolved uptake (sum over bins) or an alternate weighting is a sensitivity to revisit.
+- **gammas divide-by-zero at HCl=0 (Phase 3, pre-existing gas-model).** `hetgammas_jpl00` computes
+  `l_hocl = sqrt(D_hocl/k_hocl)` and `_coth(...)` which divide by zero when HCl==0 (k_hocl∝M_hcl=0).
+  Realistic stratospheric runs always have HCl, but a coupled run with HCl omitted crashes cryptically
+  (ZeroDivisionError in NumPy, NaN in JAX). Make the ported gammas robust to HCl→0.
+- **96/98 nucleation clamp loss (Phase 3, tomas-jax).** In the coupled regime gas H2SO4 fully depletes
+  each daytime step, firing tomas-jax's nucleation clamp (`nucleation.py:521-539`) which loses 2/98 of
+  the clamped mass every step (~4e-4/day total-S drift). Fix belongs in tomas-jax. See AD-3.10.
+- **Coagulation-kernel scale knob in tomas-jax (Phase 7/8).** `coag_kernel_scale` is exposed on the
+  scenario but raises unless 1.0; add a scale factor through `calc_coagulation_kernel` ->
+  `coag_euler_step` -> `make_step` to enable the Phase-8 coagulation sweep.
+- **Package tomas_jax** (like gas_phase_chemistry) to remove the `coupled/tomas_bridge` sys.path insert.
+- **Wavelength-dependent aerosol refractive index (Phase 4, AD-4.1).** The Mie table uses a fixed
+  n=1.4+1e-8j; add tabulated n(λ) for sulfate (and optionally the wet-solution index) for UV fidelity.
+- **Wet-radius aerosol optics (Phase 4).** Optics use the dry geometric-mean bin radii (TOMAS RF
+  convention); using the water-uptake (wet) radius would grow the scattering cross-section.
+- ~~**Aerosol vertical placement (Phase 4, AD-4.2).**~~ **RESOLVED:** pressure-anchored plume of
+  `aerosol_thickness_km` centered on the box altitude (`aerosol_band_km` optional absolute override;
+  `aerosol_to_j=False` to disable). A scaled background (Junge) profile is a possible future refinement.
 - **Exact `aerosol.F90` port** (fractional-source OD interpolation + Ångström scaling). Not needed for
   the coupling (TOMAS supplies spectral optics directly), but required for config-static aerosol
   parity with Fortran TUV-x.
-- **Longwave aerosol heating** fidelity (Phase 5) — dominant stratospheric aerosol heating term;
-  outside any shortwave actinic code. Decide parameterization.
+- **Dilution refinements (Phase 6).** (a) V(t)/build_kdil time-varying rate from volume expansion
+  (run_marianna_dilution); (b) dilution of box temperature toward background-air T; (c) configurable
+  background (clean-air zero, or a separate spec) instead of the initial state.
+- **Longwave radiative terms (Phase 5, AD-5.4, OPEN).** No LW cooling (so box T rises monotonically —
+  not a closed energy balance) and no LW aerosol heating (the dominant strat-sulfate term). Both need a
+  LW scheme outside the SW actinic-flux code. Decide parameterization with the user.
+- **O2 photochemical heating (Phase 5, AD-5.1).** Add the O2 (Schumann-Runge/Lyman-α) heating with the
+  LA/SR-corrected cross section; minor at ~19 km but needed higher up.
+- **Unify J + heating into one radiation solve (Phase 5).** With heating_to_t on, the driver does an
+  extra radiation solve per interval; fold heating into the J solve to halve the cost.
 - **Trace the uniform ~1.8e-8 residual** in the extraterrestrial-flux normalization (negligible).
 - **O3 QY 1:1 Fortran diagnostic** (currently validated against the analytic Matsumi recommendation).
 - Remaining reaction-specific QY modules (RONO2/PAN/ketone families) for full TUV-x coverage.

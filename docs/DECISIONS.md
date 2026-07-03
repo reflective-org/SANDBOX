@@ -2,6 +2,30 @@
 
 ADR-style. Newest first. Each: decision, date, rationale, alternatives.
 
+## 2026-07-02 — Phase 3 (TOMAS coupling) design decisions
+Four decisions, confirmed by the user at the Phase 3 planning gate:
+1. **SA basis = TOMAS-only.** Initialize TOMAS with the full background sulfate distribution; the
+   heterogeneous-chemistry surface area AND wet radius come entirely from the evolving TOMAS state
+   (background is the initial condition + later the dilution target). One self-consistent aerosol
+   population — closes the sulfur+SA budget cleanly. Alternative (rejected): prescribed non-sulfate
+   background SA + TOMAS sulfate SA on top (two populations), unnecessary since no non-sulfate
+   background aerosol is modeled here.
+2. **γ composition = derive from TOMAS.** Compute H2SO4 weight-percent from TOMAS aerosol mass
+   fractions (SO4 vs H2O) and feed it into the uptake-coefficient (γ) calculation, replacing/
+   extending the prescribed `h2so4wp_at(T,P,H2O)`. More self-consistent than the T/P/H2O
+   thermodynamic lookup; requires keeping the NumPy + JAX (`jaxmodel`) parity copies in sync and
+   reconciling TOMAS water uptake against the gas model's water activity `a_W`. Alternative
+   (rejected for this phase): keep the prescribed lookup, inject only SA+radius.
+3. **TOMAS timestep = shrink dt_couple globally.** Make the outer coupling step small enough that a
+   single TOMAS `make_step` per interval is stable through the sub-second H2SO4 transient (highest in
+   the first ~2 min). Simpler than an internal TOMAS sub-step schedule; cost is more frequent J
+   recompute (documented in CAVEATS/ASSUMPTIONS). Alternative (rejected): fine→coarse internal
+   sub-stepping inside each interval.
+4. **Initial + background aerosol = reuse the TOMAS Marianna distribution** (`'redcircles'`/
+   `'tabulated'` in `experimental_case/background_aerosol_distribution.py`). Consistent with prior
+   TOMAS runs. Alternatives (rejected): a cited stratospheric-background lognormal default, or
+   user-supplied lognormal parameters.
+
 ## 2026-07-02 — Termolecular reference temperature is 298 K (RETRACTS the 300 K change)
 **Correction.** A prior entry/PR (#17) changed the termolecular reference from 298 K → 300 K on the
 belief that JPL 19-5 tabulates k0(300). That was **wrong** and has been reverted to **298 K**. The
