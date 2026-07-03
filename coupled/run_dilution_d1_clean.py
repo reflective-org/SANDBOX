@@ -3,7 +3,9 @@
 """Dilution 1 -- Low Latitude, High Altitude, Clean Stratosphere (20 km, 30N, summer, 10 days).
 
 Full coupling (gas chemistry + TUV-x photolysis + TOMAS nucleation/condensation/coagulation +
-aerosol->J + heating->T + dilution). A concentrated SO2 injection plume (2.9e9 pptv = 0.29%,
+aerosol->J + dilution; heating->T OFF -- the SW-only heating term has no LW cooling and would give
+a spurious ~+1.2 K / 10 d drift, so box T stays at the input value). A concentrated SO2 injection
+plume (2.9e9 pptv = 0.29%,
 ~1.7 t SO2 in the initial V0 = 10 m x 10 m x 30 km track) dilutes (regime D1 'Low Kz', Schumann
 volume expansion) into CLEAN stratosphere: the background has a natural 15 pptv SO2 and
 5e5 molec/cm^3 OH but NO SO3/H2SO4 and NO other short-lived radicals. NO ammonia/ammonium anywhere
@@ -79,8 +81,10 @@ def _scenario(nbins=40):
         dilution_regime="D1", dilution_zero_species=_ZERO_BG, dilution_background=_BG_PPT,
         ion_pair_rate=30.0,                          # Dunne ion-induced nucleation (GCR ~20 km)
         tomas_nbins=nbins,
+        # heating_to_t OFF (group decision): the heating term is SW-only (no LW cooling, AD-5.4),
+        # so leaving it on gives a spurious monotonic ~+1.2 K / 10 d drift. Box T stays at input T.
         switches=Switches(sulfur=True, nucleation=True, condensation=True, coagulation=True,
-                          aerosol_to_j=True, heating_to_t=True, dilution=True),
+                          aerosol_to_j=True, heating_to_t=False, dilution=True),
         concentrations={"O2": 2.1e11, "O3": 1.18e6, "SO2": _SO2_PPT, "OH": 0.5, "HO2": 3.0,
                         "NO": 450.0, "NO2": 450.0, "HCl": 777.0, "ClONO2": 127.0, "HNO3": 5000.0,
                         "H2SO4": _ppt_from_conc(1.0e5)})   # 1e5 molec/cm^3 (~0.054 pptv)
@@ -166,9 +170,9 @@ def _input_rows(sc, het0):
         ("", "Coagulation", "Brownian + Fuchs non-continuum correction"),
         ("", "Water uptake", "Tabazadeh 1997 pure H2SO4/H2O ('h2so4_tabazadeh')"),
         ("", "TOMAS SO2 chemistry", "OFF (gas model owns sulfur)"),
-        ("**Couplings (all ON)**", "", ""),
-        ("", "Processes", "sulfur chain (SO2->SO3->H2SO4 via OH), nucleation, condensation, "
-            "coagulation, aerosol->photolysis, heating->T (SW only), dilution"),
+        ("**Couplings (per-process switches)**", "", ""),
+        ("", "ON", ", ".join(n for n, v in vars(sc.switches).items() if v)),
+        ("", "OFF", ", ".join(n for n, v in vars(sc.switches).items() if not v) or "none"),
         ("", "Aerosol -> photolysis", f"plume layer {sc.aerosol_thickness_km:g} km thick, "
             "pressure-anchored at the box altitude"),
         ("**Solvers / numerics**", "", ""),
