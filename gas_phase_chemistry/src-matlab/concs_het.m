@@ -14,6 +14,7 @@ O1D     =	x(21);          HONO    =	x(22);          HNO4    =	x(23);            
 Br      =	x(25);          BrO     =	x(26);          BrONO2  =	x(27);              BrCl    =	x(28);
 HBr     =	x(29);          HOBr    =	x(30);          HNO3aq  =	x(31);              C2H6    =	x(32);
 SO2     =   x(33);          H2O2    =   x(34);
+SO3     =   x(35);          H2SO4   =   x(36);          % FK: gas-phase sulfur oxidation chain
 
 %opt is set in runconcs_het: 0 to run O3 photolysis new way w/ full rxns; 1 to run old way with workaround as in Science paper  
 
@@ -372,8 +373,8 @@ end; if SZA==0; k67=0; end;
 % SO2 REACTIONS FK addition
 
 %k68=6e-13;
-kzero=2.9e-31.*((298/300).^(-4.1));
-kinf=1.7e-12.*((298/300).^(0.2));
+kzero=2.9e-31.*((T/300).^(-4.1));           % FK: was (298/300) frozen at 298K; now box-T dependent (JPL termolecular, 300K ref)
+kinf=1.7e-12.*((T/300).^(0.2));             % FK: was (298/300) frozen at 298K; now box-T dependent
 k68=(((kzero.*M)./(1+(kzero.*M./kinf))).*0.6.^((1+(log10(kzero.*M./kinf)).^2).^(-1)));
 
 
@@ -387,7 +388,7 @@ k69=6.e-16;
 
 k70=3.*10^(-13).*(T/298).*exp(460./T);  
 k71=1E-5;                                   %photolysis
-k72=5E-18;
+k72=1E-18;                                  % SO2 + HO2 -> SO3 + OH (was 5E-18; now OH-producing chain)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% REACTION RATES
 r1  = k1*ClO*NO;
 r2  = k2*ClO*ClO;
@@ -467,7 +468,8 @@ r68 = k68*SO2*OH;                                                               
 r69 = k69*CH4*OH;                                                                   % FK added
 r70 = k70*HO2*HO2;
 r71 = k71*H2O2;
-r72 = k72*SO2*HO2;
+r72 = k72*SO2*HO2;                                                                  % FK: SO2+HO2 -> SO3+OH
+r73 = 8.5e-41.*exp(6540./T).*SO3.*H2O.^2;                                            % FK: SO3+H2O -> H2SO4 (JPL 19-5 I79)
 %r1=0; 
 %r2=0; 
 %r3=0; 
@@ -554,11 +556,11 @@ dCdt = [r1-r6-r7+r12a+2*r13a+2*r14+r15+r44+r45+r47+r53+r61-r65; ...             
         r7+r43; ...                                                                                             % CH3
         -r7-r43-r69; ...                                                                                        % CH4 FK added r69
         -r16-r22+r23+r64; ...                                                                                   % HNO3
-        -r9+r10-r11+r22+r30+r32+r38-r42+r47-r66; ...                                                            % H2O
+        -r9+r10-r11+r22+r30+r32+r38-r42+r47-r66-r73; ...                                                        % H2O  FK -r73 (SO3+H2O->H2SO4)
         r9-r10-r15+r48; ...                                                                                     % HOCl
         -r11-r19+r21; ...                                                                                       % N2O5
         r12a-r17a-r17b+r19-r21+r22+r25+r28-r31+r57b+r60a; ...                                                   % NO3
-        r15+r16-r22-r23-r29-r30-r32+r33-r37-r38+r39+2*r42+r43-r45-r46-r47+r57b+r63+r67-r68-r69+2*r71; ...   % OH  FK added r68 r69
+        r15+r16-r22-r23-r29-r30-r32+r33-r37-r38+r39+2*r42+r43-r45-r46-r47+r57b+r63+r67-r68-r69+2*r71+r72; ...   % OH  FK added r68 r69 r72(SO2+HO2->SO3+OH)
         -r33-r34+r37-r38-r39+r45-r48-r49+r57a+r68+r69-2*r70-r72; ...                                            % HO2  FK added r68 and r69
         r20b-r40-r41-r42-r43; ...                                                                               % O1D 
         r29-r30-r63; ...                                                                                        % HONO
@@ -572,6 +574,8 @@ dCdt = [r1-r6-r7+r12a+2*r13a+2*r14+r15+r44+r45+r47+r53+r61-r65; ...             
         r66-r67; ...                                                                                            % HOBr
         r8+r9+2*r11-r64+r66; ...                                                                                % HNO3aq
         -r65; ...                                                                                               % C2H6
-        -r68-r72;...                                                                                                  % SO2    FK added r68                                                                                           
-        +r70-r71;];
+        -r68-r72;...                                                                                                  % SO2    FK added r68 (SO2+OH->SO3+HO2), r72 (SO2+HO2->SO3+OH)
+        +r70-r71; ...                                                                                                 % H2O2
+        +r68+r72-r73; ...                                                                                             % SO3    FK: +SO2+OH->SO3+HO2, +SO2+HO2->SO3+OH, -SO3+H2O->H2SO4
+        +r73;];                                                                                                       % H2SO4  FK: SO3+H2O->H2SO4
     

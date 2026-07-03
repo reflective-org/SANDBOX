@@ -1,0 +1,45 @@
+concs_het.m / runconcs_het.m — gas-phase sulfur oxidation chain added
+=====================================================================
+The box model is extended from 34 to 36 species to carry the SO2 -> SO3 -> H2SO4
+oxidation chain. Changes:
+
+1. SO2 + HO2 -> SO3 + OH   (r72)
+   - Previously SO2+HO2 was a pure null sink (removed SO2 and HO2, no products).
+   - Now it produces OH (+r72 added to the OH tendency) and SO3, so it is HOx-
+     conserving (converts HO2 -> OH) rather than HOx-destroying.
+   - Rate k72 = 1E-18 cm^3/molec/s (was 5E-18); JPL 19-5 I34 upper limit.
+
+2. SO2 + OH -> SO3 + HO2   (r68)
+   - Product changed from HO2 to SO3 + HO2 (adds +r68 to the new SO3 tendency;
+     HO2 production unchanged).
+
+3. SO3 + H2O -> H2SO4       (r73, JPL 19-5 I79)
+   - New reaction: r73 = 8.5e-41 * exp(6540/T) * SO3 * H2O^2.
+   - SO3 sink, H2SO4 source, H2O sink.
+
+4. New species: SO3 = x(35), H2SO4 = x(36).
+   - runconcs_het.m: initial conditions SO3_i = H2SO4_i = 0, extended the three
+     ode15s state vectors, the AbsTol vector (36 entries), and the
+     extraction/concatenation blocks.
+
+Notes:
+- SO3 and H2SO4 are terminal in the gas phase (nothing consumes them besides the
+  chain above), so they do NOT feed back into the existing OH/HO2/O3/chlorine
+  chemistry. Adding them does not change the pre-existing gas-phase results; it
+  only adds the SO3/H2SO4 diagnostics.
+- Validated against the Python port (sulfur-chain mode): SO2+HO2 rate sensitivity
+  (1e-18 .. 1e-15) agrees to within ~2-3% on the % response.
+
+5. SO2 + OH temperature dependence fix (k68):
+   - kzero/kinf were frozen at 298 K:  kzero=2.9e-31*(298/300)^-4.1  (a constant).
+   - Now box-T dependent (standard JPL termolecular, 300 K reference):
+       kzero=2.9e-31*(T/300)^-4.1 ,  kinf=1.7e-12*(T/300)^0.2
+   - At stratospheric T (~210 K) the frozen 298 K value was ~2x too slow. This
+     matches the Python port's troe(2.9e-31,-4.1,1.7e-12,0.2) and removes most of
+     the MATLAB<->Python OH/HO2 baseline offset.
+   - NOTE (not yet changed): HO2+HO2 (k70) in MATLAB is 3e-13*(T/298)*exp(460/T),
+     which omits the JPL-19 termolecular[M] and H2O-enhancement terms the Python
+     port includes; a residual baseline difference remains from this.
+
+Rate-constant provenance: the core Cl/Br/NOx/HOx set is JPL-11 (2011); it has NOT
+been updated to JPL-19. Only the added SO3+H2O (I79) cites JPL 19-5.

@@ -111,6 +111,8 @@ HNO3aq_i= 0;                                HNO3aq_i = HNO3aq_i.*1e-12.*M;
 C2H6_i 	= 200;                              C2H6_i = C2H6_i.*1e-12.*M;
 SO2_i   = 2.4e9./2516;                       SO2_i = SO2_i.*1e-12.*M;
 H2O2_i  = 0;                                H2O2_i = H2O2_i.*1e-12.*M;
+SO3_i   = 0;                                SO3_i = SO3_i.*1e-12.*M;         % FK: gas-phase sulfur chain
+H2SO4_i = 0;                                H2SO4_i = H2SO4_i.*1e-12.*M;     % FK: gas-phase sulfur chain
 
 % FK added xppm of SO2ear and H2O2
 
@@ -147,7 +149,7 @@ end;
 if opt==0; tol=1e-3; else; tol=1e-6; end;
 options = odeset('RelTol',1e-3,'AbsTol',[1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 ...
     tol 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 ...
-    tol 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6]);                      % FK added two value 1e-6 at end
+    tol 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6 1e-6]);  % FK: +SO3 +H2SO4                      % FK added two value 1e-6 at end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % CALL ODE 1 - run first daylight period to set up, then run 24-periods for nighttime-daytime through for loop
@@ -157,7 +159,7 @@ SZA=1;             % solar zenith angle: 1=day (45 deg), 0=night
 
 [t,x]=ode15s('concs_het',[t0 tf], [Cl_i; ClO_i; ClOOCl_i; ClONO2_i; HCl_i; Cl2_i; NO_i; NO2_i; ...
     O_i; O2_i; O3_i; CH3_i; CH4_i; HNO3_i; H2O_i; HOCl_i; N2O5_i; NO3_i; OH_i; HO2_i; ...
-    O1D_i; HONO_i; HNO4_i; OClO_i; Br_i; BrO_i; BrONO2_i; BrCl_i; HBr_i; HOBr_i; HNO3aq_i; C2H6_i; SO2_i; H2O2_i;],options);
+    O1D_i; HONO_i; HNO4_i; OClO_i; Br_i; BrO_i; BrONO2_i; BrCl_i; HBr_i; HOBr_i; HNO3aq_i; C2H6_i; SO2_i; H2O2_i; SO3_i; H2SO4_i;],options);
 
 % name variables and transpose for concatenate below
 Cl=x(:,1)';		   ClO=x(:,2)';		  ClOOCl=x(:,3)';		 ClONO2=x(:,4)';		HCl=x(:,5)';
@@ -166,7 +168,7 @@ O3=x(:,11)';       CH3=x(:,12)';      CH4=x(:,13)';          HNO3=x(:,14)';     
 HOCl=x(:,16)';     N2O5=x(:,17)';     NO3=x(:,18)';          OH=x(:,19)';           HO2=x(:,20)';
 O1D=x(:,21)';      HONO=x(:,22)';     HNO4=x(:,23)';         OClO=x(:,24)';         Br=x(:,25)';
 BrO=x(:,26)';      BrONO2=x(:,27)';   BrCl=x(:,28)';         HBr=x(:,29)';          HOBr=x(:,30)';
-HNO3aq=x(:,31)';   C2H6=x(:,32)';     SO2=x(:,33)';          H2O2=x(:,34)';         time=t';                         %FK added SO2 and H2O2
+HNO3aq=x(:,31)';   C2H6=x(:,32)';     SO2=x(:,33)';          H2O2=x(:,34)';         SO3=x(:,35)';   H2SO4=x(:,36)';   time=t';                         %FK added SO2 and H2O2
 
 
 for i=2:2:(days*2);         % for loop is run once for each 24-hour period
@@ -181,7 +183,7 @@ j=find(time==tf(i-1));                  % ending concentrations above are used a
 if stpdwn==0; H2O_p=H2O(j); end;        % if not stepping down, find H2O conc same as other species 
 [t,x]=ode15s('concs_het',[tf(i-1) tf(i)], [Cl(j); ClO(j); ClOOCl(j); ClONO2(j); HCl(j); Cl2(j); NO(j); NO2(j); ...
     O(j); O2(j); O3(j); CH3(j); CH4(j); HNO3(j); H2O_p; HOCl(j); N2O5(j); NO3(j); OH(j); HO2(j); ...
-    O1D(j); HONO(j); HNO4(j); OClO(j); Br(j); BrO(j); BrONO2(j); BrCl(j); HBr(j); HOBr(j); HNO3aq(j); C2H6(j); SO2(j); H2O2(j);],options);  %FK added SO2 and H2O2
+    O1D(j); HONO(j); HNO4(j); OClO(j); Br(j); BrO(j); BrONO2(j); BrCl(j); HBr(j); HOBr(j); HNO3aq(j); C2H6(j); SO2(j); H2O2(j); SO3(j); H2SO4(j);],options);  %FK added SO2 and H2O2
 
 % concatenate 
 Cl=[Cl x(:,1)'];         ClO=[ClO x(:,2)'];        ClOOCl=[ClOOCl x(:,3)'];       ClONO2=[ClONO2 x(:,4)'];      
@@ -192,7 +194,7 @@ N2O5=[N2O5 x(:,17)'];    NO3=[NO3 x(:,18)'];       OH=[OH x(:,19)'];            
 O1D=[O1D x(:,21)'];      HONO=[HONO x(:,22)'];     HNO4=[HNO4 x(:,23)'];          OClO=[OClO x(:,24)'];
 Br=[Br x(:,25)'];        BrO=[BrO x(:,26)'];       BrONO2=[BrONO2 x(:,27)'];      BrCl=[BrCl x(:,28)']; 
 HBr=[HBr x(:,29)'];      HOBr=[HOBr x(:,30)'];     HNO3aq=[HNO3aq x(:,31)'];      C2H6=[C2H6 x(:,32)'];
-SO2=[SO2 x(:,33)'];      H2O2=[H2O2 x(:,34)'];     time=[time t'];                                                                              %FK added SO2 and H2O2
+SO2=[SO2 x(:,33)'];      H2O2=[H2O2 x(:,34)'];     SO3=[SO3 x(:,35)'];   H2SO4=[H2SO4 x(:,36)'];   time=[time t'];                                                                              %FK added SO2 and H2O2
 
 
 % CALL DAYTIME ODE
@@ -204,7 +206,7 @@ j=find(time==tf(i-1));                  % ending concentrations above are used a
 if stpdwn==0; H2O_p=H2O(j); end;        % if not stepping down, find H2O conc same as other species
 [t,x]=ode15s('concs_het',[tf(i-1) tf(i)], [Cl(j); ClO(j); ClOOCl(j); ClONO2(j); HCl(j); Cl2(j); NO(j); NO2(j); ...
     O(j); O2(j); O3(j); CH3(j); CH4(j); HNO3(j); H2O_p; HOCl(j); N2O5(j); NO3(j); OH(j); HO2(j); ...
-    O1D(j); HONO(j); HNO4(j); OClO(j); Br(j); BrO(j); BrONO2(j); BrCl(j); HBr(j); HOBr(j); HNO3aq(j); C2H6(j); SO2(j); H2O2(j); ...
+    O1D(j); HONO(j); HNO4(j); OClO(j); Br(j); BrO(j); BrONO2(j); BrCl(j); HBr(j); HOBr(j); HNO3aq(j); C2H6(j); SO2(j); H2O2(j); SO3(j); H2SO4(j); ...
     ],options);            %FK added SO2
 
 % concatenate 
@@ -216,7 +218,7 @@ N2O5=[N2O5 x(:,17)'];    NO3=[NO3 x(:,18)'];       OH=[OH x(:,19)'];            
 O1D=[O1D x(:,21)'];      HONO=[HONO x(:,22)'];     HNO4=[HNO4 x(:,23)'];          OClO=[OClO x(:,24)'];
 Br=[Br x(:,25)'];        BrO=[BrO x(:,26)'];       BrONO2=[BrONO2 x(:,27)'];      BrCl=[BrCl x(:,28)']; 
 HBr=[HBr x(:,29)'];      HOBr=[HOBr x(:,30)'];     HNO3aq=[HNO3aq x(:,31)'];      C2H6=[C2H6 x(:,32)'];
-SO2=[SO2 x(:,33)'];      H2O2=[H2O2 x(:,34)'];     time=[time t'];                                                                            %FK added SO2
+SO2=[SO2 x(:,33)'];      H2O2=[H2O2 x(:,34)'];     SO3=[SO3 x(:,35)'];   H2SO4=[H2SO4 x(:,36)'];   time=[time t'];                                                                            %FK added SO2
 
 end;
 
