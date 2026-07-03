@@ -45,7 +45,7 @@ def _reaction_rates(conc, coeffs):
 
 
 def build_params(T, M, P, SA, WTR, Yn2o5, conc, j_scale, sulfur_chain=0.0,
-                 particle_radius=0.1e-4, h2so4wp=None):
+                 particle_radius=0.1e-4, h2so4wp=None, k_so2_ho2=1.0e-18):
     """Assemble the rate-function parameter dict, computing aerosol gammas from ``conc``.
 
     ``sulfur_chain`` (0.0/1.0) gates the gas-phase SO2->SO3->H2SO4 chain: 0 = reference mode
@@ -66,7 +66,7 @@ def build_params(T, M, P, SA, WTR, Yn2o5, conc, j_scale, sulfur_chain=0.0,
         T, P, wp, a_W, HCl_ppb, ClONO2_ppb, particle_radius, 0)
     return dict(T=T, M=M, P=P, SA=SA, WTR=WTR, j_scale=j_scale,
                 H2O=conc[IDX["H2O"]],   # for the HO2+HO2 water enhancement
-                sulfur_chain=sulfur_chain,
+                sulfur_chain=sulfur_chain, k_so2_ho2=k_so2_ho2,
                 Yhocl=Yhocl, Yclnh2o=Yclnh2o, Yclnhcl=Yclnhcl,
                 Yn2o5=Yn2o5, Ybrono2=0.8)
 

@@ -33,6 +33,8 @@ matplotlib.use("Agg")
 # Publication style: only x/y axes (no top/right spines), recessive grid/ticks, clear fonts.
 matplotlib.rcParams.update({
     "figure.dpi": 110, "savefig.dpi": 150,
+    "font.family": "sans-serif",
+    "font.sans-serif": ["Helvetica", "Helvetica Neue", "Arial", "DejaVu Sans"],
     "font.size": 11, "axes.titlesize": 12.5, "axes.labelsize": 11.5,
     "xtick.labelsize": 10, "ytick.labelsize": 10,
     "axes.spines.top": False, "axes.spines.right": False,

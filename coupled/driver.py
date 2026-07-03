@@ -325,7 +325,8 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         if return_photolysis:
             j_tmid.append(t_mid)
             j_rows.append(np.asarray(override)[_photo_idx])
-        args = {**params, "j_scale": j_scale, "sulfur_chain": sulfur, "photo_override": override}
+        args = {**params, "j_scale": j_scale, "sulfur_chain": sulfur, "photo_override": override,
+                "k_so2_ho2": float(scenario.so2_ho2_rate)}
         if tomas_active:   # freeze this interval's aerosol het inputs (end-of-previous-interval state)
             args = {**args, "SA": het["SA"], "particle_radius": het["radius_cm"],
                     "h2so4wp": het["h2so4wp"]}

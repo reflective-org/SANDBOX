@@ -119,6 +119,11 @@ class CoupledScenario:
     # both span dry Dp 1.7 nm - 17.5 um. Everything downstream (initial state, Mie table, optics)
     # follows the state's own xk grid.
     tomas_nbins: int = 40
+    # Rate constant [cm^3/molec/s] for SO2 + HO2 -> SO3 + OH (JPL 19-5 I34). JPL gives only an UPPER
+    # LIMIT (~1e-18) and recommends NO products, so this is a deliberate sensitivity knob: 0.0
+    # eliminates the channel; 1e-18/1e-17/1e-16 scan the plausible range. Only active in the sulfur
+    # chain (non-reference photolysis). Default 1e-18 = the current hardcoded value (no behavior change).
+    so2_ho2_rate: float = 1.0e-18
 
     # --- sensitivity knobs (Phase 7; free multipliers, default 1.0; for Phase-8 sweeps) ---
     nucleation_rate_scale: float = 1.0   # -> TOMAS make_step nucleation fn_scale

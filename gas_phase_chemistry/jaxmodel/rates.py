@@ -177,6 +177,6 @@ def all_coefficients(p, opt):
         1.0e-18 * s_ref,                                           # SO2 + HO2 -> (reference-only null sink)
         # --- gas-phase sulfur chain (non-reference modes only); order matches reactions.REACTIONS ---
         k68 * s_new,                                               # SO2 + OH -> SO3 + HO2 (I4+I92 net)
-        1.0e-18 * s_new,                                           # SO2 + HO2 -> SO3 + OH (I34; products assumed)
+        p["k_so2_ho2"] * s_new,                                    # SO2 + HO2 -> SO3 + OH (I34; sensitivity knob, default 1e-18)
         k_so3_h2o * s_new,                                         # SO3 + H2O -> H2SO4 (JPL 19-5 I79)
     ]

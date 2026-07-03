@@ -155,7 +155,8 @@ def make_frozen_vf(opt):
         p = build_params(args["T"], args["M"], args["P"], args["SA"], args["WTR"], args["Yn2o5"],
                          y, args["j_scale"], sulfur_chain=args["sulfur_chain"],
                          particle_radius=args.get("particle_radius", 0.1e-4),
-                         h2so4wp=args.get("h2so4wp", None))
+                         h2so4wp=args.get("h2so4wp", None),
+                         k_so2_ho2=args.get("k_so2_ho2", 1.0e-18))
         return dCdt(y, p, opt, photo_override=args["photo_override"])
     return vf
 
