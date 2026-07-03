@@ -428,15 +428,29 @@ def _make_plots(d):
     fig.suptitle("Aerosol totals (per cm$^3$ of plume air)")
     _save(fig, "d1_totals.png")
 
-    # 11) plume-integrated masses (uses V0)
-    fig, ax = plt.subplots(figsize=(8.5, 5))
+    # 11) plume-integrated masses (uses V0). Log panel for the small species; LINEAR sulfur-budget
+    # panel because on the log axis the ~12% chemical SO2 depletion is invisible (dilution conserves
+    # plume-integrated tracer mass exactly -- chemistry is the only sink, and it is OH-limited).
+    fig, (ax, a2) = plt.subplots(1, 2, figsize=(13.5, 5))
     ax.plot(days, d["so2_kg"], lw=1.8, label="SO2 (gas)")
     ax.plot(days, np.maximum(d["h2so4_kg"], 1e-12), lw=1.5, label="H2SO4 (gas)")
     ax.plot(days, d["sulfate_kg"], lw=1.8, label="particulate sulfate (H2SO4-equiv)")
     ax.set_yscale("log"); ax.set_xlabel("day"); ax.set_ylabel("mass in plume [kg]")
-    ax.set_title(f"Plume-integrated mass (V$_0$ = 10m x 10m x 30km = {_V0_M3:.1e} m$^3$)\n"
-                 "dilution entrains background SO2/aerosol as the plume grows")
+    ax.set_title("Plume-integrated mass (log)")
     ax.legend()
+    so2_eq_sulf = d["sulfate_kg"] * 64.0 / 98.0          # sulfate as SO2-equivalent mass
+    so2_eq_h2so4 = d["h2so4_kg"] * 64.0 / 98.0
+    a2.fill_between(days, 0, d["so2_kg"], alpha=0.55, label="SO2 (gas)")
+    a2.fill_between(days, d["so2_kg"], d["so2_kg"] + so2_eq_sulf, alpha=0.55,
+                    label="oxidized -> particulate sulfate")
+    a2.plot(days, d["so2_kg"] + so2_eq_sulf + so2_eq_h2so4, lw=1.2, color="k",
+            label="total plume sulfur (SO2-equiv)")
+    a2.set_xlabel("day"); a2.set_ylabel("SO2-equivalent mass in plume [kg]")
+    a2.set_ylim(0, None)
+    a2.set_title("Sulfur budget (linear): SO2 depletes into sulfate,\ntotal conserved (dilution "
+                 "moves no plume-integrated mass)")
+    a2.legend(fontsize=9)
+    fig.suptitle(f"V$_0$ = 10m x 10m x 30km = {_V0_M3:.1e} m$^3$", y=1.0)
     _save(fig, "d1_plume_mass.png")
 
     # 12) OH alone [molec/cm^3]
@@ -477,7 +491,26 @@ def _make_plots(d):
     ax.set_title("Ozone")
     _save(fig, "d1_O3.png")
 
-    # 16) aerosol properties + box temperature (heating)
+    # 16) key species overview: 2x3 (H2O2, OH, HO2 / SO2, H2SO4, O3)
+    fig, axs = plt.subplots(2, 3, figsize=(14, 7.5), sharex=True)
+    panels = [("H2O2", axs[0, 0]), ("OH", axs[0, 1]), ("HO2", axs[0, 2]),
+              ("SO2", axs[1, 0]), ("H2SO4", axs[1, 1])]
+    for name, ax in panels:
+        ax.plot(days, np.maximum(conc(name), 1e-2), lw=1.3)
+        ax.set_yscale("log")
+        ax.set_title(name)
+        ax.set_ylabel("molec cm$^{-3}$")
+    axs[1, 0].axhline(15.0e-12 * M, color="k", ls=":", lw=1.0)   # SO2 background (15 pptv)
+    axs[0, 1].axhline(5.0e5, color="k", ls=":", lw=1.0)          # OH background (5e5)
+    ax = axs[1, 2]
+    ax.plot(days, ppt("O3") / 1e6, lw=1.3, color="C2")
+    ax.set_title("O3"); ax.set_ylabel("ppmv")
+    for ax in axs[1, :]:
+        ax.set_xlabel("day")
+    fig.suptitle("Key species (dotted = dilution background where nonzero)")
+    _save(fig, "d1_key_species.png")
+
+    # 17) aerosol properties + box temperature (heating)
     fig, axs = plt.subplots(1, 3, figsize=(14, 4.4))
     axs[0].plot(days, d["radius_cm"] * 1e4, lw=1.6)
     axs[0].set_yscale("log"); axs[0].set_title("effective wet radius r$_{eff}$ [um]")
