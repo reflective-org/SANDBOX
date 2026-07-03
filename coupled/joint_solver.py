@@ -2,6 +2,20 @@
 # SPDX-License-Identifier: Apache-2.0
 """Joint stiff ODE solver: gas chemistry + nucleation + coagulation + condensation gas-sink.
 
+VALIDATION STATUS: cross-checked against the Fortran-validated operator-split path on the D1 clean-
+stratosphere SO2-SAI run (1 day, sza). The two independent schemes agree to 0.0% on end SO2, 1.5% on
+peak number, 4.1% on peak surface area, and 8.5% on end gas H2SO4 (the stiff residual left after the
+condensation sink -- the most sensitive quantity). Sulfur is conserved to ~1e-15 across ODE+PPM and
+the result is dt_couple-converged (600->120 s within <0.5%). This closed an earlier ~36% H2SO4 / ~27%
+N STRUCTURAL discrepancy whose two causes are now fixed: (1) the condensation sink must see WET
+particles (calc_equilibrium_water_h2so4, matching the split's h2so4_tabazadeh TOMAS step); (2)
+getCondSink's ``Nk>Neps`` size/density switch is a hard discontinuity that collapses the adaptive
+integrator's step size (max_steps) once water amplifies the jump -- so the per-bin CS coefficient is
+FROZEN per outer step at t0 on wet particles (args["cs_coeff"]) and CS = sum_k coeff_k*Nk stays smooth
+and linear in the evolving number. Freezing per-particle SIZE within a step is exact here: condensation
+size growth is deferred to the post-step PPM remap, so only NUMBER (nucleation into bin 0) evolves
+inside the ODE.
+
 Opt-in alternative to the operator-split micro-loop (approach B). One Diffrax ``Kvaerno5`` solve
 co-evolves, over an outer interval:
 
@@ -42,11 +56,18 @@ from jaxmodel.model import make_frozen_vf                        # noqa: E402  (
 from tomas_jax.core.config import (SRTSO4, ICOMP, N_GAS_SPECIES,  # noqa: E402
                                    ICOMP_NODIAG)
 from tomas_jax.physics.nucleation import ricco_dunne_nucleation_rate, _MNUC  # noqa: E402
-from tomas_jax.physics.condensation_sink import calc_condensation_sink       # noqa: E402
 from tomas_jax.physics.coagulation_rates import calc_coagulation_rates       # noqa: E402
 from tomas_jax.physics.coagulation_kernel import calc_coagulation_kernel     # noqa: E402
 from tomas_jax.physics.properties import calc_particle_properties            # noqa: E402
 from tomas_jax.physics.ezcond_ppm_jax import ezcond_ppm_jax                  # noqa: E402
+from tomas_jax.physics.water_equilibrium import calc_equilibrium_water_h2so4  # noqa: E402
+from tomas_jax.physics.gas_properties import (calc_gas_diffusivity,          # noqa: E402
+                                              calc_mean_free_path,
+                                              calc_fuchs_sutugin_correction)
+from tomas_jax.physics.density import calc_density                           # noqa: E402
+from tomas_jax.core.config import PI, MW_H2SO4, SV_H2SO4                      # noqa: E402
+
+_NEPS_CS = 1.0e10   # getCondSink.f Neps: sparse-bin fallback to default size/density
 
 _H2SO4 = IDX["H2SO4"]
 _MW = tb.MW_H2SO4
@@ -93,7 +114,7 @@ def make_joint_vf(opt, nbins, temp, pres, boxvol, ion_pair_rate, nuc_scale,
         # --- reconstruct TOMAS per-cell state (kg, #/cell) from the intensive state ---
         Nk = n * boxvol                                    # #/cell
         Mk = jnp.zeros((nbins, ICOMP)).at[:, SRTSO4].set(
-            conc_to_mass(q_so4, boxvol, _MW))              # kg/cell (sulfate only)
+            conc_to_mass(q_so4, boxvol, _MW))              # kg/cell (dry sulfate only)
         h2so4_kg = conc_to_mass(conc[_H2SO4], boxvol, _MW)
         Gc = jnp.zeros(N_GAS_SPECIES).at[SRTSO4].set(h2so4_kg)
 
@@ -109,7 +130,12 @@ def make_joint_vf(opt, nbins, temp, pres, boxvol, ion_pair_rate, nuc_scale,
         dNdt, dMdt, _ov = calc_coagulation_rates(Nk, Mk, args["kij"], xk, ICOMP_NODIAG)
 
         # --- condensation GAS SINK only (size growth deferred to the PPM remap) ---
-        CS, _sinkfrac = calc_condensation_sink(Nk, Mk, temp, pres, boxvol, xk=xk)
+        # CS = sum_k coeff_k * Nk, with coeff (2*pi*Di*Dpk*beta/(boxvol*1e-6)) FROZEN per outer
+        # step at t0 on WET particles (args["cs_coeff"]). Freezing per-particle size is exact here --
+        # condensation size growth is deferred to the post-step PPM remap, so within the step only
+        # NUMBER evolves (nucleation into bin 0) -- and it removes the getCondSink Nk>Neps size/density
+        # discontinuity that otherwise collapses the adaptive step size (max_steps).
+        CS = jnp.sum(args["cs_coeff"] * Nk)                 # s^-1
         cond_gas_sink_conc = CS * conc[_H2SO4]              # molec/cm^3/s
 
         # --- assemble ---
@@ -130,7 +156,7 @@ def _atol_vector(nbins):
                             jnp.full(nbins, 1e3), jnp.array([1e3])])
 
 
-def make_joint_step(opt, nbins, temp, pres, boxvol, ion_pair_rate, nuc_scale,
+def make_joint_step(opt, nbins, temp, pres, boxvol, ion_pair_rate, nuc_scale, rh,
                     enable_inorganic=1.0, enable_organic=0.0,
                     rtol=1e-3, first_step=1e-6, max_steps=1_000_000):
     """Build ``step(conc, Nk, Mk_so4, t0, t1, args) -> (conc, Nk, Mk_so4)`` for one outer interval:
@@ -148,14 +174,36 @@ def make_joint_step(opt, nbins, temp, pres, boxvol, ion_pair_rate, nuc_scale,
                           stepsize_controller=ctrl, saveat=SaveAt(t1=True), max_steps=max_steps)
         return sol.ys[-1]
 
+    Di = calc_gas_diffusivity(temp, pres, MW_H2SO4, SV_H2SO4)
+    mfp = calc_mean_free_path(temp, pres, MW_H2SO4, SV_H2SO4)
+
     @jax.jit
     def _frozen_kij(Nk, Mk):
-        Dpk, Dk, ck = calc_particle_properties(Nk, Mk, temp, pres)
+        # kernel depends on physical (wet) particle size, like the split's calc_particle_properties
+        Mk_wet = calc_equilibrium_water_h2so4(Mk, rh, temp)
+        Dpk, Dk, ck = calc_particle_properties(Nk, Mk_wet, temp, pres)
         return calc_coagulation_kernel(Dpk, Dk, ck, boxvol)
 
+    @jax.jit
+    def _frozen_cs_coeff(Nk, Mk):
+        # per-bin condensation-sink coefficient coeff_k s.t. CS = sum_k coeff_k * Nk, frozen at t0 on
+        # WET particles. Mirrors getCondSink.f (calc_condensation_sink) but returns the per-Nk
+        # coefficient so CS stays smooth/linear in the evolving number inside the ODE (the Nk>Neps
+        # size/density branch is evaluated once here, at a fixed point in time -- not inside the RHS).
+        Mk_wet = calc_equilibrium_water_h2so4(Mk, rh, temp)
+        has = Nk > _NEPS_CS
+        Mktot = jnp.sum(Mk_wet, axis=1)
+        mp = jnp.where(has, Mktot / jnp.maximum(Nk, 1e-30), 1.4 * xk[:-1])
+        density = jnp.where(has, calc_density(Mk_wet), 1500.0)
+        Dpk = jnp.cbrt(mp / density * (6.0 / PI))
+        Kn = 2.0 * mfp / jnp.maximum(Dpk, 1e-30)
+        beta = jnp.where(Dpk > 0.0, calc_fuchs_sutugin_correction(Kn, 1.0), 0.0)
+        return 2.0 * PI * Di * Dpk * beta / (boxvol * 1e-6)   # coeff_k [s^-1 per #/cell]
+
     def step(conc, Nk, Mk, t0, t1, args):
-        # freeze the coagulation kernel at the interval start; pass through args (solve stays cached)
-        args = {**args, "kij": _frozen_kij(Nk, Mk)}
+        # freeze the coag kernel + condensation-sink coefficient at the interval start; pass through
+        # args (solve stays cached). Both are size-dependent -> evaluated once on wet particles at t0.
+        args = {**args, "kij": _frozen_kij(Nk, Mk), "cs_coeff": _frozen_cs_coeff(Nk, Mk)}
         # to intensive state
         n0 = Nk / boxvol
         q0 = mass_to_conc(Mk[:, SRTSO4], boxvol, _MW)

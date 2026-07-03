@@ -258,7 +258,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         from .joint_solver import make_joint_step
         joint_step = make_joint_step(
             cfg.opt, int(scenario.tomas_nbins), tstate.temp, tstate.pres, tstate.boxvol,
-            ion_pair_rate=float(scenario.ion_pair_rate), nuc_scale=nuc_scale,
+            ion_pair_rate=float(scenario.ion_pair_rate), nuc_scale=nuc_scale, rh=tstate.rh,
             enable_inorganic=1.0, enable_organic=0.0)
     # Phase 6: dilution -> relaxation toward a background (AD-6.3). Background gas = initial state with
     # the scenario's dilution_zero_species set to 0 (e.g. plume SO2/H2SO4 + radicals absent from clean

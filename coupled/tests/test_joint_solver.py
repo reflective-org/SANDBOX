@@ -54,7 +54,7 @@ def test_joint_step_conserves_sulfur():
             "particle_radius": het["radius_cm"], "h2so4wp": het["h2so4wp"],
             "k_so2_ho2": float(sc.so2_ho2_rate)}
     step = make_joint_step(cfg.opt, 40, tst.temp, tst.pres, tst.boxvol,
-                           ion_pair_rate=float(sc.ion_pair_rate), nuc_scale=1.0)
+                           ion_pair_rate=float(sc.ion_pair_rate), nuc_scale=1.0, rh=tst.rh)
     S0 = _gas_sulfur_kg(np.asarray(y0), tst.boxvol) + float(jnp.sum(tst.Mk[:, tb.SRTSO4]))
     conc1, Nk1, Mk1 = step(y0, tst.Nk, tst.Mk, 3600.0, 4200.0, args)
     conc1 = np.asarray(conc1)
@@ -75,6 +75,23 @@ def test_joint_run_produces_burst_and_stays_sane(monkeypatch):
     N = sd["n_cm3"].sum(axis=1)
     assert N[-1] > 10 * N[0]          # nucleation burst from the concentrated plume
     assert np.nanmax(aero["SA"]) > aero["SA"][0]
+
+
+def test_joint_agrees_with_split(monkeypatch):
+    """Cross-check: the joint stiff solve and the Fortran-validated operator-split path must agree on
+    the physically meaningful aerosol integrals. A few intervals of the concentrated D1 burst; peak N
+    and SA agree well within tolerance. This is the regression tripwire for the dry-vs-wet condensation
+    sink + Neps-discontinuity bug that once gave a ~36% N / ~27% structural gap (see joint_solver.py)."""
+    orig = cd._outer_intervals
+    monkeypatch.setattr(cd, "_outer_intervals", lambda cfg, days, dt: orig(cfg, days, dt)[:6])
+    out = {}
+    for solver in ("split", "joint"):
+        _, _, aero, _, sd = cd.run_coupled(_scn(microphysics_solver=solver), return_aerosol=True,
+                                           return_state=True, return_size_dist=True)
+        out[solver] = (float(sd["n_cm3"].sum(axis=1).max()), float(np.nanmax(aero["SA"])))
+    (Ns, SAs), (Nj, SAj) = out["split"], out["joint"]
+    assert abs(Nj / Ns - 1.0) < 0.15, f"peak N disagrees: split={Ns:.3e} joint={Nj:.3e}"
+    assert abs(SAj / SAs - 1.0) < 0.15, f"peak SA disagrees: split={SAs:.2f} joint={SAj:.2f}"
 
 
 def test_joint_requires_full_tomas_and_no_heating():
