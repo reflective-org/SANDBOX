@@ -240,6 +240,26 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
                             jit_grid=True, forward_only=True)
 
     nuc_scale = float(scenario.nucleation_rate_scale)   # Phase 7 knob -> TOMAS nucleation fn_scale
+
+    # Opt-in JOINT solver: one stiff ODE (chem + nucleation + coagulation + condensation gas-sink)
+    # per outer step, then a PPM size remap -- eliminates the chem->nuc->cond ordering error. Requires
+    # all three TOMAS processes on and heating off (the aerosol temperature is frozen in the joint
+    # step); use the "split" path otherwise. See coupled/joint_solver.py.
+    joint = scenario.microphysics_solver == "joint"
+    joint_step = None
+    if joint:
+        if not tomas_active or not (scenario.switches.nucleation and scenario.switches.condensation
+                                    and scenario.switches.coagulation):
+            raise NotImplementedError("microphysics_solver='joint' needs nucleation+condensation+"
+                                      "coagulation all ON (use 'split' for partial-process runs)")
+        if bool(scenario.switches.heating_to_t) and cfg.photolysis == "tuvx":
+            raise NotImplementedError("microphysics_solver='joint' does not support heating_to_t yet "
+                                      "(aerosol T is frozen in the joint step); turn heating off")
+        from .joint_solver import make_joint_step
+        joint_step = make_joint_step(
+            cfg.opt, int(scenario.tomas_nbins), tstate.temp, tstate.pres, tstate.boxvol,
+            ion_pair_rate=float(scenario.ion_pair_rate), nuc_scale=nuc_scale,
+            enable_inorganic=1.0, enable_organic=0.0)
     # Phase 6: dilution -> relaxation toward a background (AD-6.3). Background gas = initial state with
     # the scenario's dilution_zero_species set to 0 (e.g. plume SO2/H2SO4 + radicals absent from clean
     # entrained air). Rate is constant (dilution_rate) or time-varying from a regime's V(t) expansion.
@@ -330,7 +350,15 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         if tomas_active:   # freeze this interval's aerosol het inputs (end-of-previous-interval state)
             args = {**args, "SA": het["SA"], "particle_radius": het["radius_cm"],
                     "h2so4wp": het["h2so4wp"]}
-        if tomas_active:
+        if joint:
+            # JOINT solver: one stiff ODE co-evolves gas + nucleation + coagulation + condensation
+            # gas-sink over [t0,t1] (nucleation sees the true pseudo-steady H2SO4), then a PPM remap
+            # deposits the ODE-integrated condensed mass onto the bins. Replaces the envelope+micro-loop.
+            conc1, Nk1, Mk1 = joint_step(yc, tstate.Nk, tstate.Mk, t0, t1, args)
+            yc = jnp.asarray(conc1)
+            tstate = tstate._replace(Nk=Nk1, Mk=Mk1)
+            het = het_inputs(tstate)                          # for the next interval
+        elif tomas_active:
             # ONE gas solve over the outer interval (H2SO4 accumulates, no aerosol sink), SAVED on a
             # fine grid; TOMAS then consumes that H2SO4 envelope in adaptive micro-steps (fine early),
             # interpolating the envelope on the HOST (np.interp) -- no per-micro-step device call. Final

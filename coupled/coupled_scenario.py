@@ -96,6 +96,12 @@ class CoupledScenario:
     # --- photolysis ---
     photolysis: str = "tuvx"
 
+    # Gas<->aerosol time integration: "split" (default; the validated two-level micro-loop -- gas ODE
+    # envelope then TOMAS operator-split nuc/coag/cond) | "joint" (opt-in; one Diffrax stiff solve of
+    # chem + nucleation + coagulation + condensation gas-sink per outer step, then a PPM size remap --
+    # eliminates the chem->nuc->cond ordering error, coupled/joint_solver.py). "joint" needs TOMAS on.
+    microphysics_solver: str = "split"
+
     # --- dilution (Phase 6) ---
     # First-order relaxation rate [1/s] toward the background when switches.dilution is on and
     # dilution_regime is "" (constant rate; AD-6.2). Ignored when a regime is set.
@@ -159,6 +165,9 @@ class CoupledScenario:
             self.switches = Switches(**self.switches)
         if self.photolysis not in PHOTOLYSIS_MODES:
             raise ValueError(f"photolysis must be one of {PHOTOLYSIS_MODES}, got {self.photolysis!r}")
+        if self.microphysics_solver not in ("split", "joint"):
+            raise ValueError(f"microphysics_solver must be 'split' or 'joint', got "
+                             f"{self.microphysics_solver!r}")
         if self.dt_couple <= 0:
             raise ValueError(f"dt_couple must be > 0, got {self.dt_couple}")
         if not (0.0 < self.micro_eps <= 1.0):
