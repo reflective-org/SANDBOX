@@ -99,8 +99,8 @@ def _save(fig, name):
     plt.close(fig)
 
 
-def _write_inputs_md(sc, het0):
-    """ONE sectioned input table (copyable as a single block) -- everything the run consumes.
+def _input_rows(sc, het0):
+    """The (section, variable, value) rows of the single input table.
 
     ``het0`` = het_inputs(initial TomasState): the initial-distribution surface area / r_eff / wt%
     that the FIRST interval's heterogeneous chemistry actually uses (the scenario SA field is inert
@@ -155,9 +155,10 @@ def _write_inputs_md(sc, het0):
             "dry Dp 1.7 nm - 17.5 um"),
         ("", "Initial + background distribution", "Marianna 'redcircles' clean stratosphere "
             "(obs 220-230 ppbv, STP -> ambient x0.069; N ~ 3 cm^-3)"),
-        ("", "Initial surface area (used by the first het-chem interval)",
+        ("", "Initial surface area",
             f"{het0['SA']:.3f} um^2/cm^3 (r_eff = {het0['radius_cm'] * 1e4:.3f} um, "
-            f"{het0['h2so4wp']:.1f} wt%)"),
+            f"{het0['h2so4wp']:.1f} wt%) -- from the initial distribution; used by the first "
+            "het-chem interval"),
         ("", "Nucleation", f"Dunne 2016 binary H2SO4-H2O, neutral + ion-induced; ion_pair_rate = "
             f"{sc.ion_pair_rate:g} pairs/cm^3/s; NH3 = 0 (ternary off); no organics; "
             f"fn_scale = {sc.nucleation_rate_scale:g}"),
@@ -176,11 +177,57 @@ def _write_inputs_md(sc, het0):
         ("", "Photolysis", "TUV-x port (machine precision vs Fortran), tuv_5_4_no_aerosol.json + "
             "dynamic TOMAS aerosol radiator; heating and J share ONE radiation solve per interval"),
     ]
+    return rows
+
+
+def _write_inputs_md(sc, het0):
+    """The single sectioned input table, in three copyable/shareable forms: .md, .png, .pdf."""
+    rows = _input_rows(sc, het0)
     lines = ["# Dilution D1 -- input variables", "",
              "| Section | Variable | Value |", "|---|---|---|"]
     lines += [f"| {a} | {b} | {c} |" for a, b, c in rows]
     with open(os.path.join(_OUT, "d1_inputs.md"), "w") as f:
         f.write("\n".join(lines) + "\n")
+    _render_inputs_figure(rows)
+
+
+def _render_inputs_figure(rows):
+    """Render the input table as one PNG + PDF (shareable in Slack/slides without markdown)."""
+    import textwrap
+    body, n_lines = [], 0
+    for section, var, val in rows:
+        if section:
+            body.append(("sec", section.replace("**", ""), ""))
+            n_lines += 1.6
+        else:
+            wrapped = textwrap.wrap(val.replace("**", ""), width=72) or [""]
+            body.append(("row", var, wrapped))
+            n_lines += max(1, len(wrapped)) + 0.25
+    fig_h = 0.55 + 0.185 * n_lines
+    fig, ax = plt.subplots(figsize=(10.5, fig_h))
+    ax.axis("off")
+    ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+    dy = 1.0 / (n_lines + 2)
+    y = 1.0 - 0.5 * dy
+    ax.text(0.0, y, "Dilution D1 — input variables", fontsize=13.5, fontweight="bold", va="top")
+    y -= 1.6 * dy
+    for kind, left, right in body:
+        if kind == "sec":
+            ax.add_patch(plt.Rectangle((0.0, y - 1.15 * dy), 1.0, 1.35 * dy,
+                                       facecolor="#e8eaf0", edgecolor="none", zorder=0))
+            ax.text(0.008, y - 0.15 * dy, left, fontsize=10.5, fontweight="bold", va="top")
+            y -= 1.6 * dy
+        else:
+            ax.text(0.015, y, left, fontsize=9.3, va="top", color="#222222")
+            for i, line in enumerate(right):
+                ax.text(0.36, y - i * dy, line, fontsize=9.3, va="top", color="#222222")
+            step = (max(1, len(right)) + 0.25) * dy
+            ax.plot([0.0, 1.0], [y - step + 0.55 * dy] * 2, color="#dddddd", lw=0.5, zorder=0)
+            y -= step
+    fig.savefig(os.path.join(_OUT, "d1_inputs.png"), dpi=170, bbox_inches="tight",
+                facecolor="white")
+    fig.savefig(os.path.join(_OUT, "d1_inputs.pdf"), bbox_inches="tight", facecolor="white")
+    plt.close(fig)
 
 
 def _export_observations(sc):
