@@ -75,7 +75,7 @@ _BG_PPT = {"SO2": 15.0,                             # ambient stratospheric SO2
            "OH": _ppt_from_conc(5.0e5)}             # 5e5 molec/cm^3 (~0.27 pptv)
 
 
-def _scenario(nbins=40):
+def _scenario(nbins=40, aerosol_to_j=True):
     return CoupledScenario(
         T=_T, P=_P, WTR=_WTR,
         latitude=30.0, longitude=0.0, day_of_year=172, start_utc_hour=6.0,
@@ -86,7 +86,7 @@ def _scenario(nbins=40):
         # heating_to_t OFF (group decision): the heating term is SW-only (no LW cooling, AD-5.4),
         # so leaving it on gives a spurious monotonic ~+1.2 K / 10 d drift. Box T stays at input T.
         switches=Switches(sulfur=True, nucleation=True, condensation=True, coagulation=True,
-                          aerosol_to_j=True, heating_to_t=False, dilution=True),
+                          aerosol_to_j=aerosol_to_j, heating_to_t=False, dilution=True),
         concentrations={"O2": 2.1e11, "O3": 1.18e6, "SO2": _SO2_PPT, "OH": 0.5, "HO2": 3.0,
                         "NO": 450.0, "NO2": 450.0, "HCl": 777.0, "ClONO2": 127.0, "HNO3": 5000.0,
                         "H2SO4": _ppt_from_conc(1.0e5)})   # 1e5 molec/cm^3 (~0.054 pptv)
@@ -157,7 +157,7 @@ def _input_rows(sc, het0):
             "initial distribution"),
         ("**Aerosol (TOMAS)**", "", ""),
         ("", "Bins", f"{sc.tomas_nbins} "
-            f"({'mass-doubling' if sc.tomas_nbins == 40 else 'sqrt(2) mass ratio'}), "
+            f"({ {40: 'mass-doubling', 80: 'sqrt(2) mass ratio', 160: '2^0.25 mass ratio'}.get(sc.tomas_nbins, f'2^(40/{sc.tomas_nbins}) mass ratio') }), "
             "dry Dp 1.7 nm - 17.5 um"),
         ("", "Initial + background distribution", "Marianna 'redcircles' clean stratosphere "
             "(obs 220-230 ppbv, STP -> ambient x0.069; N ~ 3 cm^-3)"),
@@ -524,11 +524,12 @@ def _make_plots(d):
     _save(fig, "d1_aerosol_props.png")
 
 
-def main(nbins=40, replot=False):
+def main(nbins=40, replot=False, aerosol_to_j=True):
     global _OUT
-    _OUT = os.path.join(os.path.dirname(__file__), "analyses", f"d1_clean_{nbins}bin")
+    suffix = "" if aerosol_to_j else "_noaeroj"
+    _OUT = os.path.join(os.path.dirname(__file__), "analyses", f"d1_clean_{nbins}bin{suffix}")
     os.makedirs(_OUT, exist_ok=True)
-    sc = _scenario(nbins)
+    sc = _scenario(nbins, aerosol_to_j=aerosol_to_j)
     _write_inputs_md(sc, het_inputs(tb.initial_tomas_state(sc)))
     _export_observations(sc)
 
@@ -606,4 +607,5 @@ def main(nbins=40, replot=False):
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:]]
     main(nbins=int(args[0]) if args and args[0].isdigit() else 40,
-         replot=("replot" in args))
+         replot=("replot" in args),
+         aerosol_to_j=("noaeroj" not in args))

@@ -31,6 +31,7 @@ import jax  # noqa: E402
 jax.config.update("jax_enable_x64", True)   # TOMAS is float64 throughout; match it
 
 import jax.numpy as jnp  # noqa: E402
+import numpy as np  # noqa: E402
 
 from tomas_jax.core import config as tcfg          # noqa: E402
 from tomas_jax.core.state import TomasState        # noqa: E402
@@ -66,24 +67,43 @@ def rh_from_scenario(scenario) -> float:
     return float(min(max(a_W, 1.0e-4), 0.99))
 
 
+def _grid_for(nbins):
+    """Bin boundaries for a resolution study over the SAME diameter range: ratio = 2**(40/nbins),
+    so 40 -> 2.0, 80 -> sqrt(2), 160 -> 2**0.25, and the top boundary XK0*2**40 is fixed for all."""
+    if nbins == 40:
+        return tcfg.xk_boundaries()
+    if nbins == 80:
+        return tcfg.make_grid_80bin()
+    return tcfg.make_grid(nbins, tcfg.XK0, 2.0 ** (40.0 / nbins))
+
+
 def initial_tomas_state(scenario) -> TomasState:
     """Build the initial ``TomasState`` from the scenario using the Marianna 'redcircles' distribution.
 
     Gc is all-zero: gaseous H2SO4 is handed in by the driver each outer step (the gas model owns it).
     Number/mass are per grid cell (``boxvol=BOXVOL_CM3``); T in K, P in Pa (scenario.P is mbar).
-    ``scenario.tomas_nbins`` picks the size resolution: 40 (mass-doubling) or 80 (sqrt(2) ratio);
+    ``scenario.tomas_nbins`` picks the size resolution over the SAME diameter range: 40 (mass-
+    doubling), 80 (sqrt(2)), 160 (2^0.25) -- ratio = 2**(40/nbins), so the top boundary is fixed.
     downstream consumers (Mie table, optics, diagnostics) must use the state's own ``xk``.
     """
     nbins = int(getattr(scenario, "tomas_nbins", 40))
-    if nbins not in (40, 80):
-        raise ValueError(f"tomas_nbins must be 40 or 80, got {nbins}")
+    if nbins not in (40, 80, 160):
+        raise ValueError(f"tomas_nbins must be 40, 80, or 160, got {nbins}")
     pres_pa = scenario.P * 100.0                       # mbar -> Pa (TOMAS uses Pa)
-    Nk_np, Mk_np = _bad.get_initial_state(
-        nbins=nbins, boxvol=BOXVOL_CM3, dist="redcircles",
-        to_ambient=True, temp=scenario.T, pres=pres_pa)
+    xk = _grid_for(nbins)
+    if nbins in (40, 80):
+        # validated paths: get_initial_state special-cases 80 (sqrt2); 40 uses ratio 2.0.
+        Nk_np, Mk_np = _bad.get_initial_state(
+            nbins=nbins, boxvol=BOXVOL_CM3, dist="redcircles",
+            to_ambient=True, temp=scenario.T, pres=pres_pa)
+    else:
+        # general resolution: build the redcircles distribution on OUR same-range refined grid
+        # (get_initial_state would use ratio 2.0 for nbins!=80 -> wrong diameter range).
+        Nk_np, Mk_np, *_ = _bad.map_to_grid(np.asarray(xk), BOXVOL_CM3, dist="redcircles")
+        f = _bad.stp_to_ambient_factor(scenario.T, pres_pa)   # STP dN/dlogDp -> ambient
+        Nk_np, Mk_np = Nk_np * f, Mk_np * f
     Nk = jnp.asarray(Nk_np, dtype=jnp.float64)
     Mk = jnp.asarray(Mk_np, dtype=jnp.float64)
-    xk = tcfg.xk_boundaries() if nbins == 40 else tcfg.make_grid_80bin()
     Gc = jnp.zeros(tcfg.N_GAS_SPECIES, dtype=jnp.float64)
     alpha = float(getattr(scenario, "condensation_alpha", ALPHA_DEFAULT))  # Phase-7 knob
     return TomasState.create(Nk, Mk, xk, scenario.T, pres_pa, BOXVOL_CM3,
