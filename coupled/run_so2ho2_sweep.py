@@ -60,6 +60,8 @@ def main():
 
     species = [("OH", "OH [molec cm$^{-3}$]"), ("HO2", "HO2 [molec cm$^{-3}$]"),
                ("SO2", "SO2 [molec cm$^{-3}$]"), ("H2SO4", "H2SO4 [molec cm$^{-3}$]")]
+
+    # Figure 1 -- absolute overlay
     fig, axs = plt.subplots(2, 2, figsize=(13, 8.5), sharex=True)
     for ax, (name, ylab) in zip(axs.flat, species):
         for (label, _rate, _t, x), color in zip(runs, _COLORS):
@@ -75,12 +77,36 @@ def main():
     fig.savefig(os.path.join(_OUT, "so2ho2_sweep.png"))
     plt.close(fig)
 
-    # concise end-of-run summary
-    print("\ncase                              end SO2       end H2SO4     day-10 OH(noon)")
+    # Figure 2 -- % difference from the "SO2+HO2 off" baseline (the overlay hides how small it is;
+    # this makes the real, tiny sensitivity legible and shows WHERE the channel matters).
+    base = runs[0][3]
+    fig, axs = plt.subplots(2, 2, figsize=(13, 8.5), sharex=True)
+    for ax, (name, _ylab) in zip(axs.flat, species):
+        b = base[:, IDX[name]]
+        for (label, rate, _t, x), color in zip(runs[1:], _COLORS[1:]):
+            pct = 100.0 * (x[:, IDX[name]] - b) / np.maximum(np.abs(b), 1e-30)
+            ax.plot(days, pct, lw=1.4, color=color, label=label)
+        ax.axhline(0, color="0.6", lw=0.8, zorder=0)
+        ax.set_title(name)
+        ax.set_ylabel("% difference vs SO2+HO2 off")
+    for ax in axs[-1, :]:
+        ax.set_xlabel("day")
+    axs[0, 0].legend(fontsize=9, title="SO2 + HO2 $\\rightarrow$ SO3 + OH")
+    fig.suptitle("D1 dilution: SO2+HO2 channel impact, relative to OFF (heating off)", y=0.995)
+    fig.tight_layout()
+    fig.savefig(os.path.join(_OUT, "so2ho2_sweep_pctdiff.png"))
+    plt.close(fig)
+
+    # concise summary: end values + max |%diff| vs OFF over the whole trajectory
+    print("\ncase                              end SO2       end H2SO4     max|%diff vs off|: SO2 / H2SO4 / OH / HO2")
     for label, rate, t, x in runs:
-        oh = x[:, IDX["OH"]]
-        print(f"{label:33s} {x[-1, IDX['SO2']]:.3e}   {x[-1, IDX['H2SO4']]:.3e}   {oh.max():.3e}")
-    print(f"\nwrote so2ho2_sweep.png + .npz to {_OUT}/")
+        d = []
+        for name in ("SO2", "H2SO4", "OH", "HO2"):
+            b = base[:, IDX[name]]
+            d.append(np.max(np.abs(x[:, IDX[name]] - b) / np.maximum(np.abs(b), 1e-30)) * 100)
+        print(f"{label:33s} {x[-1, IDX['SO2']]:.3e}   {x[-1, IDX['H2SO4']]:.3e}   "
+              f"{d[0]:.2f}% / {d[1]:.2f}% / {d[2]:.2f}% / {d[3]:.2f}%")
+    print(f"\nwrote so2ho2_sweep.png + so2ho2_sweep_pctdiff.png + .npz to {_OUT}/")
 
 
 if __name__ == "__main__":
