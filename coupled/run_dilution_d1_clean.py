@@ -3,7 +3,9 @@
 """Dilution 1 -- Low Latitude, High Altitude, Clean Stratosphere (20 km, 30N, summer, 10 days).
 
 Full coupling (gas chemistry + TUV-x photolysis + TOMAS nucleation/condensation/coagulation +
-aerosol->J + heating->T + dilution). A concentrated SO2 injection plume (2.9e9 pptv = 0.29%,
+aerosol->J + dilution; heating->T OFF -- the SW-only heating term has no LW cooling and would give
+a spurious ~+1.2 K / 10 d drift, so box T stays at the input value). A concentrated SO2 injection
+plume (2.9e9 pptv = 0.29%,
 ~1.7 t SO2 in the initial V0 = 10 m x 10 m x 30 km track) dilutes (regime D1 'Low Kz', Schumann
 volume expansion) into CLEAN stratosphere: the background has a natural 15 pptv SO2 and
 5e5 molec/cm^3 OH but NO SO3/H2SO4 and NO other short-lived radicals. NO ammonia/ammonium anywhere
@@ -79,8 +81,10 @@ def _scenario(nbins=40):
         dilution_regime="D1", dilution_zero_species=_ZERO_BG, dilution_background=_BG_PPT,
         ion_pair_rate=30.0,                          # Dunne ion-induced nucleation (GCR ~20 km)
         tomas_nbins=nbins,
+        # heating_to_t OFF (group decision): the heating term is SW-only (no LW cooling, AD-5.4),
+        # so leaving it on gives a spurious monotonic ~+1.2 K / 10 d drift. Box T stays at input T.
         switches=Switches(sulfur=True, nucleation=True, condensation=True, coagulation=True,
-                          aerosol_to_j=True, heating_to_t=True, dilution=True),
+                          aerosol_to_j=True, heating_to_t=False, dilution=True),
         concentrations={"O2": 2.1e11, "O3": 1.18e6, "SO2": _SO2_PPT, "OH": 0.5, "HO2": 3.0,
                         "NO": 450.0, "NO2": 450.0, "HCl": 777.0, "ClONO2": 127.0, "HNO3": 5000.0,
                         "H2SO4": _ppt_from_conc(1.0e5)})   # 1e5 molec/cm^3 (~0.054 pptv)
@@ -166,9 +170,9 @@ def _input_rows(sc, het0):
         ("", "Coagulation", "Brownian + Fuchs non-continuum correction"),
         ("", "Water uptake", "Tabazadeh 1997 pure H2SO4/H2O ('h2so4_tabazadeh')"),
         ("", "TOMAS SO2 chemistry", "OFF (gas model owns sulfur)"),
-        ("**Couplings (all ON)**", "", ""),
-        ("", "Processes", "sulfur chain (SO2->SO3->H2SO4 via OH), nucleation, condensation, "
-            "coagulation, aerosol->photolysis, heating->T (SW only), dilution"),
+        ("**Couplings (per-process switches)**", "", ""),
+        ("", "ON", ", ".join(n for n, v in vars(sc.switches).items() if v)),
+        ("", "OFF", ", ".join(n for n, v in vars(sc.switches).items() if not v) or "none"),
         ("", "Aerosol -> photolysis", f"plume layer {sc.aerosol_thickness_km:g} km thick, "
             "pressure-anchored at the box altitude"),
         ("**Solvers / numerics**", "", ""),
@@ -424,15 +428,29 @@ def _make_plots(d):
     fig.suptitle("Aerosol totals (per cm$^3$ of plume air)")
     _save(fig, "d1_totals.png")
 
-    # 11) plume-integrated masses (uses V0)
-    fig, ax = plt.subplots(figsize=(8.5, 5))
+    # 11) plume-integrated masses (uses V0). Log panel for the small species; LINEAR sulfur-budget
+    # panel because on the log axis the ~12% chemical SO2 depletion is invisible (dilution conserves
+    # plume-integrated tracer mass exactly -- chemistry is the only sink, and it is OH-limited).
+    fig, (ax, a2) = plt.subplots(1, 2, figsize=(13.5, 5))
     ax.plot(days, d["so2_kg"], lw=1.8, label="SO2 (gas)")
     ax.plot(days, np.maximum(d["h2so4_kg"], 1e-12), lw=1.5, label="H2SO4 (gas)")
     ax.plot(days, d["sulfate_kg"], lw=1.8, label="particulate sulfate (H2SO4-equiv)")
     ax.set_yscale("log"); ax.set_xlabel("day"); ax.set_ylabel("mass in plume [kg]")
-    ax.set_title(f"Plume-integrated mass (V$_0$ = 10m x 10m x 30km = {_V0_M3:.1e} m$^3$)\n"
-                 "dilution entrains background SO2/aerosol as the plume grows")
+    ax.set_title("Plume-integrated mass (log)")
     ax.legend()
+    so2_eq_sulf = d["sulfate_kg"] * 64.0 / 98.0          # sulfate as SO2-equivalent mass
+    so2_eq_h2so4 = d["h2so4_kg"] * 64.0 / 98.0
+    a2.fill_between(days, 0, d["so2_kg"], alpha=0.55, label="SO2 (gas)")
+    a2.fill_between(days, d["so2_kg"], d["so2_kg"] + so2_eq_sulf, alpha=0.55,
+                    label="oxidized -> particulate sulfate")
+    a2.plot(days, d["so2_kg"] + so2_eq_sulf + so2_eq_h2so4, lw=1.2, color="k",
+            label="total plume sulfur (SO2-equiv)")
+    a2.set_xlabel("day"); a2.set_ylabel("SO2-equivalent mass in plume [kg]")
+    a2.set_ylim(0, None)
+    a2.set_title("Sulfur budget (linear): SO2 depletes into sulfate,\ntotal conserved (dilution "
+                 "moves no plume-integrated mass)")
+    a2.legend(fontsize=9)
+    fig.suptitle(f"V$_0$ = 10m x 10m x 30km = {_V0_M3:.1e} m$^3$", y=1.0)
     _save(fig, "d1_plume_mass.png")
 
     # 12) OH alone [molec/cm^3]
@@ -473,7 +491,26 @@ def _make_plots(d):
     ax.set_title("Ozone")
     _save(fig, "d1_O3.png")
 
-    # 16) aerosol properties + box temperature (heating)
+    # 16) key species overview: 2x3 (H2O2, OH, HO2 / SO2, H2SO4, O3)
+    fig, axs = plt.subplots(2, 3, figsize=(14, 7.5), sharex=True)
+    panels = [("H2O2", axs[0, 0]), ("OH", axs[0, 1]), ("HO2", axs[0, 2]),
+              ("SO2", axs[1, 0]), ("H2SO4", axs[1, 1])]
+    for name, ax in panels:
+        ax.plot(days, np.maximum(conc(name), 1e-2), lw=1.3)
+        ax.set_yscale("log")
+        ax.set_title(name)
+        ax.set_ylabel("molec cm$^{-3}$")
+    axs[1, 0].axhline(15.0e-12 * M, color="k", ls=":", lw=1.0)   # SO2 background (15 pptv)
+    axs[0, 1].axhline(5.0e5, color="k", ls=":", lw=1.0)          # OH background (5e5)
+    ax = axs[1, 2]
+    ax.plot(days, ppt("O3") / 1e6, lw=1.3, color="C2")
+    ax.set_title("O3"); ax.set_ylabel("ppmv")
+    for ax in axs[1, :]:
+        ax.set_xlabel("day")
+    fig.suptitle("Key species (dotted = dilution background where nonzero)")
+    _save(fig, "d1_key_species.png")
+
+    # 17) aerosol properties + box temperature (heating)
     fig, axs = plt.subplots(1, 3, figsize=(14, 4.4))
     axs[0].plot(days, d["radius_cm"] * 1e4, lw=1.6)
     axs[0].set_yscale("log"); axs[0].set_title("effective wet radius r$_{eff}$ [um]")

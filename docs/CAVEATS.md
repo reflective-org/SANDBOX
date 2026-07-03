@@ -7,7 +7,7 @@
   (single unified input + end-to-end validation) and Phase 8 (sensitivity sweeps) remain.
 - **Branching quantum yields (HNO4, ClOOCl)** are opt-in extensions, NOT Fortran-comparable, and the
   ClOOCl→2ClO channel changes ClOOCl chemistry vs the reference MATLAB. Confirm splits vs JPL 19-5.
-- **Heterogeneous chemistry** uses a prescribed constant surface area and a hard-coded 1 µm radius
+- **Heterogeneous chemistry** uses a prescribed constant surface area and a hard-coded 0.1 µm radius (0.1e-4 cm)
   *only when TOMAS microphysics is off*. With Phase 3 coupling on, the surface area, effective radius,
   and H2SO4 weight-percent come from the evolving TOMAS aerosol.
 - **TOMAS internal sulfur non-conservation (~1%/day).** With nucleation active, the tomas-jax

@@ -35,6 +35,11 @@ def main():
                          concentrations={"O2": 2.1e11, "O3": 1.18e6, "SO2": 1.0e4, "OH": 0.5,
                                          "HO2": 3.0, "HCl": 777.0, "ClONO2": 127.0,
                                          "NO": 450.0, "NO2": 450.0})
+    # All microphysics ON (the intended operating mode; sensitivity is done by SCALING the knobs, not
+    # by removing processes). NOTE: at full rate + a coarse dt_couple the Ricco-Dunne nucleation can run
+    # away (N~1e10 cm^-3, r_eff~5 nm) -- an operator-split artifact (a whole interval's H2SO4 is handed
+    # to one TOMAS step, over-driving the [H2SO4]^p rate). The correct fix is TOMAS sub-stepping within
+    # the interval (tracked in DEFERRED.md / AD-3.10), NOT turning nucleation off.
     sc.switches.nucleation = True
     sc.switches.condensation = True
     sc.switches.coagulation = True
@@ -83,7 +88,7 @@ def main():
     ax.step(np.asarray(Dpf) * 1e6, Nf, where="mid", label=f"after {sc.days} d", lw=1.5)
     ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_xlabel("wet diameter [um]"); ax.set_ylabel("N per bin [cm^-3]")
-    ax.set_title("Aerosol size distribution: condensation growth + nucleation")
+    ax.set_title("Aerosol size distribution: condensation + coagulation + nucleation")
     ax.legend(); ax.grid(alpha=0.3, which="both"); fig.tight_layout()
     fig.savefig(os.path.join(_OUT, "phase3_size_distribution.png"), dpi=110); plt.close(fig)
 

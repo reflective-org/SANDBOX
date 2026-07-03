@@ -1,6 +1,6 @@
 # Phase 3 plan — Couple TOMAS microphysics (gas H2SO4 ⇄ aerosol; SA/radius/composition → gas chem)
 
-Goal: replace the prescribed constant aerosol surface area, hard-coded 1 µm radius, and prescribed
+Goal: replace the prescribed constant aerosol surface area, hard-coded 0.1 µm radius, and prescribed
 H2SO4 weight-percent in the gas-phase heterogeneous chemistry with values derived from an evolving
 TOMAS sectional aerosol, and feed the gas-produced H2SO4 into TOMAS (which runs
 nucleation/condensation/coagulation with its own SO2 chemistry OFF). Sulfur is conserved across the

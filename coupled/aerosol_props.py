@@ -58,7 +58,7 @@ def effective_wet_radius_cm(state, _wet=None) -> float:
     the reacto-diffusive f-factor because heterogeneous uptake is carried by the surface-area-
     dominant (larger) particles -- a number-weighted mean instead collapses toward the ~1 nm
     nucleation mode when nucleation is active, which is both unphysical for uptake AND destabilises
-    the f-factor ``coth(r/l) - l/r`` (r << l -> inf - inf). Returns ``0.1e-4`` cm (legacy 1 um) for an
+    the f-factor ``coth(r/l) - l/r`` (r << l -> inf - inf). Returns ``0.1e-4`` cm (legacy 0.1 um = 0.1e-4 cm) for an
     empty distribution. See AD-3.4.
     """
     Dpk, _ = _wet if _wet is not None else _wet_diameters_m(state)

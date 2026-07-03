@@ -44,7 +44,10 @@ class Switches:
     condensation: bool = True      # TOMAS (Phase 3)
     coagulation: bool = True       # TOMAS (Phase 3)
     aerosol_to_j: bool = True      # aerosol optics -> TUV-x radiation (Phase 4)
-    heating_to_t: bool = True      # radiative heating -> box temperature (Phase 5)
+    # CAUTION: the heating term is SW-only -- no longwave cooling yet (AD-5.4) -- so leaving it on
+    # gives a ONE-SIDED ~+1.2 K / 10 d warm drift, not a complete energy balance. Science scenarios
+    # (e.g. the D1 run script) turn it off until LW cooling lands.
+    heating_to_t: bool = True      # radiative heating -> box temperature (Phase 5; SW-only, AD-5.4)
     dilution: bool = True          # dilution + background entrainment (Phase 6)
 
     def validate(self) -> None:
