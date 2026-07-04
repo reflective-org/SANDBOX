@@ -77,6 +77,45 @@ def _grid_for(nbins):
     return tcfg.make_grid(nbins, tcfg.XK0, 2.0 ** (40.0 / nbins))
 
 
+# --- background aerosol size distributions as (multi-)lognormal modes, DIAMETER basis. Each entry is
+# a list of (N [cm^-3, STP], Dg [um], sigma_g). DIGITIZED (approximate) from the SABR / CESM plots the
+# user provided; see coupled/analyses/paper_ensemble/DECISIONS.md for the source figures and the
+# overlay-verification. "redcircles" (Marianna, tabulated loader) stays the default and is NOT here. ---
+# N chosen so each mode's PEAK dN/dlogDp = N/(sqrt(2pi)*log10(sigma_g)) matches the value read off the
+# source plot (the most reliable digitized feature): SABR 330->~1000, 220->~95; CESM Aitken->~50,
+# Accumulation->~12, Coarse->~0.5 cm^-3 STP.
+BACKGROUND_MODES = {
+    "sabr_330": [(810.0, 0.045, 2.1)],                                    # young air (high N2O), peak ~1000
+    "sabr_220": [(49.0, 0.12, 1.6)],                                      # aged air (low N2O), peak ~95
+    "cesm_g6":  [(22.0, 0.040, 1.5), (5.3, 0.20, 1.5), (0.18, 0.90, 1.4)],  # CESM G6 SAI (r->D x2)
+}
+
+
+def _seed_lognormal(xk_np, boxvol, modes, temp, pres):
+    """Nk [#/cell], Mk [kg/cell] from (multi-)lognormal modes -- mirrors _bad.map_to_grid: integrate
+    dN/dlog10Dp over each bin [cm^-3 STP], x STP->ambient x boxvol, Mk = Nk x geometric-mean bin mass
+    (sulfate column only, matching the redcircles seed)."""
+    from scipy.integrate import quad
+    dp_edges = _bad._xk_to_dp_um(np.asarray(xk_np)); logdp = np.log10(dp_edges)
+    nbins = len(xk_np) - 1
+
+    def dNdlogDp(x):
+        t = 0.0
+        for N, Dg, sg in modes:
+            s = np.log10(sg)
+            t += N / (np.sqrt(2.0 * np.pi) * s) * np.exp(-(x - np.log10(Dg)) ** 2 / (2.0 * s * s))
+        return t
+
+    Nk_cm3 = np.array([max(0.0, quad(dNdlogDp, logdp[k], logdp[k + 1], limit=50)[0])
+                       for k in range(nbins)])
+    f = _bad.stp_to_ambient_factor(temp, pres)          # STP dN/dlogDp -> ambient (as redcircles)
+    Nk = Nk_cm3 * f * boxvol
+    m_mid = np.sqrt(np.asarray(xk_np)[:-1] * np.asarray(xk_np)[1:])
+    Mk = np.zeros((nbins, tcfg.ICOMP))
+    Mk[:, SRTSO4] = Nk * m_mid
+    return Nk, Mk
+
+
 def initial_tomas_state(scenario) -> TomasState:
     """Build the initial ``TomasState`` from the scenario using the Marianna 'redcircles' distribution.
 
@@ -91,17 +130,26 @@ def initial_tomas_state(scenario) -> TomasState:
         raise ValueError(f"tomas_nbins must be 40, 80, or 160, got {nbins}")
     pres_pa = scenario.P * 100.0                       # mbar -> Pa (TOMAS uses Pa)
     xk = _grid_for(nbins)
-    if nbins in (40, 80):
-        # validated paths: get_initial_state special-cases 80 (sqrt2); 40 uses ratio 2.0.
-        Nk_np, Mk_np = _bad.get_initial_state(
-            nbins=nbins, boxvol=BOXVOL_CM3, dist="redcircles",
-            to_ambient=True, temp=scenario.T, pres=pres_pa)
+    bg = str(getattr(scenario, "background_dist", "redcircles"))
+    if bg in BACKGROUND_MODES:
+        # seed a (multi-)lognormal background (SABR / CESM) on our grid
+        Nk_np, Mk_np = _seed_lognormal(np.asarray(xk), BOXVOL_CM3, BACKGROUND_MODES[bg],
+                                       scenario.T, pres_pa)
+    elif bg == "redcircles":
+        if nbins in (40, 80):
+            # validated paths: get_initial_state special-cases 80 (sqrt2); 40 uses ratio 2.0.
+            Nk_np, Mk_np = _bad.get_initial_state(
+                nbins=nbins, boxvol=BOXVOL_CM3, dist="redcircles",
+                to_ambient=True, temp=scenario.T, pres=pres_pa)
+        else:
+            # general resolution: build the redcircles distribution on OUR same-range refined grid
+            # (get_initial_state would use ratio 2.0 for nbins!=80 -> wrong diameter range).
+            Nk_np, Mk_np, *_ = _bad.map_to_grid(np.asarray(xk), BOXVOL_CM3, dist="redcircles")
+            f = _bad.stp_to_ambient_factor(scenario.T, pres_pa)   # STP dN/dlogDp -> ambient
+            Nk_np, Mk_np = Nk_np * f, Mk_np * f
     else:
-        # general resolution: build the redcircles distribution on OUR same-range refined grid
-        # (get_initial_state would use ratio 2.0 for nbins!=80 -> wrong diameter range).
-        Nk_np, Mk_np, *_ = _bad.map_to_grid(np.asarray(xk), BOXVOL_CM3, dist="redcircles")
-        f = _bad.stp_to_ambient_factor(scenario.T, pres_pa)   # STP dN/dlogDp -> ambient
-        Nk_np, Mk_np = Nk_np * f, Mk_np * f
+        raise ValueError(f"unknown background_dist {bg!r}; valid: 'redcircles' + "
+                         f"{sorted(BACKGROUND_MODES)}")
     Nk = jnp.asarray(Nk_np, dtype=jnp.float64)
     Mk = jnp.asarray(Mk_np, dtype=jnp.float64)
     Gc = jnp.zeros(tcfg.N_GAS_SPECIES, dtype=jnp.float64)
@@ -122,22 +170,23 @@ def active_processes(switches) -> list[str]:
     return [p for p in _PROCESS_ORDER if flags[p]]
 
 
-def make_microphysics_step(switches, ion_pair_rate=0.0):
+def make_microphysics_step(switches, ion_pair_rate=0.0, coag_kernel_scale=1.0):
     """Build the TOMAS ``step_fn(Nk,Mk,Gc,xk,temp,pres,boxvol,rh,alpha,dt,**kw)->(Nk,Mk,Gc)``.
 
     Uses the Marianna-validated scheme choices; SO2 chemistry is omitted. Returns ``None`` if no
     microphysics process is switched on (the driver then skips the TOMAS step entirely).
     ``ion_pair_rate`` [pairs/cm^3/s] is baked in as TOMAS's ``fion`` (Dunne-2016 ion-induced
     nucleation); make_step's own default is 0, which silently turns those channels off -- so the
-    scenario value must be passed through here.
-    """
+    scenario value must be passed through here. ``coag_kernel_scale`` (default 1.0) is a free
+    multiplier on the coagulation kernel (AD-7.2 sensitivity knob), passed to coag_euler_step."""
     procs = active_processes(switches)
     if not procs:
         return None
     step = make_step(procs, cond_method=_COND_METHOD, nucl_scheme=_NUCL_SCHEME,
                      water_scheme=_WATER_SCHEME)
     fion = float(ion_pair_rate)
+    coag_scale = float(coag_kernel_scale)
 
     def step_fn(*args, **kwargs):
-        return step(*args, fion=fion, **kwargs)
+        return step(*args, fion=fion, coag_kernel_scale=coag_scale, **kwargs)
     return step_fn

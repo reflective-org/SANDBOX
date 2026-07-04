@@ -75,11 +75,11 @@ _BG_PPT = {"SO2": 15.0,                             # ambient stratospheric SO2
            "OH": _ppt_from_conc(5.0e5)}             # 5e5 molec/cm^3 (~0.27 pptv)
 
 
-def _scenario(nbins=40, aerosol_to_j=True):
+def _scenario(nbins=40, aerosol_to_j=True, days=10):
     return CoupledScenario(
         T=_T, P=_P, WTR=_WTR,
         latitude=30.0, longitude=0.0, day_of_year=172, start_utc_hour=6.0,
-        days=10, DT=600.0, dt_couple=600.0, photolysis="tuvx",
+        days=days, DT=600.0, dt_couple=600.0, photolysis="tuvx",
         dilution_regime="D1", dilution_zero_species=_ZERO_BG, dilution_background=_BG_PPT,
         ion_pair_rate=30.0,                          # Dunne ion-induced nucleation (GCR ~20 km)
         tomas_nbins=nbins,
@@ -524,12 +524,12 @@ def _make_plots(d):
     _save(fig, "d1_aerosol_props.png")
 
 
-def main(nbins=40, replot=False, aerosol_to_j=True):
+def main(nbins=40, replot=False, aerosol_to_j=True, days=10):
     global _OUT
-    suffix = "" if aerosol_to_j else "_noaeroj"
+    suffix = ("" if aerosol_to_j else "_noaeroj") + ("" if days == 10 else f"_{days}d")
     _OUT = os.path.join(os.path.dirname(__file__), "analyses", f"d1_clean_{nbins}bin{suffix}")
     os.makedirs(_OUT, exist_ok=True)
-    sc = _scenario(nbins, aerosol_to_j=aerosol_to_j)
+    sc = _scenario(nbins, aerosol_to_j=aerosol_to_j, days=days)
     _write_inputs_md(sc, het_inputs(tb.initial_tomas_state(sc)))
     _export_observations(sc)
 
@@ -546,8 +546,8 @@ def main(nbins=40, replot=False, aerosol_to_j=True):
         print(f"replotted 16 figures from the saved npz -> {_OUT}/")
         return
 
-    print(f"Running Dilution-1 clean-stratosphere ({nbins} bins; 20 km, 30N, summer, 10 d, "
-          f"full coupling) -> {_OUT}/ ...")
+    print(f"Running Dilution-1 clean-stratosphere ({nbins} bins; 20 km, 30N, summer, {sc.days} d, "
+          f"aerosol->J {'on' if aerosol_to_j else 'OFF'}) -> {_OUT}/ ...")
     try:
         # run_coupled appends extras in order: aerosol, state, size_dist, photolysis
         t, x, aero, st_final, sd, jrec = run_coupled(
@@ -606,6 +606,8 @@ def main(nbins=40, replot=False, aerosol_to_j=True):
 
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:]]
+    _days = next((int(a.split("=")[1]) for a in args if a.startswith("days=")), 10)
     main(nbins=int(args[0]) if args and args[0].isdigit() else 40,
          replot=("replot" in args),
-         aerosol_to_j=("noaeroj" not in args))
+         aerosol_to_j=("noaeroj" not in args),
+         days=_days)

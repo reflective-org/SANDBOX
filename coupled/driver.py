@@ -38,6 +38,8 @@ behavior. Use ``reference`` here only for continuous-SZA testing, not for MATLAB
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 
 # model_bridge puts gas_phase_chemistry on sys.path (interim; see DEFERRED) -- import it first.
@@ -55,7 +57,7 @@ from reactions import photolysis_coeffs                      # noqa: E402
 from solar import cos_solar_zenith, photolysis_scale         # noqa: E402  (single SZA source)
 from tuvx_photolysis_adapter import (compute_j_and_heating, calculator_grids,  # noqa: E402
                                      _box_altitude_km, _TUVX_ROOT)
-from jaxmodel.model import make_frozen_step                  # noqa: E402
+from jaxmodel.model import make_frozen_step, make_frozen_vf  # noqa: E402
 
 import jax.numpy as jnp                                      # noqa: E402
 
@@ -101,6 +103,26 @@ def _frozen_j_and_heating(cfg, t_mid: float, aerosol_props=None):
     if cfg.photolysis != "tuvx":
         return None, None
     return compute_j_and_heating(cfg, t_mid, aerosol_props=aerosol_props)
+
+
+def _bdf_gas_solve(gas_vf, y0, t0, t1, args, ts_grid, atol, h2so4_idx):
+    """SciPy-BDF fallback for one gas interval when Diffrax stalls. Same RHS (``gas_vf``); returns the
+    H2SO4 envelope on ``ts_grid`` and the endpoint state. BDF's variable-order backward-differentiation
+    solves the stiff states Diffrax's ESDIRK collapses on (verified: ~30 steps). Numerical Jacobian
+    (jac=None) -- proven sufficient; avoids per-call autodiff overhead."""
+    from scipy.integrate import solve_ivp
+    y0n = np.asarray(y0, dtype=float)
+
+    def rhs(_t, y):
+        return np.asarray(gas_vf(0.0, jnp.asarray(y), args))
+
+    sol = solve_ivp(rhs, (float(t0), float(t1)), y0n, method="BDF", rtol=1e-3,
+                    atol=np.asarray(atol), t_eval=np.asarray(ts_grid, dtype=float))
+    if not sol.success:
+        raise RuntimeError(f"BDF fallback failed on [{t0:.1f},{t1:.1f}]: {sol.message}")
+    env_grid = sol.y[h2so4_idx, :]
+    yc_end = jnp.asarray(sol.y[:, -1])
+    return env_grid, yc_end
 
 
 # H2SO4 number density [molec/cm^3] below which gaseous sulfuric acid is negligible for nucleation --
@@ -224,7 +246,8 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     params = dict(T=cfg.T, M=cfg.M, P=cfg.P, SA=cfg.SA, WTR=cfg.WTR, Yn2o5=cfg.Yn2o5)
 
     tomas_step = make_microphysics_step(scenario.switches,
-                                        ion_pair_rate=float(scenario.ion_pair_rate))
+                                        ion_pair_rate=float(scenario.ion_pair_rate),
+                                        coag_kernel_scale=float(scenario.coag_kernel_scale))
     tomas_active = tomas_step is not None
     tstate = initial_tomas_state(scenario) if tomas_active else None
     het = het_inputs(tstate) if tomas_active else None
@@ -237,7 +260,9 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     # -> jitted+LU ~15 ms): the coupled forward run takes no gradients through the solve, and the
     # envelope grid has a fixed length so the jit compiles once. Bit-identical to the eager solve.
     step = make_frozen_step(cfg.opt, atol=jnp.asarray(_abstol(cfg.opt)),
+                            max_steps=int(os.environ.get("COUPLED_GAS_MAXSTEPS", "1000000")),
                             jit_grid=True, forward_only=True)
+    _gas_vf = make_frozen_vf(cfg.opt)   # raw RHS for the SciPy-BDF stall fallback (exact rescue)
 
     nuc_scale = float(scenario.nucleation_rate_scale)   # Phase 7 knob -> TOMAS nucleation fn_scale
     # Phase 6: dilution -> relaxation toward a background (AD-6.3). Background gas = initial state with
@@ -313,6 +338,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         _photo_eqs = [MECHANISM.active[i].equation for i in _photo_idx]
         j_tmid, j_rows = [], []
     yc = jnp.asarray(y0)
+    _gas_stalls = []          # outer-step t0's where the gas ODE stalled (COUPLED_GAS_FALLBACK probe)
     for t0, t1 in _outer_intervals(cfg, scenario.days, scenario.dt_couple):
         t_mid = 0.5 * (t0 + t1)
         # plain float: photolysis_scale returns 0.0 (float) at night but np.float64 by day, and the
@@ -337,13 +363,26 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
             # gas H2SO4 = envelope(t1) minus cumulative TOMAS removal. Two-level split that keeps
             # nucleation from seeing a whole interval's H2SO4 at once (docs/time-integration-plan).
             ts_grid = _envelope_grid(t0, t1, env_pts)
-            sol = step(yc, t0, t1, args, save_ts=ts_grid)
-            env_grid = np.asarray(sol.ys[:, h2so4_idx])       # smooth H2SO4 envelope [molec/cm^3]
+            try:
+                sol = step(yc, t0, t1, args, save_ts=ts_grid)
+                env_grid = np.asarray(sol.ys[:, h2so4_idx])   # smooth H2SO4 envelope [molec/cm^3]
+                yc_end = sol.ys[-1]
+            except Exception:
+                # The stiff gas ODE (Diffrax Kvaerno5) can stall on rare states (a benign but stiff
+                # midday state -- Diffrax collapses where SciPy BDF solves in ~30 steps; see the
+                # paper_ensemble DECISIONS notes). Fall back to SciPy BDF for THIS interval only: it's
+                # EXACT (same RHS), just slower (~1.4 s), and keeps the run valid & complete. Records
+                # each fallback so the ensemble can flag which runs/intervals used it.
+                _gas_stalls.append(float(t0))
+                env_grid, yc_end = _bdf_gas_solve(_gas_vf, yc, t0, t1, args, ts_grid,
+                                                  _abstol(cfg.opt), h2so4_idx)
+                print(f"[BDF-FALLBACK] gas solve stalled at t0={t0:.1f}s ({t0/86400:.3f}d) -> "
+                      f"SciPy BDF (fallback #{len(_gas_stalls)})", flush=True)
             tstate, removal_kg, dt_micro, n_micro = micro_consume(
                 lambda tt: float(np.interp(tt, ts_grid, env_grid)), t0, t1, tstate, tomas_step,
                 nuc_scale, eps, floor, cap, dt_micro)
             micro_total += n_micro
-            yc = sol.ys[-1]
+            yc = yc_end
             env_end_kg = conc_to_mass(float(env_grid[-1]), BOXVOL_CM3, MW_H2SO4)   # envelope(t1)
             yc = yc.at[h2so4_idx].set(
                 mass_to_conc(max(env_end_kg - removal_kg, 0.0), BOXVOL_CM3, MW_H2SO4))
