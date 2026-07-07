@@ -193,9 +193,10 @@ class CoupledScenario:
             raise ValueError(f"condensation_alpha must be in (0, 1], got {self.condensation_alpha}")
         if self.coag_kernel_scale < 0.0:   # now wired (AD-7.2): free multiplier on the coag kernel
             raise ValueError(f"coag_kernel_scale must be >= 0, got {self.coag_kernel_scale}")
-        if str(self.background_dist) not in ("redcircles", "sabr_330", "sabr_220", "cesm_g6"):
-            raise ValueError(f"background_dist must be redcircles/sabr_330/sabr_220/cesm_g6, "
-                             f"got {self.background_dist!r}")
+        from coupled.tomas_bridge import BACKGROUND_MODES
+        if str(self.background_dist) not in ("redcircles", *BACKGROUND_MODES):
+            raise ValueError(f"background_dist must be 'redcircles' or one of "
+                             f"{sorted(BACKGROUND_MODES)}, got {self.background_dist!r}")
         if self.dt_couple > self.DT:
             raise ValueError(f"dt_couple ({self.dt_couple}) must be <= output step DT ({self.DT})")
         # dt_couple drives sub-stepping within an output interval, so DT must be a whole multiple of it

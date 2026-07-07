@@ -17,3 +17,7 @@ gas_phase_chemistry/tuvx_10day.png
 # per-run text log (regenerated every run; the script always writes <out>/run.log)
 run.log
 coupled/analyses/
+# paper-ensemble run outputs: per-case state.npz + generated figures (regenerable via the
+# runners and make_* scripts; see coupled/paper_ensemble/FIGURES.md)
+coupled/paper_ensemble/runs*/
+coupled/paper_ensemble/overnight_launch.log

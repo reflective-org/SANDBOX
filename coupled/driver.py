@@ -338,8 +338,12 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         _photo_eqs = [MECHANISM.active[i].equation for i in _photo_idx]
         j_tmid, j_rows = [], []
     yc = jnp.asarray(y0)
-    _gas_stalls = []          # outer-step t0's where the gas ODE stalled (COUPLED_GAS_FALLBACK probe)
+    _gas_stalls = []          # outer-step t0's where the gas ODE stalled -> SciPy-BDF fallback used
+    _use_bdf = False          # STICKY-BDF: once in a stiff region, skip the (doomed) Kvaerno5 attempt
+    _ivl = 0                  # interval counter (for periodic Kvaerno5 re-probe to exit the region)
+    _REPROBE = 48             # re-try Kvaerno5 every N intervals while in sticky-BDF mode
     for t0, t1 in _outer_intervals(cfg, scenario.days, scenario.dt_couple):
+        _ivl += 1
         t_mid = 0.5 * (t0 + t1)
         # plain float: photolysis_scale returns 0.0 (float) at night but np.float64 by day, and the
         # weak/strong dtype flip would force an extra one-time trace of the jitted gas solve.
@@ -363,21 +367,32 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
             # gas H2SO4 = envelope(t1) minus cumulative TOMAS removal. Two-level split that keeps
             # nucleation from seeing a whole interval's H2SO4 at once (docs/time-integration-plan).
             ts_grid = _envelope_grid(t0, t1, env_pts)
-            try:
-                sol = step(yc, t0, t1, args, save_ts=ts_grid)
-                env_grid = np.asarray(sol.ys[:, h2so4_idx])   # smooth H2SO4 envelope [molec/cm^3]
-                yc_end = sol.ys[-1]
-            except Exception:
-                # The stiff gas ODE (Diffrax Kvaerno5) can stall on rare states (a benign but stiff
-                # midday state -- Diffrax collapses where SciPy BDF solves in ~30 steps; see the
-                # paper_ensemble DECISIONS notes). Fall back to SciPy BDF for THIS interval only: it's
-                # EXACT (same RHS), just slower (~1.4 s), and keeps the run valid & complete. Records
-                # each fallback so the ensemble can flag which runs/intervals used it.
-                _gas_stalls.append(float(t0))
+            # The stiff gas ODE (Diffrax Kvaerno5) can stall on a benign-but-stiff state -- Diffrax
+            # collapses where SciPy BDF solves in ~30 steps (see paper_ensemble DECISIONS). These stalls
+            # come in REGIONS (the background Cl/NOx chemistry hits a stiff configuration ~day 12), so
+            # once we stall we go STRAIGHT to BDF for subsequent intervals (skip the doomed, expensive
+            # Kvaerno5 attempt) and only re-probe Kvaerno5 every _REPROBE intervals to resume the fast
+            # path when the region ends. BDF is EXACT (same RHS), just slower (~1.4 s).
+            _try_kv = (not _use_bdf) or (_ivl % _REPROBE == 0)
+            sol = None
+            if _try_kv:
+                try:
+                    sol = step(yc, t0, t1, args, save_ts=ts_grid)
+                    env_grid = np.asarray(sol.ys[:, h2so4_idx]); yc_end = sol.ys[-1]
+                    if _use_bdf:
+                        _use_bdf = False
+                        print(f"[gas] Kvaerno5 recovered at t0={t0/86400:.3f}d -> fast path", flush=True)
+                except Exception:
+                    sol = None
+            if sol is None:                          # BDF: sticky-region interval, or a fresh stall
                 env_grid, yc_end = _bdf_gas_solve(_gas_vf, yc, t0, t1, args, ts_grid,
                                                   _abstol(cfg.opt), h2so4_idx)
-                print(f"[BDF-FALLBACK] gas solve stalled at t0={t0:.1f}s ({t0/86400:.3f}d) -> "
-                      f"SciPy BDF (fallback #{len(_gas_stalls)})", flush=True)
+                if _try_kv:                          # a genuine stall this interval (not a skip)
+                    _gas_stalls.append(float(t0))
+                    if not _use_bdf:
+                        _use_bdf = True
+                        print(f"[BDF-FALLBACK] stall at t0={t0:.1f}s ({t0/86400:.3f}d) -> SciPy BDF; "
+                              f"sticky-BDF ON (fallback #{len(_gas_stalls)})", flush=True)
             tstate, removal_kg, dt_micro, n_micro = micro_consume(
                 lambda tt: float(np.interp(tt, ts_grid, env_grid)), t0, t1, tstate, tomas_step,
                 nuc_scale, eps, floor, cap, dt_micro)

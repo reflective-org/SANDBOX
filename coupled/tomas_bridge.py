@@ -86,12 +86,23 @@ def _grid_for(nbins):
 # Accumulation->~12, Coarse->~0.5 cm^-3 STP.
 BACKGROUND_MODES = {
     "sabr_330": [(810.0, 0.045, 2.1)],                                    # young air (high N2O), peak ~1000
+    "sabr_310": [(205.0, 0.060, 1.8)],                                    # mid air (310-320 ppbv), peak ~320
     "sabr_220": [(49.0, 0.12, 1.6)],                                      # aged air (low N2O), peak ~95
     "cesm_g6":  [(22.0, 0.040, 1.5), (5.3, 0.20, 1.5), (0.18, 0.90, 1.4)],  # CESM G6 SAI (r->D x2)
+    # AER 2D geoengineered stratosphere (Pierce et al. fig. 2, gray curve: 5 Mt-S/yr, 95 nm case).
+    # Dg = 0.30 um (mode radius 0.15 um) and sigma_g = 1.7 fitted to the curve; N = 120 cm^-3 per
+    # user spec (paper caption quotes 50 cm^-3). Values are AMBIENT -> no STP conversion on seeding.
+    "aer_geo":  [(120.0, 0.30, 1.7)],
+    # CESM G6 with the source plot read as AMBIENT (user-confirmed): same modes as cesm_g6 but
+    # seeded without the STP->ambient factor. cesm_g6 is kept unchanged so the original 810-run
+    # ensemble stays reproducible.
+    "cesm_g6_amb": [(22.0, 0.040, 1.5), (5.3, 0.20, 1.5), (0.18, 0.90, 1.4)],
 }
+# mode sets specified at AMBIENT conditions (seeding skips the STP->ambient factor)
+AMBIENT_BACKGROUNDS = {"aer_geo", "cesm_g6_amb"}
 
 
-def _seed_lognormal(xk_np, boxvol, modes, temp, pres):
+def _seed_lognormal(xk_np, boxvol, modes, temp, pres, ambient=False):
     """Nk [#/cell], Mk [kg/cell] from (multi-)lognormal modes -- mirrors _bad.map_to_grid: integrate
     dN/dlog10Dp over each bin [cm^-3 STP], x STP->ambient x boxvol, Mk = Nk x geometric-mean bin mass
     (sulfate column only, matching the redcircles seed)."""
@@ -108,7 +119,8 @@ def _seed_lognormal(xk_np, boxvol, modes, temp, pres):
 
     Nk_cm3 = np.array([max(0.0, quad(dNdlogDp, logdp[k], logdp[k + 1], limit=50)[0])
                        for k in range(nbins)])
-    f = _bad.stp_to_ambient_factor(temp, pres)          # STP dN/dlogDp -> ambient (as redcircles)
+    # STP dN/dlogDp -> ambient (as redcircles); ambient-specified mode sets skip the factor
+    f = 1.0 if ambient else _bad.stp_to_ambient_factor(temp, pres)
     Nk = Nk_cm3 * f * boxvol
     m_mid = np.sqrt(np.asarray(xk_np)[:-1] * np.asarray(xk_np)[1:])
     Mk = np.zeros((nbins, tcfg.ICOMP))
@@ -134,7 +146,7 @@ def initial_tomas_state(scenario) -> TomasState:
     if bg in BACKGROUND_MODES:
         # seed a (multi-)lognormal background (SABR / CESM) on our grid
         Nk_np, Mk_np = _seed_lognormal(np.asarray(xk), BOXVOL_CM3, BACKGROUND_MODES[bg],
-                                       scenario.T, pres_pa)
+                                       scenario.T, pres_pa, ambient=bg in AMBIENT_BACKGROUNDS)
     elif bg == "redcircles":
         if nbins in (40, 80):
             # validated paths: get_initial_state special-cases 80 (sqrt2); 40 uses ratio 2.0.
