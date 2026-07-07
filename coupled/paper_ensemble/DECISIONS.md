@@ -86,3 +86,31 @@ aerosol→J OFF, heating OFF, dilution ON.
 - `summary.csv` — headline metrics per run (SO2_end, H2SO4_max, N_max, SA_max, sulfate_end);
   `steps=-1` marks a failed run.
 - `worker_*.log` — per-worker progress / any `[BDF-FALLBACK]` or failures.
+
+## Addendum (2026-07-05 overnight): geo-background + start-time batches
+
+Launched two follow-up batches on 10 thread-pinned CPUs (chained; `overnight_launch.log`):
+
+1. **`runs_geo/` — 540 runs** (`run_geo_ensemble.py` / `launch_geo.py`): the same 270
+   combinations as the main sweep (3 sites x 5 dilution x 2 alpha x 3 nuc x 3 coag) for TWO
+   new backgrounds, both with **bg SO2 = 100 pptv**:
+   - `aer_geo` — AER 2D geoengineered stratosphere (Pierce et al. fig. 2 gray curve):
+     single lognormal **N = 120 cm^-3 (Ali's spec; the paper caption quotes 50), Dg = 0.30 um,
+     sigma_g = 1.7, AMBIENT** (no STP conversion; new `AMBIENT_BACKGROUNDS` in tomas_bridge).
+     Fit verified against digitized points: `overlay_aer_geo.png`. NOTE: at N = 120 the curve
+     sits x2.4 above the source figure; at N = 50 it matches. One-number change to redo.
+   - `cesm_g6_amb` — the CESM G6 modes re-read as **AMBIENT** (Ali confirmed the source plot
+     was ambient; the original 810-run `cesm_g6` wrongly applied the x0.069 STP factor and is
+     ~14.5x too dilute). `cesm_g6` kept unchanged for reproducibility of the original runs.
+2. **`runs_start_time/` — 120 runs** (`run_start_time.py` / `launch_start_time.py`):
+   start-of-day sensitivity: 3 sites x 5 dilution x **8 start hours (00..21 every 3 h)**,
+   SABR-220 background (20 ppt bg SO2), alpha/nuc/coag all x1.
+
+Smoke tests passed for both runners (aer_geo seeds exactly 120 cm^-3 ambient; h12 case runs).
+`coupled_scenario` now validates `background_dist` against `tomas_bridge.BACKGROUND_MODES`
+instead of a hardcoded list.
+
+**2026-07-06:** All figure pipelines now source `cesm` cases from `runs_geo/` (ambient CESM,
+`cesm_g6_amb`) via `make_paper_candidate_plots.case_dir()`; the original runs/ cesm cases
+(STP-diluted, wrong) are no longer used in any figure. Caches bumped
+(`_reduced_cache_cesm_amb.npz`, `_nd_eval_cache_cesm_amb.npz`).
