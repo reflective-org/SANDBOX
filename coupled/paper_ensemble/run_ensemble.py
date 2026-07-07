@@ -184,6 +184,9 @@ def main(argv):
         spath = os.path.join(_OUT, f"summary_{lo}_{hi}.csv")
         for i in range(lo, min(hi, len(cases))):
             cid, ax = cases[i]
+            if os.path.exists(os.path.join(_OUT, cid, "state.npz")):
+                print(f"[{i}] {cid} SKIP (state.npz exists)", flush=True)
+                continue
             try:
                 print(f"[{i}] {cid} ...", flush=True)
                 row = run_one(cid, ax); _append_summary(row, spath)
