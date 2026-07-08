@@ -74,15 +74,19 @@ def main():
     T, P = 210.0, 5500.0
     mu = 1.458e-6 * T ** 1.5 / (T + 110.4)
     lam = 2.0 * mu / ((P / (287.05 * T)) * np.sqrt(8.0 * 287.05 * T / np.pi))
-    rho_p3 = float(h2so4_solution_density(float(h2so4_equilibrium_wt(T_STRAT, 3.0))))
     d_m = 2.0 * cache["rh3"][0] * 1e-6
     Kn = 2.0 * lam / d_m
     cc_slip = 1.0 + Kn * (1.257 + 0.4 * np.exp(-1.1 / Kn))
-    v_s = rho_p3 * d_m ** 2 * 9.81 * cc_slip / (18.0 * mu)     # m/s
     ax2 = ax.twinx()
     ax2.spines["right"].set_visible(True)
     ax2.spines["right"].set_color("#d03b3b")
-    ax2.plot(d_m * 1e6 / 2 * 2, v_s * 3.156e7 / 1e3, lw=1.8, ls="-.", color="#d03b3b")
+    # settling depends on the WET diameter (x-axis) and linearly on the WET density,
+    # so one line per RH composition (they differ by <6%: 1567/1533/1479 kg m^-3)
+    RED = {3.0: "#eda3a3", 5.0: "#d03b3b", 10.0: "#7a1c1c"}
+    for rh, _ in RHS:
+        rho_p = float(h2so4_solution_density(float(h2so4_equilibrium_wt(T_STRAT, rh))))
+        v_s = rho_p * d_m ** 2 * 9.81 * cc_slip / (18.0 * mu)  # m/s
+        ax2.plot(d_m * 1e6, v_s * 3.156e7 / 1e3, lw=1.6, ls="-.", color=RED[rh])
     ax2.set_yscale("log")
     ax2.set_ylabel("gravitational settling velocity [km yr$^{-1}$]", color="#d03b3b")
     ax2.tick_params(axis="y", colors="#d03b3b")

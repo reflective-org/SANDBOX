@@ -90,12 +90,24 @@ deliberate).
 ### Constant OH — `runs/plots/` (`make_constant_oh_banana.py`)
 `banana_OH_const_vs_diurnal(_SA)`, `sizedist_OH_const_vs_diurnal(_linear)`.
 
-### Radiative forcing — `runs/plots/rf/` (`make_rf_efficiency_plot.py`)
+### Radiative forcing — `runs/plots/rf/` (`make_rf_efficiency_plot.py`, `make_rf_runs.py`)
 `rf_efficiency_vs_size` (Pierce-style scattering efficiency per Mt-S vs wet diameter,
 RH 3/5/10% at 210 K equilibrium, 500-wavelength solar integration; right axis:
-gravitational settling velocity at 55 hPa/210 K); `qsca_vs_size` (Mie Q_sca);
-`rf_efficiency_lifetime` (sedimentation-limited lifetime + lifetime-weighted efficiency;
-H = 4 km, tau_dyn = 1.5 yr — diagnostic, the box model has no vertical transport).
+gravitational settling velocity at 55 hPa/210 K, one line per RH density);
+`qsca_vs_size` (Mie Q_sca); `rf_efficiency_lifetime` (sedimentation-limited lifetime +
+lifetime-weighted efficiency; H = 4 km, tau_dyn = 1.5 yr — diagnostic, the box model has
+no vertical transport). From the ACTUAL run distributions (`make_rf_runs.py`, cached in
+`_drf_cache.npz`): dRF/dS at t* per run = plume-integrated excess over background x
+per-bin wet-diameter Mie x Chylek & Wong scene, per Mt-S injected — `drf_boxplot` (by
+regime + pooled, jittered points; NOTE 60N/15 km gives ~half the 30N values — site
+bimodality), `drf_by_nucleation` / `drf_by_coagulation` / `drf_by_condensation`
+(regime-colored boxes + points). Day-10 evaluation is NOT usable for D3/D5 (V/V0 up to
+3e21 amplifies background-reference residuals; hence t*).
+
+### Area per injected sulfur — `runs/plots/` (`make_area_per_injected_s.py`)
+`dAdlogDp_per_injectedS`: plume-integrated excess dA/dlogDp per injected S atom [m^2] at
+ages 2/5/10 d, five regimes; curves dropped once within 10% of background SA (D5 after
+114 h, D3 after 175 h); age-2d panel on its own tighter y-scale.
 
 ### Diagnostics — `coupled/analyses/day12_wall/` (`probe_day12_wall.py`)
 `species_all`, `species_zoom`, `banana`, `sizedist_at_stall`, `jacobian_timescales.txt`,
