@@ -214,7 +214,7 @@ def _envelope_grid(t0, t1, n_pts: int = 301):
 
 
 def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_dist=False,
-                return_photolysis=False):
+                return_photolysis=False, stop_condition=None):
     """Integrate a CoupledScenario with operator splitting.
 
     Returns ``(t [s], states [n_t, n_species])``. With ``return_aerosol=True`` also returns a dict of
@@ -443,6 +443,12 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
             nk, dp = _sizedist_record()
             nk_list.append(nk)
             dp_list.append(dp)
+        # optional early stop (e.g. plume relaxed to background): called once per outer
+        # interval with (t1 [s], wet SA [um^2/cm^3] or nan when TOMAS inactive)
+        if stop_condition is not None and stop_condition(
+                float(t1), float(het["SA"]) if het is not None else float("nan")):
+            print(f"[stop] condition met at t={t1/86400.0:.3f} d -- ending run early", flush=True)
+            break
 
     t = np.asarray(t_list)
     x = np.asarray(x_list)

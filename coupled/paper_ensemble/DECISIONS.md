@@ -129,3 +129,12 @@ Validated: the 14-day case completes in 6.6 min with one stall region (day 12.13
 finite. Pre-stall intervals are bit-identical to before (fix lives on the failure branch
 only), so all existing 10-day ensemble results stand. 60-day runs are now feasible
 (~30-40 min/run). The earlier "intractable stiffness wall" description is obsolete.
+
+**2026-07-08 (final root cause):** the day-12.139 stall is a FLOATING-POINT ULP effect:
+first_step=1e-10 < spacing(t) once t > 2^20 s = 12.14 d, so t0+dt0 == t0 and the controller
+loops. Confirmed by the 60-day runs (D1 and D2, 06:00 start, frank-model spun-up ICs) both
+stalling at exactly t0 = 1,048,800 s (first interval boundary past 2^20). The sticky
+first_step=1e-2 retry is therefore the PERMANENT mode beyond day 12.14 (safe to t~2^45 s).
+60-day capability validated: plume life to background+10% (24 h sustained, run-time stop) =
+16.8 d (D2 med), 35.9 d (D1 low); runs in runs_60day/ (run_60day.py; ICs from the
+frank-model 60-d control via runs_60day/frank_control_ic.json).
