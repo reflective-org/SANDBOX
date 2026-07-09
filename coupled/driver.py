@@ -57,7 +57,7 @@ from reactions import photolysis_coeffs                      # noqa: E402
 from solar import cos_solar_zenith, photolysis_scale         # noqa: E402  (single SZA source)
 from tuvx_photolysis_adapter import (compute_j_and_heating, calculator_grids,  # noqa: E402
                                      _box_altitude_km, _TUVX_ROOT)
-from jaxmodel.model import make_frozen_step, make_frozen_vf  # noqa: E402
+from jaxmodel.model import make_frozen_step  # noqa: E402
 
 import jax.numpy as jnp                                      # noqa: E402
 
@@ -105,24 +105,11 @@ def _frozen_j_and_heating(cfg, t_mid: float, aerosol_props=None):
     return compute_j_and_heating(cfg, t_mid, aerosol_props=aerosol_props)
 
 
-def _bdf_gas_solve(gas_vf, y0, t0, t1, args, ts_grid, atol, h2so4_idx):
-    """SciPy-BDF fallback for one gas interval when Diffrax stalls. Same RHS (``gas_vf``); returns the
-    H2SO4 envelope on ``ts_grid`` and the endpoint state. BDF's variable-order backward-differentiation
-    solves the stiff states Diffrax's ESDIRK collapses on (verified: ~30 steps). Numerical Jacobian
-    (jac=None) -- proven sufficient; avoids per-call autodiff overhead."""
-    from scipy.integrate import solve_ivp
-    y0n = np.asarray(y0, dtype=float)
-
-    def rhs(_t, y):
-        return np.asarray(gas_vf(0.0, jnp.asarray(y), args))
-
-    sol = solve_ivp(rhs, (float(t0), float(t1)), y0n, method="BDF", rtol=1e-3,
-                    atol=np.asarray(atol), t_eval=np.asarray(ts_grid, dtype=float))
-    if not sol.success:
-        raise RuntimeError(f"BDF fallback failed on [{t0:.1f},{t1:.1f}]: {sol.message}")
-    env_grid = sol.y[h2so4_idx, :]
-    yc_end = jnp.asarray(sol.y[:, -1])
-    return env_grid, yc_end
+# Gas-ODE stall handling: Diffrax Kvaerno5 with the standard first_step=1e-10 can enter a
+# reject/shrink loop of the PID controller on rare benign states (isolated to EXACTLY dt0=1e-10;
+# dt0 >= 1e-8 solves the same state in ~30 steps -- see paper_ensemble/debug_day12_isolation.py).
+# The remedy is a pure-Diffrax RETRY with a larger initial step; no SciPy fallback.
+_RETRY_FIRST_STEP = 1.0e-2
 
 
 # H2SO4 number density [molec/cm^3] below which gaseous sulfuric acid is negligible for nucleation --
@@ -259,10 +246,16 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     # jit_grid + forward_only make the per-outer-step gas solve ~85x faster (eager diffeqsolve ~1.2 s
     # -> jitted+LU ~15 ms): the coupled forward run takes no gradients through the solve, and the
     # envelope grid has a fixed length so the jit compiles once. Bit-identical to the eager solve.
+    # Primary solve gets a FAIL-FAST step budget: a healthy interval needs <~1e3 steps, so a
+    # 5e4 cap costs ~10 s on a genuine dt0 stall instead of ~3 min at 1e6. The retry solver
+    # (larger first_step) keeps the deep budget.
+    _probe_maxsteps = int(os.environ.get("COUPLED_GAS_MAXSTEPS", "50000"))
     step = make_frozen_step(cfg.opt, atol=jnp.asarray(_abstol(cfg.opt)),
-                            max_steps=int(os.environ.get("COUPLED_GAS_MAXSTEPS", "1000000")),
-                            jit_grid=True, forward_only=True)
-    _gas_vf = make_frozen_vf(cfg.opt)   # raw RHS for the SciPy-BDF stall fallback (exact rescue)
+                            max_steps=_probe_maxsteps, jit_grid=True, forward_only=True)
+    # stall-retry twin: identical solve from a larger initial step (see _RETRY_FIRST_STEP note)
+    step_retry = make_frozen_step(cfg.opt, atol=jnp.asarray(_abstol(cfg.opt)),
+                                  max_steps=1_000_000, jit_grid=True, forward_only=True,
+                                  first_step=_RETRY_FIRST_STEP)
 
     nuc_scale = float(scenario.nucleation_rate_scale)   # Phase 7 knob -> TOMAS nucleation fn_scale
     # Phase 6: dilution -> relaxation toward a background (AD-6.3). Background gas = initial state with
@@ -338,10 +331,10 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         _photo_eqs = [MECHANISM.active[i].equation for i in _photo_idx]
         j_tmid, j_rows = [], []
     yc = jnp.asarray(y0)
-    _gas_stalls = []          # outer-step t0's where the gas ODE stalled -> SciPy-BDF fallback used
-    _use_bdf = False          # STICKY-BDF: once in a stiff region, skip the (doomed) Kvaerno5 attempt
-    _ivl = 0                  # interval counter (for periodic Kvaerno5 re-probe to exit the region)
-    _REPROBE = 48             # re-try Kvaerno5 every N intervals while in sticky-BDF mode
+    _gas_retries = []         # outer-step t0's where the gas solve needed the larger-dt0 retry
+    _use_retry = False        # STICKY-RETRY: inside a stall region, skip the doomed probe
+    _ivl = 0
+    _REPROBE = 48             # re-probe the standard dt0 every N intervals to exit the region
     for t0, t1 in _outer_intervals(cfg, scenario.days, scenario.dt_couple):
         _ivl += 1
         t_mid = 0.5 * (t0 + t1)
@@ -367,32 +360,31 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
             # gas H2SO4 = envelope(t1) minus cumulative TOMAS removal. Two-level split that keeps
             # nucleation from seeing a whole interval's H2SO4 at once (docs/time-integration-plan).
             ts_grid = _envelope_grid(t0, t1, env_pts)
-            # The stiff gas ODE (Diffrax Kvaerno5) can stall on a benign-but-stiff state -- Diffrax
-            # collapses where SciPy BDF solves in ~30 steps (see paper_ensemble DECISIONS). These stalls
-            # come in REGIONS (the background Cl/NOx chemistry hits a stiff configuration ~day 12), so
-            # once we stall we go STRAIGHT to BDF for subsequent intervals (skip the doomed, expensive
-            # Kvaerno5 attempt) and only re-probe Kvaerno5 every _REPROBE intervals to resume the fast
-            # path when the region ends. BDF is EXACT (same RHS), just slower (~1.4 s).
-            _try_kv = (not _use_bdf) or (_ivl % _REPROBE == 0)
+            # Kvaerno5 with first_step=1e-10 can (rarely) stall in the PID controller's
+            # reject loop on a benign state; the SAME solver from first_step=1e-2 sails
+            # through (~30 steps). Stalls come in contiguous REGIONS, so after one stall we
+            # go STICKY on the retry solver (skip the doomed probe) and only re-probe the
+            # standard dt0 every _REPROBE intervals. Pure Diffrax; genuine failures propagate.
+            _try_std = (not _use_retry) or (_ivl % _REPROBE == 0)
             sol = None
-            if _try_kv:
+            if _try_std:
                 try:
                     sol = step(yc, t0, t1, args, save_ts=ts_grid)
-                    env_grid = np.asarray(sol.ys[:, h2so4_idx]); yc_end = sol.ys[-1]
-                    if _use_bdf:
-                        _use_bdf = False
-                        print(f"[gas] Kvaerno5 recovered at t0={t0/86400:.3f}d -> fast path", flush=True)
+                    if _use_retry:
+                        _use_retry = False
+                        print(f"[gas] standard dt0 recovered at t0={t0/86400:.3f}d", flush=True)
                 except Exception:
                     sol = None
-            if sol is None:                          # BDF: sticky-region interval, or a fresh stall
-                env_grid, yc_end = _bdf_gas_solve(_gas_vf, yc, t0, t1, args, ts_grid,
-                                                  _abstol(cfg.opt), h2so4_idx)
-                if _try_kv:                          # a genuine stall this interval (not a skip)
-                    _gas_stalls.append(float(t0))
-                    if not _use_bdf:
-                        _use_bdf = True
-                        print(f"[BDF-FALLBACK] stall at t0={t0:.1f}s ({t0/86400:.3f}d) -> SciPy BDF; "
-                              f"sticky-BDF ON (fallback #{len(_gas_stalls)})", flush=True)
+            if sol is None:
+                if _try_std:                       # a fresh stall (not a sticky skip)
+                    _gas_retries.append(float(t0))
+                    if not _use_retry:
+                        _use_retry = True
+                        print(f"[gas] dt0 stall at t0={t0:.1f}s ({t0/86400:.3f}d) -> sticky "
+                              f"retry, first_step={_RETRY_FIRST_STEP:g} "
+                              f"(stall #{len(_gas_retries)})", flush=True)
+                sol = step_retry(yc, t0, t1, args, save_ts=ts_grid)
+            env_grid = np.asarray(sol.ys[:, h2so4_idx]); yc_end = sol.ys[-1]
             tstate, removal_kg, dt_micro, n_micro = micro_consume(
                 lambda tt: float(np.interp(tt, ts_grid, env_grid)), t0, t1, tstate, tomas_step,
                 nuc_scale, eps, floor, cap, dt_micro)
@@ -403,7 +395,26 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
                 mass_to_conc(max(env_end_kg - removal_kg, 0.0), BOXVOL_CM3, MW_H2SO4))
             het = het_inputs(tstate)                          # for the next interval
         else:
-            yc = step(yc, t0, t1, args)                       # gas-only endpoint (Phase-2 path)
+            _try_std = (not _use_retry) or (_ivl % _REPROBE == 0)
+            _done = False
+            if _try_std:                                      # gas-only endpoint (Phase-2 path)
+                try:
+                    yc = step(yc, t0, t1, args)
+                    _done = True
+                    if _use_retry:
+                        _use_retry = False
+                        print(f"[gas] standard dt0 recovered at t0={t0/86400:.3f}d", flush=True)
+                except Exception:
+                    pass
+            if not _done:
+                if _try_std:
+                    _gas_retries.append(float(t0))
+                    if not _use_retry:
+                        _use_retry = True
+                        print(f"[gas] dt0 stall at t0={t0:.1f}s ({t0/86400:.3f}d) -> sticky "
+                              f"retry, first_step={_RETRY_FIRST_STEP:g} "
+                              f"(stall #{len(_gas_retries)})", flush=True)
+                yc = step_retry(yc, t0, t1, args)
 
         if heating_active:
             # radiative heating -> box T (forward-Euler over the interval). The updated T feeds the

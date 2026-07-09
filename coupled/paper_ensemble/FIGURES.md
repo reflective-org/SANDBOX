@@ -38,9 +38,10 @@ Every run dir has `manifest.csv`, per-case `state.npz` (full time series: 36 gas
 
 - `runs_no_sai/`: the 3 background-only baselines (no SO2 injection).
 - 160-bin versions of anything (`tomas_nbins=160`; ~2× cost/run).
-- >10-day runs: possible only via the SciPy-BDF sticky fallback in `coupled/driver.py`
-  (raw Kvaerno5 hits the benign day-12.139 pre-dawn stiffness wall — see
-  `probe_day12_wall.py` and `coupled/analyses/day12_wall/`).
+- >10-day runs: now feasible on pure Diffrax (~30-40 min per 60-day run). The day-12.139
+  "wall" was a first_step=1e-10 PID pathology, fixed by a sticky larger-dt0 retry; the
+  SciPy-BDF fallback is removed (see DECISIONS addendum 2026-07-08 and
+  `debug_day12_isolation.py`).
 - aer_geo with N = 50 cm^-3 (the Pierce caption value) — one number in
   `tomas_bridge.BACKGROUND_MODES`, then rerun `runs_geo` (resumable runner).
 - Start-time / box-size sweeps for other sites, regimes, or backgrounds (all runners

@@ -114,3 +114,18 @@ instead of a hardcoded list.
 `cesm_g6_amb`) via `make_paper_candidate_plots.case_dir()`; the original runs/ cesm cases
 (STP-diluted, wrong) are no longer used in any figure. Caches bumped
 (`_reduced_cache_cesm_amb.npz`, `_nd_eval_cache_cesm_amb.npz`).
+
+## Addendum (2026-07-08): day-12.139 "stiffness wall" SOLVED — BDF removed
+
+Root cause isolated (see `debug_day12_isolation.py` + `coupled/analyses/day12_wall/`): NOT
+stiffness, NOT the coupling, NOT the het chemistry (all ruled out by a toggle matrix) — the
+hardcoded gas-solver initial step `first_step=1e-10` traps Diffrax's PID controller in a
+reject loop on rare benign night-time states. The SAME Kvaerno5 from dt0>=1e-8 solves the
+failing interval in ~30 steps. Fix (pure Diffrax, per Ali: no SciPy):
+  * SciPy-BDF fallback REMOVED from coupled/driver.py entirely.
+  * Fail-fast probe budget (COUPLED_GAS_MAXSTEPS default 5e4, was 1e6) + STICKY RETRY with
+    first_step=1e-2 (re-probe standard dt0 every 48 intervals).
+Validated: the 14-day case completes in 6.6 min with one stall region (day 12.139), all
+finite. Pre-stall intervals are bit-identical to before (fix lives on the failure branch
+only), so all existing 10-day ensemble results stand. 60-day runs are now feasible
+(~30-40 min/run). The earlier "intractable stiffness wall" description is obsolete.
