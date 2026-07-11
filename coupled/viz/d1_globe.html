@@ -62,11 +62,33 @@
   .caption .txt{font-size:14.5px;color:var(--ink)}
   .caption sub,.caption sup{font-size:.72em}
 
-  .controls{margin-top:12px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  .controls{margin-top:14px;display:flex;align-items:center;gap:16px;
     font-family:var(--mono);font-size:12px;color:var(--muted)}
-  .placeholder{color:var(--faint);font-family:var(--mono);font-size:12px;
-    display:flex;align-items:center;justify-content:center;height:100%;text-align:center;padding:12px}
-  @media (max-width:960px){ .grid{grid-template-columns:1fr} .globe-card{grid-row:auto;min-height:440px} }
+  .btn{background:var(--panel2,#111a2e);color:var(--ink);border:1px solid var(--panel-edge);
+    border-radius:9px;width:40px;height:40px;font-size:15px;cursor:pointer;display:flex;
+    align-items:center;justify-content:center;transition:border-color .15s,background .15s;flex:none}
+  .btn:hover{border-color:var(--accent)}
+  .btn:focus-visible,.speed button:focus-visible,#scrub:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .scrub-wrap{flex:1;position:relative;height:40px;display:flex;flex-direction:column;justify-content:center}
+  #scrub{-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:4px;
+    background:linear-gradient(90deg,var(--gas) 0%,var(--gas) var(--f,0%),var(--panel-edge) var(--f,0%));
+    outline:none;cursor:pointer;margin:0}
+  #scrub::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+    background:var(--gas-glow);border:2px solid #1a1206;cursor:grab;box-shadow:0 0 8px rgba(255,206,94,.5)}
+  #scrub::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:var(--gas-glow);
+    border:2px solid #1a1206;cursor:grab}
+  .ticks{position:absolute;top:26px;left:0;right:0;height:12px;pointer-events:none}
+  .ticks span{position:absolute;transform:translateX(-50%);font-size:9.5px;color:var(--faint)}
+  .phases{position:absolute;top:1px;left:0;right:0;height:12px;pointer-events:none}
+  .phases i{position:absolute;width:7px;height:7px;transform:translate(-50%,-2px) rotate(45deg);
+    background:var(--accent);opacity:.75;border-radius:1px}
+  .speed{display:flex;gap:2px;flex:none}
+  .speed button{background:transparent;color:var(--muted);border:1px solid var(--panel-edge);
+    padding:6px 8px;font-family:var(--mono);font-size:11px;cursor:pointer;border-radius:0}
+  .speed button:first-child{border-radius:8px 0 0 8px}
+  .speed button:last-child{border-radius:0 8px 8px 0}
+  .speed button.on{background:var(--accent);color:#04120f;border-color:var(--accent)}
+  @media (max-width:960px){ .grid{grid-template-columns:1fr} .globe-card{min-height:440px} }
   @media (prefers-color-scheme:light){ body{background:#0a1020} } /* page is intentionally dark */
 </style>
 </head>
@@ -109,7 +131,15 @@
       <span class="txt" id="cap-txt">—</span>
     </div>
     <div class="controls" id="controls">
-      <span id="ctl-note">interactive controls arrive with story mode</span>
+      <button id="play" class="btn" aria-label="Play">▶</button>
+      <div class="scrub-wrap">
+        <input id="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="Time (drag to scrub)">
+        <div class="phases" id="phases"></div>
+        <div class="ticks" id="ticks"></div>
+      </div>
+      <div class="speed" id="speed" role="group" aria-label="Playback speed">
+        <button data-s="0.5">0.5×</button><button data-s="1" class="on">1×</button><button data-s="2">2×</button><button data-s="4">4×</button>
+      </div>
     </div>
   </main>
 </div>
@@ -679,69 +709,137 @@
       distAt};
   })();
 
-  // ================= §H  state fan-out (M1: static from hash) ===================================
-  const state = { day:0, camLon:META.lon0, filament:null };
+  // ================= §D  time warp (dense early, matching the burst) ============================
+  const DAYT=META.days_total, STORY_DUR=78;                     // seconds at 1×
+  const PACE=[[0,0.5,0.34],[0.5,1,0.14],[1,3,0.22],[3,DAYT,0.30]];
+  const SEG=(function(){ let acc=0; return PACE.map(([d0,d1,fr])=>{const s={d0,d1,a0:acc,a1:acc+fr};acc+=fr;return s;}); })();
+  const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+  function animToSim(a){ a=clamp(a,0,1);
+    for(const s of SEG){ if(a<=s.a1||s===SEG[SEG.length-1]){ const f=(a-s.a0)/(s.a1-s.a0); return s.d0+clamp(f,0,1)*(s.d1-s.d0);} } return DAYT; }
+  function simToAnim(d){ d=clamp(d,0,DAYT);
+    for(const s of SEG){ if(d<=s.d1||s===SEG[SEG.length-1]){ const f=(d-s.d0)/(s.d1-s.d0); return s.a0+clamp(f,0,1)*(s.a1-s.a0);} } return 1; }
 
+  // ================= §H  state fan-out + player =================================================
+  const state = { day:0, camLon:META.lon0, targetLon:META.lon0, filament:null };
+  function bisect(arr, x){ let lo=0,hi=arr.length-1; while(lo<hi){const m=(lo+hi)>>1; if(arr[m]<x)lo=m+1; else hi=m;} return lo; }
+  function wrap180(lon){ return ((lon+180)%360+360)%360-180; }
   function fmtClock(day){
     const utc=(META.start_utc_hour+day*24)%24;
-    const hh=String(Math.floor(utc)).padStart(2,"0");
-    const mm=String(Math.floor((utc%1)*60)).padStart(2,"0");
-    const di=Math.min(D.days.length-1, Math.max(0, bisect(D.days, day)));
-    const isDay = D.series.is_day[di]===1;
-    return `day ${Math.floor(day)} · ${hh}:${mm} UTC · ${isDay?"daylight":"night"} (model)`;
+    const hh=String(Math.floor(utc)).padStart(2,"0"), mm=String(Math.floor((utc%1)*60)).padStart(2,"0");
+    const di=clamp(bisect(D.days,day),0,D.days.length-1);
+    return `day ${Math.floor(day)} · ${hh}:${mm} UTC · ${D.series.is_day[di]===1?"daylight":"night"} (model)`;
   }
-  function bisect(arr, x){ let lo=0,hi=arr.length-1; while(lo<hi){const m=(lo+hi)>>1; if(arr[m]<x)lo=m+1; else hi=m;} return lo; }
-
-  function wrap180(lon){ let x=((lon+180)%360+360)%360-180; return x; }
+  const $=id=>document.getElementById(id);
 
   function setSimDay(day, opts){
-    state.day=Math.max(0, Math.min(META.days_total, day));
-    const fil=filament(state.day);
-    state.filament=fil;
-    // camera follows the drifting centroid longitude (M4 eases this; here it snaps)
-    if(!opts||!opts.keepCam) state.camLon=wrap180(fil.lonc);
+    opts=opts||{};
+    const prev=state.day;
+    state.day=clamp(day,0,DAYT);
+    const fil=filament(state.day); state.filament=fil;
+    state.targetLon=wrap180(fil.lonc);
+    if(opts.snapCam || Math.abs(state.day-prev)>1.0) state.camLon=state.targetLon;
     GlobeView.render(state);
     AltView.render(state);
     Charts.render(state.day);
-    document.getElementById("clock").textContent=fmtClock(state.day);
-    // caption (last entry with day<=now)
-    let cap=D.captions[0];
-    for(const c of D.captions) if(c.day<=state.day) cap=c;
-    document.getElementById("cap-txt").innerHTML=cap.html;
-    document.getElementById("cap-tick").textContent="day "+(state.day<1?state.day.toFixed(2):state.day.toFixed(1));
-    // dilution + width readouts (nearest sample)
-    const di=Math.max(0,Math.min(D.days.length-1,bisect(D.days,state.day)));
-    document.getElementById("dil").textContent="×"+Math.round(D.series.V[di]).toLocaleString();
+    $("clock").textContent=fmtClock(state.day);
+    let cap=D.captions[0]; for(const c of D.captions) if(c.day<=state.day) cap=c;
+    if($("cap-txt").innerHTML!==cap.html) $("cap-txt").innerHTML=cap.html;
+    $("cap-tick").textContent="day "+(state.day<1?state.day.toFixed(2):state.day.toFixed(1));
+    const di=clamp(bisect(D.days,state.day),0,D.days.length-1);
+    $("dil").textContent="×"+Math.round(D.series.V[di]).toLocaleString();
     const w=D.series.side_m[di];
-    document.getElementById("width").textContent=w>=1000?(w/1000).toFixed(1)+" km":Math.round(w)+" m";
-    document.getElementById("note").innerHTML=
-      `plume width &times;${Math.round(GlobeView.exaggeration)} exaggerated · length to scale<br>`+
+    $("width").textContent=w>=1000?(w/1000).toFixed(1)+" km":Math.round(w)+" m";
+    $("note").innerHTML=`plume width &times;${Math.round(GlobeView.exaggeration)} exaggerated · length to scale<br>`+
       `drift &amp; shear: illustrative June climatology — not model output`;
-    api.simDay=state.day; api.subsolarLon=subsolar(state.day).lon;
-    api.camLon=state.camLon; api.endLon=wrap180(fil.lonc); api.Lkm=fil.Lkm;
-    api.filamentKm=2*fil.Lkm;
+    if(!opts.fromScrub){ const sc=$("scrub"); const v=simToAnim(state.day)*1000; sc.value=v;
+      sc.style.setProperty("--f",(v/10).toFixed(1)+"%"); }
+    api.simDay=state.day; api.subsolarLon=subsolar(state.day).lon; api.camLon=state.camLon;
+    api.endLon=wrap180(fil.lonc); api.Lkm=fil.Lkm; api.filamentKm=2*fil.Lkm;
   }
   window.__setDay=setSimDay;
   api.sample=(name,day)=>Charts.sample(name,day===undefined?state.day:day);
 
-  // hash: #t=<day>&paused=1
-  function parseHash(){
-    const h={}; location.hash.replace(/^#/,"").split("&").forEach(kv=>{
-      const [k,val]=kv.split("="); if(k) h[k]=val; });
-    return h;
+  // ---- player (rAF): playback + camera easing -------------------------------------------------
+  const player={ playing:false, speed:1, a01:0 };
+  let rafId=null, lastT=null;
+  function ensureRAF(){ if(rafId==null){ lastT=null; rafId=requestAnimationFrame(frame); } }
+  function easeCam(dt){
+    let dl=state.targetLon-state.camLon; while(dl<=-180)dl+=360; while(dl>180)dl-=360;
+    if(Math.abs(dl)<0.03){ state.camLon=state.targetLon; return false; }
+    state.camLon=wrap180(state.camLon+dl*(1-Math.exp(-dt/0.6))); return true;
+  }
+  function frame(ts){
+    const dt=lastT==null?0:Math.min(0.05,(ts-lastT)/1000); lastT=ts;
+    let moving=false;
+    if(player.playing){
+      player.a01=clamp(player.a01+dt*player.speed/STORY_DUR,0,1);
+      easeCam(dt);
+      setSimDay(animToSim(player.a01));
+      if(player.a01>=1){ setPlaying(false); }
+      moving=true;
+    } else if(easeCam(dt)){ GlobeView.render(state); api.camLon=state.camLon; moving=true; }
+    // reschedule from within the loop so lastT persists (do NOT route through ensureRAF here)
+    if(moving||player.playing){ rafId=requestAnimationFrame(frame); } else { rafId=null; lastT=null; }
+  }
+  function setPlaying(p){
+    player.playing=p;
+    if(p && player.a01>=1) player.a01=0;                        // replay from start
+    $("play").textContent=p?"❚❚":"▶"; $("play").setAttribute("aria-label",p?"Pause":"Play");
+    if(p) ensureRAF();
+    api.playing=p;
   }
 
-  function boot(){
-    document.getElementById("loading").hidden=true;
-    document.getElementById("stage").hidden=false;
-    GlobeView.resize(); AltView.resize(); Charts.resize();
-    const h=parseHash();
-    setSimDay(h.t!==undefined ? parseFloat(h.t) : 0);
-    api.ready=true;
-    api.meta=META;
-    api.legend=document.querySelector(".legend").innerText;
+  // ---- controls -------------------------------------------------------------------------------
+  function buildTrack(){
+    const ticks=$("ticks"), ph=$("phases");
+    [[0,"0"],[0.25,"¼"],[0.5,"½"],[1,"1"],[2,"2"],[3,"3"],[5,"5"],[10,"10d"]].forEach(([d,l])=>{
+      const s=document.createElement("span"); s.style.left=(simToAnim(d)*100).toFixed(2)+"%"; s.textContent=l; ticks.appendChild(s); });
+    D.captions.forEach(c=>{ const i=document.createElement("i");
+      i.style.left=(simToAnim(c.day)*100).toFixed(2)+"%"; i.title=c.html.replace(/<[^>]+>/g,"");
+      ph.appendChild(i); });
   }
-  window.addEventListener("resize", ()=>{ GlobeView.resize(); AltView.resize(); Charts.resize(); setSimDay(state.day,{keepCam:true}); });
+  function wireControls(){
+    $("play").addEventListener("click",()=>setPlaying(!player.playing));
+    const sc=$("scrub");
+    sc.addEventListener("input",()=>{ setPlaying(false); player.a01=sc.value/1000;
+      sc.style.setProperty("--f",(sc.value/10).toFixed(1)+"%");
+      setSimDay(animToSim(player.a01),{fromScrub:true}); ensureRAF(); });
+    $("speed").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return;
+      player.speed=parseFloat(b.dataset.s);
+      [...$("speed").children].forEach(x=>x.classList.toggle("on",x===b)); });
+    // charts drag-scrub already call __setDay; make them also pause + ease
+    document.addEventListener("keydown",e=>{
+      if(e.key===" "){ e.preventDefault(); setPlaying(!player.playing); }
+      else if(e.key==="ArrowRight"){ e.preventDefault(); setPlaying(false); nudge(e.shiftKey?0.05:0.012); }
+      else if(e.key==="ArrowLeft"){ e.preventDefault(); setPlaying(false); nudge(e.shiftKey?-0.05:-0.012); }
+      else if(e.key==="Home"){ e.preventDefault(); setPlaying(false); player.a01=0; setSimDay(0,{snapCam:true}); }
+      else if(e.key==="End"){ e.preventDefault(); setPlaying(false); player.a01=1; setSimDay(DAYT,{snapCam:true}); }
+    });
+    function nudge(da){ player.a01=clamp(player.a01+da,0,1); setSimDay(animToSim(player.a01)); ensureRAF(); }
+  }
+  // charts scrub should pause playback + trigger camera ease
+  const origSet=window.__setDay;
+  window.__setDay=(d)=>{ setPlaying(false); origSet(d,{fromScrub:false}); ensureRAF(); };
+
+  // hash: #t=<day>&paused=1&bench=1
+  function parseHash(){ const h={}; location.hash.replace(/^#/,"").split("&").forEach(kv=>{
+    const [k,v]=kv.split("="); if(k) h[k]=v===undefined?"1":v; }); return h; }
+
+  function boot(){
+    $("loading").hidden=true; $("stage").hidden=false;
+    GlobeView.resize(); AltView.resize(); Charts.resize();
+    buildTrack(); wireControls();
+    const h=parseHash();
+    const reduce=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const startDay=h.t!==undefined?parseFloat(h.t):0;
+    player.a01=simToAnim(startDay);
+    setSimDay(startDay,{snapCam:true});
+    api.ready=true; api.meta=META; api.legend=document.querySelector(".legend").innerText;
+    api.playing=false;
+    if(h.paused===undefined && !reduce) setPlaying(true);       // autoplay unless paused/reduced-motion
+  }
+  window.addEventListener("resize", ()=>{ GlobeView.resize(); AltView.resize(); Charts.resize();
+    setSimDay(state.day,{snapCam:true}); });
   boot();
 })();
 </script>
