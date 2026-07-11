@@ -512,6 +512,173 @@
     return {resize, render};
   })();
 
+  // ================= §D  interpolation helpers ==================================================
+  function bracket(day){
+    const days=D.days, i=Math.max(1,Math.min(days.length-1,bisect(days,day)));
+    const f=(day-days[i-1])/(days[i]-days[i-1]||1);
+    return {i, f:Math.max(0,Math.min(1,f))};
+  }
+  function lerpSeries(name, day){ const {i,f}=bracket(day), a=D.series[name];
+    return a[i-1]*(1-f)+a[i]*f; }
+  function lerpLog(name, day){ const {i,f}=bracket(day), a=D.series[name];
+    const v0=Math.max(1e-30,a[i-1]), v1=Math.max(1e-30,a[i]);
+    return Math.pow(10, Math.log10(v0)*(1-f)+Math.log10(v1)*f); }
+  function distAt(day){
+    const {i,f}=bracket(day), g=1-f, nb=D.dist.nbin, q=D.dist.q, out=new Float64Array(nb);
+    for(let b=0;b<nb;b++){
+      const q0=q[(i-1)*nb+b], q1=q[i*nb+b];
+      if(q0<=-30000 && q1<=-30000){ out[b]=0; continue; }
+      const v0=q0<=-30000?-3000:q0, v1=q1<=-30000?-3000:q1;
+      out[b]=Math.pow(10,(g*v0+f*v1)/100);
+    }
+    return out;
+  }
+
+  // ================= §G  microphysics charts ====================================================
+  function makeCanvas(id){
+    const cv=document.getElementById(id), ctx=cv.getContext("2d");
+    const o={cv,ctx,W:0,H:0,dpr:1};
+    o.resize=function(){
+      o.dpr=Math.max(1,Math.min(3,window.devicePixelRatio||1));
+      const r=cv.getBoundingClientRect(); o.W=Math.max(120,r.width); o.H=Math.max(80,r.height);
+      cv.width=Math.round(o.W*o.dpr); cv.height=Math.round(o.H*o.dpr);
+      ctx.setTransform(o.dpr,0,0,o.dpr,0,0);
+    };
+    return o;
+  }
+  const L10=Math.log10, C_GRID="rgba(120,140,180,0.13)", C_AX="rgba(150,165,195,0.7)",
+        C_GAS="#f0a81e", C_PART="#3a86e0", C_PARTLINE="#6fb0f2", C_MUT="rgba(150,165,195,0.6)",
+        NIGHT_BAND="rgba(70,92,130,0.16)";
+  const MONO="10px ui-monospace,Menlo,monospace";
+
+  const Charts=(function(){
+    const dist=makeCanvas("dist"), budget=makeCanvas("budget"), count=makeCanvas("count");
+    const dpUM=D.dist.dp_um, nbin=D.dist.nbin;
+    const DAYT=META.days_total;
+    const bg0=distAt(0);                                          // background size distribution
+    const nMax=Math.max(...D.series.total_n), so2_0=D.series.so2_t[0];
+    const budgetMax=so2_0*1.22;
+
+    function nightBands(o, X, padT, plotH){
+      o.ctx.fillStyle=NIGHT_BAND;
+      for(const [n0,n1] of D.nights) o.ctx.fillRect(X(n0),padT,X(n1)-X(n0),plotH);
+    }
+
+    // ---- size distribution (log-log) ----------------------------------------------------------
+    function drawDist(day){
+      const o=dist, ctx=o.ctx, padL=40,padR=12,padT=8,padB=20;
+      const xmin=1.5e-3, xmax=20, ymin=1e-2, ymax=3e8;
+      const plotW=o.W-padL-padR, plotH=o.H-padT-padB;
+      const X=d=>padL+(L10(d)-L10(xmin))/(L10(xmax)-L10(xmin))*plotW;
+      const Y=v=>padT+(1-(L10(Math.max(v,ymin))-L10(ymin))/(L10(ymax)-L10(ymin)))*plotH;
+      ctx.clearRect(0,0,o.W,o.H);
+      // grid + ticks
+      ctx.strokeStyle=C_GRID; ctx.lineWidth=1; ctx.font=MONO; ctx.fillStyle=C_AX;
+      ctx.textAlign="center"; ctx.textBaseline="top";
+      const xt=[[2e-3,"2nm"],[1e-2,"10nm"],[0.1,"0.1µm"],[1,"1µm"],[10,"10µm"]];
+      for(const [v,l] of xt){ const x=X(v); ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,padT+plotH); ctx.stroke();
+        ctx.fillText(l,x,padT+plotH+4); }
+      ctx.textAlign="right"; ctx.textBaseline="middle";
+      const yt=[[1,"1"],[1e2,"10²"],[1e4,"10⁴"],[1e6,"10⁶"],[1e8,"10⁸"]];
+      for(const [v,l] of yt){ const y=Y(v); ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(padL+plotW,y); ctx.stroke();
+        ctx.fillText(l,padL-4,y); }
+      const curve=(arr,stroke,width,dash)=>{
+        ctx.beginPath(); let pen=false;
+        for(let b=0;b<nbin;b++){ const v=arr[b]; if(v<=ymin){pen=false;continue;}
+          const x=X(dpUM[b]),y=Y(v); if(pen)ctx.lineTo(x,y);else{ctx.moveTo(x,y);pen=true;} }
+        ctx.strokeStyle=stroke; ctx.lineWidth=width; ctx.setLineDash(dash||[]); ctx.lineJoin="round"; ctx.stroke();
+        ctx.setLineDash([]);
+      };
+      curve(bg0,"rgba(150,160,180,0.5)",1.2,[4,3]);               // background (dashed)
+      // fading trails at earlier fractions of the current day
+      [0.45,0.6,0.72,0.83,0.92].forEach((fr,k)=>{ if(day*fr>0.002)
+        curve(distAt(day*fr),"rgba(58,134,224,"+(0.06+0.05*k).toFixed(2)+")",1.1); });
+      curve(distAt(day),C_PARTLINE,2.2);                          // current (bold)
+      // phase label
+      ctx.textAlign="left"; ctx.textBaseline="top"; ctx.fillStyle=C_PARTLINE; ctx.font="11px "+ "ui-monospace,Menlo,monospace";
+      let ph=""; if(day<0.04)ph=""; else if(day<0.6)ph="nucleation burst → nm particles";
+      else if(day<8)ph="growth + coagulation → shifts right"; else ph="single 0.1–0.2 µm sulfate mode";
+      ctx.fillText(ph,padL+4,padT+2);
+    }
+
+    // ---- sulfur budget (stacked area) ---------------------------------------------------------
+    function drawBudget(day){
+      const o=budget, ctx=o.ctx, padL=34,padR=10,padT=8,padB=18;
+      const plotW=o.W-padL-padR, plotH=o.H-padT-padB;
+      const X=d=>padL+d/DAYT*plotW, Y=t=>padT+(1-t/budgetMax)*plotH;
+      ctx.clearRect(0,0,o.W,o.H);
+      nightBands(o,X,padT,plotH);
+      const days=D.days, so2=D.series.so2_t, su=D.series.sulf_t;
+      const area=(top,bot,fill)=>{ ctx.beginPath(); ctx.moveTo(X(days[0]),Y(bot(0)));
+        for(let i=0;i<days.length;i++)ctx.lineTo(X(days[i]),Y(top(i)));
+        for(let i=days.length-1;i>=0;i--)ctx.lineTo(X(days[i]),Y(bot(i)));
+        ctx.closePath(); ctx.fillStyle=fill; ctx.fill(); };
+      area(i=>so2[i], i=>0, "rgba(240,168,30,0.55)");
+      area(i=>so2[i]+su[i], i=>so2[i], "rgba(58,134,224,0.6)");
+      // axes
+      ctx.font=MONO; ctx.fillStyle=C_AX; ctx.textAlign="right"; ctx.textBaseline="middle";
+      for(const t of [0,0.5,1,1.5,2]){ const y=Y(t); ctx.fillText(t.toFixed(1),padL-4,y);
+        ctx.strokeStyle=C_GRID; ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(padL+plotW,y); ctx.stroke(); }
+      ctx.textAlign="center"; ctx.textBaseline="top";
+      for(const d of [0,2,4,6,8,10]) ctx.fillText(d+"",X(d),padT+plotH+3);
+      // labels
+      ctx.textAlign="center"; ctx.fillStyle="rgba(120,84,10,0.95)"; ctx.font="10px ui-monospace,Menlo,monospace";
+      ctx.fillText("still SO₂ gas",X(5),Y(so2_0*0.4));
+      ctx.fillStyle="rgba(150,190,240,0.95)"; ctx.fillText("became particles",X(7.6),Y(so2_0*1.06));
+      cursor(o,X(day),padT,plotH);
+    }
+
+    // ---- particle number (log) ----------------------------------------------------------------
+    function drawCount(day){
+      const o=count, ctx=o.ctx, padL=40,padR=10,padT=10,padB=18;
+      const plotW=o.W-padL-padR, plotH=o.H-padT-padB, ymin=0.8, ymax=3e7;
+      const X=d=>padL+d/DAYT*plotW, Y=v=>padT+(1-(L10(Math.max(v,ymin))-L10(ymin))/(L10(ymax)-L10(ymin)))*plotH;
+      ctx.clearRect(0,0,o.W,o.H);
+      nightBands(o,X,padT,plotH);
+      ctx.strokeStyle=C_GRID; ctx.font=MONO; ctx.fillStyle=C_AX; ctx.textAlign="right"; ctx.textBaseline="middle";
+      for(const [v,l] of [[1,"1"],[1e2,"10²"],[1e4,"10⁴"],[1e6,"10⁶"]]){ const y=Y(v);
+        ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(padL+plotW,y); ctx.stroke(); ctx.fillText(l,padL-4,y); }
+      ctx.textAlign="center"; ctx.textBaseline="top";
+      for(const d of [0,2,4,6,8,10]) ctx.fillText(d+"",X(d),padT+plotH+3);
+      // background level (dotted)
+      ctx.setLineDash([2,3]); ctx.strokeStyle="rgba(150,160,180,0.55)"; ctx.beginPath();
+      ctx.moveTo(padL,Y(D.series.total_n[0])); ctx.lineTo(padL+plotW,Y(D.series.total_n[0])); ctx.stroke(); ctx.setLineDash([]);
+      // curve
+      const tn=D.series.total_n, days=D.days;
+      ctx.beginPath(); for(let i=0;i<days.length;i++){ const x=X(days[i]),y=Y(tn[i]); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+      ctx.strokeStyle=C_PARTLINE; ctx.lineWidth=1.8; ctx.lineJoin="round"; ctx.stroke();
+      // peak annotation
+      let pk=0,pi=0; for(let i=0;i<tn.length;i++) if(tn[i]>pk){pk=tn[i];pi=i;}
+      ctx.fillStyle="rgba(150,190,240,0.95)"; ctx.textAlign="left"; ctx.font="10px ui-monospace,Menlo,monospace";
+      ctx.fillText("peak "+(pk/1e6).toFixed(1)+"M",X(days[pi])+6,Y(pk)+2);
+      cursor(o,X(day),padT,plotH);
+      // moving dot
+      const v=lerpLog("total_n",day); ctx.fillStyle=C_PARTLINE;
+      ctx.beginPath(); ctx.arc(X(day),Y(v),3.5,0,2*Math.PI); ctx.fill();
+    }
+
+    function cursor(o,x,padT,plotH){ o.ctx.strokeStyle="rgba(240,240,250,0.5)"; o.ctx.lineWidth=1;
+      o.ctx.beginPath(); o.ctx.moveTo(x,padT); o.ctx.lineTo(x,padT+plotH); o.ctx.stroke(); }
+
+    // drag-to-scrub on the time-axis charts
+    function wireScrub(o){
+      const toDay=ev=>{ const r=o.cv.getBoundingClientRect(), padL=36, padR=10;
+        const fx=(ev.clientX-r.left-padL)/(r.width-padL-padR); return Math.max(0,Math.min(1,fx))*DAYT; };
+      let drag=false;
+      o.cv.addEventListener("pointerdown",e=>{drag=true;o.cv.setPointerCapture(e.pointerId);window.__setDay&&__setDay(toDay(e));});
+      o.cv.addEventListener("pointermove",e=>{ if(drag)window.__setDay&&__setDay(toDay(e)); });
+      o.cv.addEventListener("pointerup",()=>drag=false);
+      o.cv.style.cursor="ew-resize";
+    }
+
+    function resize(){ dist.resize(); budget.resize(); count.resize(); }
+    function render(day){ drawDist(day); drawBudget(day); drawCount(day); }
+    wireScrub(budget); wireScrub(count);
+    return {resize, render,
+      sample:(name,day)=>name==="total_n"?lerpLog(name,day):lerpSeries(name,day),
+      distAt};
+  })();
+
   // ================= §H  state fan-out (M1: static from hash) ===================================
   const state = { day:0, camLon:META.lon0, filament:null };
 
@@ -535,6 +702,7 @@
     if(!opts||!opts.keepCam) state.camLon=wrap180(fil.lonc);
     GlobeView.render(state);
     AltView.render(state);
+    Charts.render(state.day);
     document.getElementById("clock").textContent=fmtClock(state.day);
     // caption (last entry with day<=now)
     let cap=D.captions[0];
@@ -553,6 +721,8 @@
     api.camLon=state.camLon; api.endLon=wrap180(fil.lonc); api.Lkm=fil.Lkm;
     api.filamentKm=2*fil.Lkm;
   }
+  window.__setDay=setSimDay;
+  api.sample=(name,day)=>Charts.sample(name,day===undefined?state.day:day);
 
   // hash: #t=<day>&paused=1
   function parseHash(){
@@ -564,14 +734,14 @@
   function boot(){
     document.getElementById("loading").hidden=true;
     document.getElementById("stage").hidden=false;
-    GlobeView.resize(); AltView.resize();
+    GlobeView.resize(); AltView.resize(); Charts.resize();
     const h=parseHash();
     setSimDay(h.t!==undefined ? parseFloat(h.t) : 0);
     api.ready=true;
     api.meta=META;
     api.legend=document.querySelector(".legend").innerText;
   }
-  window.addEventListener("resize", ()=>{ GlobeView.resize(); AltView.resize(); setSimDay(state.day,{keepCam:true}); });
+  window.addEventListener("resize", ()=>{ GlobeView.resize(); AltView.resize(); Charts.resize(); setSimDay(state.day,{keepCam:true}); });
   boot();
 })();
 </script>
