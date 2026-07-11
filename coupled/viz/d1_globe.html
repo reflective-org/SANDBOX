@@ -31,11 +31,10 @@
   header .sub{color:var(--muted);font-size:13.5px}
   #loading{padding:48px 4px;color:var(--muted);font-size:14px;font-family:var(--mono)}
 
-  .grid{display:grid;grid-template-columns:1.32fr 1fr;grid-template-rows:auto auto;
-    gap:14px;align-items:stretch}
+  .grid{display:grid;grid-template-columns:1.32fr 1fr;gap:14px;align-items:stretch}
   .card{background:linear-gradient(180deg,var(--panel) 0%,var(--bg2) 100%);
     border:1px solid var(--panel-edge);border-radius:14px;position:relative;overflow:hidden}
-  .globe-card{grid-row:1 / span 2;min-height:560px;padding:0}
+  .globe-card{min-height:620px;padding:0}
   #globe{display:block;width:100%;height:100%}
   .rightcol{display:flex;flex-direction:column;gap:14px;min-height:0}
   .chartcard{flex:1;min-height:150px;padding:12px 14px 10px;display:flex;flex-direction:column}
@@ -200,6 +199,59 @@
   const COAST = buildLines(decodeCoast());
   const GRAT  = buildLines(graticule());
 
+  // ================= §C  wind / plume (illustrative transport — NOT model output) ===============
+  const R_EARTH_KM = 6371.0;
+  function interpTab(x, xs, ys){
+    if(x<=xs[0]) return ys[0];
+    if(x>=xs[xs.length-1]) return ys[ys.length-1];
+    let i=1; while(xs[i]<x) i++;
+    const f=(x-xs[i-1])/(xs[i]-xs[i-1]); return ys[i-1]+f*(ys[i]-ys[i-1]);
+  }
+  const AB=x=>Math.abs(x);
+  const windU=lat=>interpTab(AB(lat), D.wind.lat, D.wind.u_ms);   // m/s (negative = westward)
+  const windV=lat=>interpTab(AB(lat), D.wind.lat, D.wind.v_ms);
+  const SHEAR = D.wind.shear_ms_per_km;                          // m/s per km of depth
+
+  // integrate the centroid path + cumulative half-length L(t) on the kept-days grid (once)
+  const PATH = (function(){
+    const days=D.days, n=days.length, lat=new Float64Array(n), lon=new Float64Array(n),
+          Lkm=new Float64Array(n), hkm=new Float64Array(n);
+    lat[0]=META.lat0; lon[0]=META.lon0;
+    hkm[0]=Math.min(D.series.side_m[0], 1000)/1000;              // layer depth proxy (documented)
+    Lkm[0]=0;
+    for(let i=1;i<n;i++){
+      const dt=(days[i]-days[i-1])*86400;                        // s
+      const u=windU(lat[i-1]), v=windV(lat[i-1]);
+      lon[i]=lon[i-1] + u*dt/(111320*Math.cos(lat[i-1]*DEG));    // deg (unwrapped)
+      lat[i]=lat[i-1] + v*dt/111320;
+      hkm[i]=Math.min(D.series.side_m[i], 1000)/1000;
+      const du=SHEAR*0.5*(hkm[i]+hkm[i-1]);                      // m/s velocity spread across layer
+      Lkm[i]=Lkm[i-1] + 0.5*du*dt/1000;                          // half-length grows at ½·Δu
+    }
+    return {lat,lon,Lkm,hkm};
+  })();
+
+  function filament(day){
+    const days=D.days, i=Math.max(1,Math.min(days.length-1,bisect(days,day)));
+    const f=(day-days[i-1])/(days[i]-days[i-1]||1), g=1-f;
+    const latc=PATH.lat[i-1]*g+PATH.lat[i]*f, lonc=PATH.lon[i-1]*g+PATH.lon[i]*f;
+    const Lkm=PATH.Lkm[i-1]*g+PATH.Lkm[i]*f, hkm=PATH.hkm[i-1]*g+PATH.hkm[i]*f;
+    const side=D.series.side_m[i-1]*g+D.series.side_m[i]*f;      // cross-section (m)
+    const so2=D.series.so2_ppt[i-1]*g+D.series.so2_ppt[i]*f;
+    const bmax=Math.log10(D.series.so2_ppt[0]/META.so2_bg_ppt);
+    const bref=Math.max(0, Math.log10(Math.max(so2,META.so2_bg_ppt)/META.so2_bg_ppt))/bmax;
+    const N=33, pts=[], w=[], br=[];
+    const dlonPerKm=1/(111.32*Math.cos(latc*DEG)), dlatPerKm=1/111.32;
+    for(let k=0;k<N;k++){
+      const s=-1+2*k/(N-1), taper=Math.sqrt(Math.max(0,1-s*s));
+      pts.push([latc + s*15*dlatPerKm,                          // meridional half-track 15 km
+                lonc + s*Lkm*dlonPerKm]);                        // zonal shear stretch ±L
+      w.push(side*taper);                                        // metres (exaggerated at draw)
+      br.push(bref*(0.35+0.65*taper));
+    }
+    return {pts,w,br,Lkm,hkm,latc,lonc,side};
+  }
+
   // ================= §E  globe view =============================================================
   const CAM_LAT = 26;                                            // fixed camera latitude (deg N)
   const GlobeView = (function(){
@@ -305,10 +357,69 @@
       ctx.fillStyle="rgba(255,244,210,0.95)"; ctx.beginPath(); ctx.arc(px,py,4.5,0,2*Math.PI); ctx.fill();
     }
 
+    // project a (lat,lon) to screen for the current camera; {x,y,vis}
+    let _cam={sf0:0,cf0:1,sl0:0,cl0:1};
+    function project(latDeg, lonDeg){
+      const φ=latDeg*DEG, λ=lonDeg*DEG, cf=Math.cos(φ), sf=Math.sin(φ),
+            sl=Math.sin(λ), cl=Math.cos(λ);
+      const cosdl=cl*_cam.cl0+sl*_cam.sl0, sindl=sl*_cam.cl0-cl*_cam.sl0;
+      const cosc=_cam.sf0*sf+_cam.cf0*cf*cosdl;
+      return {x:cx+R*cf*sindl, y:cy-R*(_cam.cf0*sf-_cam.sf0*cf*cosdl), vis:cosc>0};
+    }
+
+    function plumeExaggeration(){ return 8*R_EARTH_KM/(1.207*R); }   // final width ≈ 8 px
+
+    function drawPlume(fil){
+      if(!fil) return;
+      const E=plumeExaggeration(), kmPx=R/R_EARTH_KM;
+      const P=fil.pts.map(p=>project(p[0],p[1]));
+      // per-point screen normal (perp to centerline tangent) and half-width in px
+      const nx=[],ny=[],hw=[];
+      for(let i=0;i<P.length;i++){
+        const a=P[Math.max(0,i-1)], b=P[Math.min(P.length-1,i+1)];
+        let tx=b.x-a.x, ty=b.y-a.y; const L=Math.hypot(tx,ty)||1; tx/=L; ty/=L;
+        nx.push(-ty); ny.push(tx);
+        hw.push(Math.max(0.6, fil.w[i]/1000*kmPx*E/2));
+      }
+      const injMarkVisible = P.some(p=>p.vis);
+      if(!injMarkVisible) return;
+      ctx.save();
+      ctx.globalCompositeOperation="lighter";
+      const passes=[[3.2,0.07],[1.8,0.15],[1.0,0.5]];
+      for(const [wm,am] of passes){
+        for(let i=0;i<P.length-1;i++){
+          if(!P[i].vis||!P[i+1].vis) continue;
+          const b=Math.max(fil.br[i],fil.br[i+1]); if(b<=0.001) continue;
+          const w0=hw[i]*wm, w1=hw[i+1]*wm;
+          ctx.beginPath();
+          ctx.moveTo(P[i].x+nx[i]*w0,   P[i].y+ny[i]*w0);
+          ctx.lineTo(P[i+1].x+nx[i+1]*w1, P[i+1].y+ny[i+1]*w1);
+          ctx.lineTo(P[i+1].x-nx[i+1]*w1, P[i+1].y-ny[i+1]*w1);
+          ctx.lineTo(P[i].x-nx[i]*w0,   P[i].y-ny[i]*w0);
+          ctx.closePath();
+          ctx.fillStyle="rgba(255,196,74,"+(am*b).toFixed(3)+")";
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+
+    function drawInjection(){
+      const p=project(META.lat0, META.lon0);
+      if(!p.vis) return;
+      ctx.beginPath(); ctx.arc(p.x,p.y,5,0,2*Math.PI);
+      ctx.strokeStyle="rgba(255,236,170,0.9)"; ctx.lineWidth=1.4; ctx.stroke();
+      ctx.beginPath(); ctx.arc(p.x,p.y,1.6,0,2*Math.PI);
+      ctx.fillStyle="rgba(255,236,170,0.95)"; ctx.fill();
+      ctx.font="10px ui-monospace,Menlo,monospace"; ctx.fillStyle="rgba(230,238,250,0.72)";
+      ctx.textAlign="left"; ctx.fillText("injection", p.x+9, p.y+3);
+    }
+
     function render(state){
       const camLon=state.camLon, day=state.day;
       const λ0=camLon*DEG, φ0=CAM_LAT*DEG;
       const sf0=Math.sin(φ0),cf0=Math.cos(φ0),sl0=Math.sin(λ0),cl0=Math.cos(λ0);
+      _cam={sf0,cf0,sl0,cl0};
       ctx.clearRect(0,0,W,H);
       // globe body
       const g=ctx.createRadialGradient(cx-R*0.25,cy-R*0.3,R*0.15, cx,cy,R);
@@ -322,6 +433,9 @@
       // night + sun
       drawNight(day, camLon);
       drawSun(day, camLon);
+      // plume filament + injection point
+      drawInjection();
+      drawPlume(state.filament);
       // rim
       ctx.beginPath(); ctx.arc(cx,cy,R,0,2*Math.PI);
       ctx.strokeStyle="rgba(150,180,225,0.28)"; ctx.lineWidth=1.2; ctx.stroke();
@@ -330,11 +444,76 @@
       h.addColorStop(0,"rgba(95,156,238,0.16)"); h.addColorStop(1,"rgba(95,156,238,0)");
       ctx.beginPath(); ctx.arc(cx,cy,R*1.08,0,2*Math.PI); ctx.fillStyle=h; ctx.fill();
     }
-    return { resize, render, get R(){return R;} };
+    return { resize, render, get R(){return R;}, get exaggeration(){return plumeExaggeration();} };
+  })();
+
+  // ================= §F  altitude side-view inset ===============================================
+  const AltView = (function(){
+    const cv=document.getElementById("alt"), ctx=cv.getContext("2d");
+    let W=0,H=0,dpr=1,bg=null;
+    const ZMAX=30;
+    function resize(){
+      dpr=Math.max(1,Math.min(3,window.devicePixelRatio||1));
+      const r=cv.getBoundingClientRect(); W=Math.max(120,r.width); H=Math.max(90,r.height);
+      cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr); ctx.setTransform(dpr,0,0,dpr,0,0);
+      bg=null;
+    }
+    const padL=30, padB=16, padT=20, padR=10;
+    const zY=z=>padT+(1-z/ZMAX)*(H-padT-padB);
+    function buildBg(){
+      // vertical density shading from USSA log10(n): denser air = lighter
+      const u=D.ussa, lo=Math.min(...u.log10_n), hi=Math.max(...u.log10_n.slice(0,ZMAX+1));
+      bg=ctx.createLinearGradient(0,zY(ZMAX),0,zY(0));
+      for(let z=0;z<=ZMAX;z++){
+        const f=(u.log10_n[z]-lo)/(hi-lo);
+        bg.addColorStop(z/ZMAX, `rgba(${40+f*30|0},${58+f*40|0},${90+f*50|0},${0.25+f*0.35})`);
+      }
+    }
+    function render(state){
+      if(!bg) buildBg();
+      ctx.clearRect(0,0,W,H);
+      const x0=padL, x1=W-padR, xc=(x0+x1)/2;
+      // plot area bg
+      ctx.fillStyle=bg; ctx.fillRect(x0,padT,x1-x0,H-padT-padB);
+      // tropopause band ~11–16 km
+      ctx.fillStyle="rgba(120,150,200,0.10)"; ctx.fillRect(x0,zY(16),x1-x0,zY(11)-zY(16));
+      // y ticks
+      ctx.font="9px ui-monospace,Menlo,monospace"; ctx.fillStyle="rgba(150,165,195,0.7)";
+      ctx.textAlign="right"; ctx.textBaseline="middle";
+      for(const z of [0,10,20]){ ctx.fillText(z+(z===20?" km":""), x0-4, zY(z));
+        ctx.strokeStyle="rgba(120,140,180,0.12)"; ctx.beginPath(); ctx.moveTo(x0,zY(z)); ctx.lineTo(x1,zY(z)); ctx.stroke(); }
+      // injection level 20 km
+      ctx.strokeStyle="rgba(240,168,30,0.55)"; ctx.setLineDash([4,3]);
+      ctx.beginPath(); ctx.moveTo(x0,zY(20)); ctx.lineTo(x1,zY(20)); ctx.stroke(); ctx.setLineDash([]);
+      // plume: sheared parallelogram. width across = along-wind length 2L (scaled to panel), depth=h.
+      const fil=state.filament; if(fil){
+        const halfW=(x1-x0)*0.42;
+        const Ldisp = fil.Lkm>0 ? halfW*Math.min(1, fil.Lkm/ (PATH.Lkm[PATH.Lkm.length-1]||1)) : 2;
+        const VE=6;                                            // vertical exaggeration for the depth
+        const hpx=Math.max(2, fil.hkm*VE*(H-padT-padB)/ZMAX);
+        const yc=zY(20), tilt=Ldisp*0.9;                       // top edge advected ahead (shear)
+        ctx.beginPath();
+        ctx.moveTo(xc-Ldisp-tilt, yc-hpx/2);
+        ctx.lineTo(xc+Ldisp-tilt, yc-hpx/2);
+        ctx.lineTo(xc+Ldisp+tilt, yc+hpx/2);
+        ctx.lineTo(xc-Ldisp+tilt, yc+hpx/2);
+        ctx.closePath();
+        const grad=ctx.createLinearGradient(xc-Ldisp,0,xc+Ldisp,0);
+        grad.addColorStop(0,"rgba(255,196,74,0.12)"); grad.addColorStop(.5,"rgba(255,196,74,0.5)");
+        grad.addColorStop(1,"rgba(255,196,74,0.12)");
+        ctx.fillStyle=grad; ctx.fill();
+        // readout
+        ctx.fillStyle="rgba(230,238,250,0.85)"; ctx.textAlign="center"; ctx.font="9.5px ui-monospace,Menlo,monospace";
+        const lenkm=2*fil.Lkm;
+        ctx.fillText(`${lenkm>=1000?(lenkm/1000).toFixed(1)+"k":Math.round(lenkm)} km long · ${(fil.hkm*1000|0)} m deep`,
+                     xc, H-4);
+      }
+    }
+    return {resize, render};
   })();
 
   // ================= §H  state fan-out (M1: static from hash) ===================================
-  const state = { day:0, camLon:META.lon0 };
+  const state = { day:0, camLon:META.lon0, filament:null };
 
   function fmtClock(day){
     const utc=(META.start_utc_hour+day*24)%24;
@@ -346,22 +525,33 @@
   }
   function bisect(arr, x){ let lo=0,hi=arr.length-1; while(lo<hi){const m=(lo+hi)>>1; if(arr[m]<x)lo=m+1; else hi=m;} return lo; }
 
-  function setSimDay(day){
+  function wrap180(lon){ let x=((lon+180)%360+360)%360-180; return x; }
+
+  function setSimDay(day, opts){
     state.day=Math.max(0, Math.min(META.days_total, day));
+    const fil=filament(state.day);
+    state.filament=fil;
+    // camera follows the drifting centroid longitude (M4 eases this; here it snaps)
+    if(!opts||!opts.keepCam) state.camLon=wrap180(fil.lonc);
     GlobeView.render(state);
+    AltView.render(state);
     document.getElementById("clock").textContent=fmtClock(state.day);
     // caption (last entry with day<=now)
     let cap=D.captions[0];
     for(const c of D.captions) if(c.day<=state.day) cap=c;
     document.getElementById("cap-txt").innerHTML=cap.html;
     document.getElementById("cap-tick").textContent="day "+(state.day<1?state.day.toFixed(2):state.day.toFixed(1));
-    // dilution readout (nearest sample)
+    // dilution + width readouts (nearest sample)
     const di=Math.max(0,Math.min(D.days.length-1,bisect(D.days,state.day)));
     document.getElementById("dil").textContent="×"+Math.round(D.series.V[di]).toLocaleString();
     const w=D.series.side_m[di];
     document.getElementById("width").textContent=w>=1000?(w/1000).toFixed(1)+" km":Math.round(w)+" m";
+    document.getElementById("note").innerHTML=
+      `plume width &times;${Math.round(GlobeView.exaggeration)} exaggerated · length to scale<br>`+
+      `drift &amp; shear: illustrative June climatology — not model output`;
     api.simDay=state.day; api.subsolarLon=subsolar(state.day).lon;
-    api.camLon=state.camLon;
+    api.camLon=state.camLon; api.endLon=wrap180(fil.lonc); api.Lkm=fil.Lkm;
+    api.filamentKm=2*fil.Lkm;
   }
 
   // hash: #t=<day>&paused=1
@@ -374,14 +564,14 @@
   function boot(){
     document.getElementById("loading").hidden=true;
     document.getElementById("stage").hidden=false;
-    GlobeView.resize();
+    GlobeView.resize(); AltView.resize();
     const h=parseHash();
     setSimDay(h.t!==undefined ? parseFloat(h.t) : 0);
     api.ready=true;
     api.meta=META;
     api.legend=document.querySelector(".legend").innerText;
   }
-  window.addEventListener("resize", ()=>{ GlobeView.resize(); setSimDay(state.day); });
+  window.addEventListener("resize", ()=>{ GlobeView.resize(); AltView.resize(); setSimDay(state.day,{keepCam:true}); });
   boot();
 })();
 </script>
