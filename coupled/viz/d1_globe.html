@@ -7,29 +7,112 @@
 <title>An SO₂ plume in the stratosphere — 10 days</title>
 <style>
   :root{
-    --bg:#070b16; --bg2:#0b1120; --panel:#0e1526; --panel2:#111a2e;
-    --ink:#eef2fb; --muted:#93a0b8; --faint:#5b6580;
-    --line:#1d2740; --gas:#eda100; --gas-soft:#f0b03e;
-    --part:#2a78d6; --part-line:#5b9ce6; --accent:#6fd3c4;
+    --bg:#05080f; --bg2:#0a0f1c; --panel:#0c1322; --panel-edge:#1a2540;
+    --ink:#eef2fb; --muted:#9aa8c2; --faint:#63718e;
+    --coast:#8fb0dc; --grat:#33456a;
+    --gas:#f0a81e; --gas-glow:#ffce5e; --part:#2a78d6; --part-line:#67a6ee;
+    --accent:#57d0c0; --night:#03060f;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",sans-serif;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;background:var(--bg);color:var(--ink);
-    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
-    -webkit-font-smoothing:antialiased}
-  #app{padding:18px;max-width:1500px;margin:0 auto}
-  header h1{margin:0;font-size:20px;font-weight:650;letter-spacing:-.01em}
-  header p{margin:4px 0 0;color:var(--muted);font-size:13px}
-  #loading{padding:40px;color:var(--muted);font-size:14px}
+  html,body{margin:0;height:100%}
+  body{background:
+      radial-gradient(1200px 700px at 30% -10%, #0d1730 0%, transparent 60%),
+      radial-gradient(900px 600px at 100% 110%, #0a1428 0%, transparent 55%),
+      var(--bg);
+    color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;
+    line-height:1.45}
+  #app{max-width:1520px;margin:0 auto;padding:20px 22px 26px}
+  header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;margin-bottom:14px}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--accent);display:block;width:100%;margin-bottom:5px;opacity:.9}
+  header h1{margin:0;font-size:23px;font-weight:640;letter-spacing:-.015em}
+  header .sub{color:var(--muted);font-size:13.5px}
+  #loading{padding:48px 4px;color:var(--muted);font-size:14px;font-family:var(--mono)}
+
+  .grid{display:grid;grid-template-columns:1.32fr 1fr;grid-template-rows:auto auto;
+    gap:14px;align-items:stretch}
+  .card{background:linear-gradient(180deg,var(--panel) 0%,var(--bg2) 100%);
+    border:1px solid var(--panel-edge);border-radius:14px;position:relative;overflow:hidden}
+  .globe-card{grid-row:1 / span 2;min-height:560px;padding:0}
+  #globe{display:block;width:100%;height:100%}
+  .rightcol{display:flex;flex-direction:column;gap:14px;min-height:0}
+  .chartcard{flex:1;min-height:150px;padding:12px 14px 10px;display:flex;flex-direction:column}
+  .chartcard h3{margin:0 0 2px;font-size:12.5px;font-weight:600;letter-spacing:.01em}
+  .chartcard .csub{margin:0 0 6px;font-size:11px;color:var(--faint);font-family:var(--mono)}
+  .chartcard canvas{flex:1;width:100%;min-height:0}
+
+  /* globe overlays */
+  .legend{position:absolute;left:14px;bottom:12px;font-family:var(--mono);font-size:11px;
+    color:var(--muted);max-width:60%;pointer-events:none;line-height:1.5}
+  .legend .clock{color:var(--ink);font-size:15px;letter-spacing:.02em}
+  .legend .dil{color:var(--gas-glow)}
+  .legend .note{color:var(--faint);font-size:10px;margin-top:4px;max-width:340px}
+  .altbox{position:absolute;right:12px;bottom:12px;width:236px;height:172px;
+    background:rgba(6,11,22,.62);border:1px solid var(--panel-edge);border-radius:10px;
+    backdrop-filter:blur(2px)}
+  .altbox canvas{width:100%;height:100%;display:block}
+  .altbox .cap{position:absolute;top:6px;left:9px;font-family:var(--mono);font-size:10px;
+    letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+
+  .caption{margin-top:14px;min-height:46px;display:flex;align-items:center;gap:12px;
+    background:linear-gradient(90deg,rgba(240,168,30,.08),transparent 70%);
+    border-left:2px solid var(--gas);border-radius:0 10px 10px 0;padding:10px 16px}
+  .caption .tick{font-family:var(--mono);font-size:12px;color:var(--gas-glow);white-space:nowrap}
+  .caption .txt{font-size:14.5px;color:var(--ink)}
+  .caption sub,.caption sup{font-size:.72em}
+
+  .controls{margin-top:12px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .placeholder{color:var(--faint);font-family:var(--mono);font-size:12px;
+    display:flex;align-items:center;justify-content:center;height:100%;text-align:center;padding:12px}
+  @media (max-width:960px){ .grid{grid-template-columns:1fr} .globe-card{grid-row:auto;min-height:440px} }
+  @media (prefers-color-scheme:light){ body{background:#0a1020} } /* page is intentionally dark */
 </style>
 </head>
 <body>
 <div id="app">
   <header>
+    <span class="eyebrow">Coupled chemistry · aerosol microphysics · TUV-x photolysis</span>
     <h1>An SO₂ plume in the stratosphere</h1>
-    <p id="subtitle">Dilution, chemistry, and new-particle formation over 10 days</p>
+    <span class="sub">Dilution, chemistry &amp; new-particle formation over 10 days — 30°N, 20 km</span>
   </header>
-  <div id="loading">Loading…</div>
-  <main id="stage" hidden></main>
+
+  <div id="loading">Loading model output…</div>
+
+  <main id="stage" hidden>
+    <div class="grid">
+      <div class="card globe-card">
+        <canvas id="globe"></canvas>
+        <div class="altbox"><span class="cap">altitude · side view</span><canvas id="alt"></canvas></div>
+        <div class="legend">
+          <div class="clock" id="clock">day 0 · 06:00 UTC</div>
+          <div id="dilline"><span class="dil" id="dil">×1</span> dilution · plume <span id="width">10 m</span></div>
+          <div class="note" id="note">Drift &amp; shape: illustrative climatology, not model output.</div>
+        </div>
+      </div>
+      <div class="rightcol">
+        <div class="card chartcard"><h3>How many particles of each size?</h3>
+          <p class="csub" id="dist-sub">dN/dlogD<sub>p</sub> · per cm³</p>
+          <canvas id="dist"></canvas></div>
+        <div class="card chartcard"><h3>Where is the sulfur?</h3>
+          <p class="csub">whole plume · tonnes</p>
+          <canvas id="budget"></canvas></div>
+        <div class="card chartcard"><h3>Particles per cm³ of plume air</h3>
+          <p class="csub" id="count-sub">total number</p>
+          <canvas id="count"></canvas></div>
+      </div>
+    </div>
+
+    <div class="caption">
+      <span class="tick" id="cap-tick">day 0</span>
+      <span class="txt" id="cap-txt">—</span>
+    </div>
+    <div class="controls" id="controls">
+      <span id="ctl-note">interactive controls arrive with story mode</span>
+    </div>
+  </main>
 </div>
 
 <script id="d1-data" type="application/json">
@@ -39,7 +122,7 @@
 <script>
 "use strict";
 (function(){
-  // ---- §A decode ------------------------------------------------------------------------------
+  // ================= §A  decode =================================================================
   function b64ToI16(s){
     const bin = atob(s), n = bin.length, u8 = new Uint8Array(n);
     for(let i=0;i<n;i++) u8[i] = bin.charCodeAt(i);
@@ -47,34 +130,259 @@
   }
   let D;
   try{
-    // textContent includes the /*__D1_DATA_*__*/ comment markers the bake writes around the blob
     const raw = document.getElementById("d1-data").textContent;
-    D = JSON.parse(raw.slice(raw.indexOf("*/") + 2, raw.lastIndexOf("/*")));
+    D = JSON.parse(raw.slice(raw.indexOf("*/")+2, raw.lastIndexOf("/*")));
   }catch(e){ D = null; }
 
   const api = { ready:false, error:null };
   window.__d1 = api;
-
   if(!D || !D.meta){
     api.error = "no data baked — run coupled/viz/bake_d1_globe.py";
-    document.getElementById("loading").textContent = api.error;
+    const l = document.getElementById("loading"); if(l) l.textContent = api.error;
     return;
   }
-
-  // decode the size-distribution matrix once: dist.q[row*80 + bin]
   D.dist.q = b64ToI16(D.dist.q_b64);
   D.dist.nbin = D.dist.dp_um.length;
+  const META = D.meta;
 
-  // ---- boot (M0: prove data is wired; globe/charts land in M1–M3) -----------------------------
-  document.getElementById("loading").hidden = true;
-  const stage = document.getElementById("stage");
-  stage.hidden = false;
-  stage.textContent = "Data loaded: " + D.meta.n_keep + " time samples, " +
-    D.dist.nbin + " size bins. (globe + charts arrive in the next milestones)";
+  // ================= §B  geo / solar math =======================================================
+  const DEG = Math.PI/180;
+  // unit sphere: X east-ish, Y north (up), Z toward (lat0,lon0)=... ; P(lat,lon)=
+  //   (cosφ sinλ, sinφ, cosφ cosλ)
+  function ll2xyz(latDeg, lonDeg){
+    const φ=latDeg*DEG, λ=lonDeg*DEG, cf=Math.cos(φ);
+    return [cf*Math.sin(λ), Math.sin(φ), cf*Math.cos(λ)];
+  }
+  const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+  const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+  const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+  const scal=(a,k)=>[a[0]*k,a[1]*k,a[2]*k];
+  function norm(a){const L=Math.hypot(a[0],a[1],a[2])||1;return[a[0]/L,a[1]/L,a[2]/L];}
 
-  api.ready = true;
-  api.meta = D.meta;
-  api.nKeep = D.meta.n_keep;
+  // subsolar point for a given sim-day (fractional). start_utc_hour from meta.
+  function subsolar(day){
+    const utc = (META.start_utc_hour + day*24) % 24;
+    const lon = 15*(12 - utc);                                  // deg East
+    const doy = META.doy + day;
+    const dec = 23.44*Math.cos(2*Math.PI*(doy-172)/365.25);     // deg (≈+23.4 near solstice)
+    return {lat:dec, lon, utc};
+  }
+
+  // ---- linework: precompute per-vertex sin/cos(lat), sin/cos(lon) for fast projection ----------
+  function buildLines(segs){                                    // segs: [ [ [lat,lon],... ], ... ]
+    let np=0; for(const s of segs) np+=s.length;
+    const SF=new Float32Array(np),CF=new Float32Array(np),
+          SL=new Float32Array(np),CL=new Float32Array(np);
+    const start=new Int32Array(segs.length), len=new Int32Array(segs.length);
+    let vi=0;
+    segs.forEach((s,si)=>{ start[si]=vi; len[si]=s.length;
+      for(const [la,lo] of s){ const φ=la*DEG, λ=lo*DEG;
+        SF[vi]=Math.sin(φ); CF[vi]=Math.cos(φ); SL[vi]=Math.sin(λ); CL[vi]=Math.cos(λ); vi++; } });
+    return {SF,CF,SL,CL,start,len};
+  }
+  // coastlines from baked delta int16
+  function decodeCoast(){
+    const q=D.coast.q, seg=D.coast.seg_pts, raw=b64ToI16(D.coast.xy_b64), out=[];
+    let ri=0;
+    for(const n of seg){
+      let lon=raw[ri++]/q, lat=raw[ri++]/q; const pts=[[lat,lon]];
+      for(let k=1;k<n;k++){ lon+=raw[ri++]/q; lat+=raw[ri++]/q; pts.push([lat,lon]); }
+      out.push(pts);
+    }
+    return out;
+  }
+  function graticule(){
+    const segs=[];
+    for(let lon=-180;lon<180;lon+=30){ const s=[]; for(let la=-88;la<=88;la+=3) s.push([la,lon]); segs.push(s); }
+    for(let la=-75;la<=75;la+=15){ const s=[]; for(let lo=-180;lo<=180;lo+=3) s.push([la,lo]); segs.push(s); }
+    return segs;
+  }
+  const COAST = buildLines(decodeCoast());
+  const GRAT  = buildLines(graticule());
+
+  // ================= §E  globe view =============================================================
+  const CAM_LAT = 26;                                            // fixed camera latitude (deg N)
+  const GlobeView = (function(){
+    const cv=document.getElementById("globe"), ctx=cv.getContext("2d");
+    let W=0,H=0,cx=0,cy=0,R=0,dpr=1;
+
+    function resize(){
+      dpr=Math.max(1,Math.min(3,window.devicePixelRatio||1));
+      const r=cv.getBoundingClientRect(); W=Math.max(320,r.width); H=Math.max(320,r.height);
+      cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr);
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+      cx=W/2; cy=H/2; R=0.45*Math.min(W,H);
+    }
+
+    function drawLines(L, camLon, sf0,cf0,sl0,cl0, stroke, width){
+      ctx.beginPath();
+      for(let si=0; si<L.start.length; si++){
+        const s=L.start[si], n=L.len[si]; let pen=false;
+        for(let i=0;i<n;i++){ const j=s+i;
+          const cosdl=L.CL[j]*cl0 + L.SL[j]*sl0;      // cos(λ−λ0)
+          const sindl=L.SL[j]*cl0 - L.CL[j]*sl0;      // sin(λ−λ0)
+          const cosc = sf0*L.SF[j] + cf0*L.CF[j]*cosdl;
+          if(cosc>0){
+            const x=L.CF[j]*sindl, y=cf0*L.SF[j]-sf0*L.CF[j]*cosdl;
+            const px=cx+R*x, py=cy-R*y;
+            if(pen) ctx.lineTo(px,py); else { ctx.moveTo(px,py); pen=true; }
+          } else pen=false;
+        }
+      }
+      ctx.strokeStyle=stroke; ctx.lineWidth=width; ctx.lineJoin="round"; ctx.stroke();
+    }
+
+    // night terminator: sample the terminator great circle + close along the limb (night side)
+    function drawNight(day, camLon){
+      const ss=subsolar(day);
+      const s=ll2xyz(ss.lat, ss.lon);
+      const v=ll2xyz(CAM_LAT, camLon);                 // view axis (disc center)
+      const e=norm([Math.cos(camLon*DEG),0,-Math.sin(camLon*DEG)]);         // east basis
+      const nb=norm([-Math.sin(CAM_LAT*DEG)*Math.sin(camLon*DEG),
+                      Math.cos(CAM_LAT*DEG),
+                     -Math.sin(CAM_LAT*DEG)*Math.cos(camLon*DEG)]);         // up (north) basis
+      const c=dot(s,v);
+      const scr=p=>[cx+R*dot(p,e), cy-R*dot(p,nb)];
+      const nightCol="rgba(3,6,15,0.60)";
+
+      if(c>0.9999) return;                              // fully lit
+      // clip to disc
+      ctx.save(); ctx.beginPath(); ctx.arc(cx,cy,R,0,2*Math.PI); ctx.clip();
+      if(c<-0.9999){ ctx.fillStyle=nightCol; ctx.fillRect(cx-R,cy-R,2*R,2*R); ctx.restore(); return; }
+
+      // orthonormal basis (a,b) spanning the terminator plane (⊥ s)
+      let a=sub(v, scal(s, dot(v,s))); if(Math.hypot(a[0],a[1],a[2])<1e-6) a=sub(e, scal(s, dot(e,s)));
+      a=norm(a); const b=cross(s,a);
+      // sample terminator; collect the visible contiguous run (p·v>0)
+      const N=240, T=[];
+      for(let i=0;i<N;i++){ const t=2*Math.PI*i/N;
+        const p=[a[0]*Math.cos(t)+b[0]*Math.sin(t),
+                 a[1]*Math.cos(t)+b[1]*Math.sin(t),
+                 a[2]*Math.cos(t)+b[2]*Math.sin(t)];
+        T.push({p, vis:dot(p,v)>0}); }
+      // rotate array so it starts at a visible/invisible boundary, then take the visible run
+      let k0=-1; for(let i=0;i<N;i++){ if(T[i].vis && !T[(i+N-1)%N].vis){ k0=i; break; } }
+      const run=[];
+      if(k0<0){ // whole terminator visible only if c≈0; fallback: take all visible
+        for(const q of T) if(q.vis) run.push(q.p);
+      } else { for(let i=0;i<N;i++){ const q=T[(k0+i)%N]; if(q.vis) run.push(q.p); else break; } }
+      if(run.length<2){ ctx.restore(); return; }
+
+      // path: terminator arc, then walk the limb (night side, p·s<0) back to the start
+      ctx.beginPath();
+      let sp=scr(run[0]); ctx.moveTo(sp[0],sp[1]);
+      for(let i=1;i<run.length;i++){ sp=scr(run[i]); ctx.lineTo(sp[0],sp[1]); }
+      const angOf=p=>{ const q=scr(p); return Math.atan2(q[1]-cy, q[0]-cx); };   // canvas angle
+      const es=dot(e,s), ns=dot(nb,s);                           // limb point at canvas α: p·s =
+      const limbDotS=α=>Math.cos(α)*es - Math.sin(α)*ns;         //   cosα·(e·s) − sinα·(nb·s)
+      const aEnd=angOf(run[run.length-1]), aStart=angOf(run[0]);
+      let d=aStart-aEnd; while(d<=-Math.PI)d+=2*Math.PI; while(d>Math.PI)d-=2*Math.PI;
+      const shortNight = limbDotS(aEnd+d/2) < 0;                 // is the short way the night side?
+      const dir = shortNight ? Math.sign(d||1) : -Math.sign(d||1);
+      const span = shortNight ? Math.abs(d) : (2*Math.PI-Math.abs(d));
+      for(let i=1;i<=96;i++){ const α=aEnd+dir*span*i/96;
+        ctx.lineTo(cx+R*Math.cos(α), cy+R*Math.sin(α)); }
+      ctx.closePath();
+      ctx.fillStyle=nightCol; ctx.fill();
+      // soft twilight: restroke the terminator arc, wide & faint
+      ctx.beginPath(); sp=scr(run[0]); ctx.moveTo(sp[0],sp[1]);
+      for(let i=1;i<run.length;i++){ sp=scr(run[i]); ctx.lineTo(sp[0],sp[1]); }
+      ctx.strokeStyle="rgba(3,6,15,0.34)"; ctx.lineWidth=R*0.10; ctx.lineCap="round"; ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawSun(day, camLon){
+      const ss=subsolar(day), s=ll2xyz(ss.lat,ss.lon), v=ll2xyz(CAM_LAT,camLon);
+      if(dot(s,v)<=0.02) return;                        // sun on far side
+      const e=norm([Math.cos(camLon*DEG),0,-Math.sin(camLon*DEG)]);
+      const nb=norm([-Math.sin(CAM_LAT*DEG)*Math.sin(camLon*DEG),Math.cos(CAM_LAT*DEG),
+                     -Math.sin(CAM_LAT*DEG)*Math.cos(camLon*DEG)]);
+      const px=cx+R*dot(s,e), py=cy-R*dot(s,nb);
+      const g=ctx.createRadialGradient(px,py,0,px,py,26);
+      g.addColorStop(0,"rgba(255,236,170,0.95)"); g.addColorStop(.4,"rgba(255,206,94,0.5)");
+      g.addColorStop(1,"rgba(255,206,94,0)");
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(px,py,26,0,2*Math.PI); ctx.fill();
+      ctx.fillStyle="rgba(255,244,210,0.95)"; ctx.beginPath(); ctx.arc(px,py,4.5,0,2*Math.PI); ctx.fill();
+    }
+
+    function render(state){
+      const camLon=state.camLon, day=state.day;
+      const λ0=camLon*DEG, φ0=CAM_LAT*DEG;
+      const sf0=Math.sin(φ0),cf0=Math.cos(φ0),sl0=Math.sin(λ0),cl0=Math.cos(λ0);
+      ctx.clearRect(0,0,W,H);
+      // globe body
+      const g=ctx.createRadialGradient(cx-R*0.25,cy-R*0.3,R*0.15, cx,cy,R);
+      g.addColorStop(0,"#15274a"); g.addColorStop(.65,"#0d1a34"); g.addColorStop(1,"#081124");
+      ctx.beginPath(); ctx.arc(cx,cy,R,0,2*Math.PI); ctx.fillStyle=g; ctx.fill();
+      // graticule + coastlines (clip to disc)
+      ctx.save(); ctx.beginPath(); ctx.arc(cx,cy,R,0,2*Math.PI); ctx.clip();
+      drawLines(GRAT, camLon, sf0,cf0,sl0,cl0, "rgba(90,116,168,0.20)", 1);
+      drawLines(COAST, camLon, sf0,cf0,sl0,cl0, "rgba(143,176,220,0.62)", 1);
+      ctx.restore();
+      // night + sun
+      drawNight(day, camLon);
+      drawSun(day, camLon);
+      // rim
+      ctx.beginPath(); ctx.arc(cx,cy,R,0,2*Math.PI);
+      ctx.strokeStyle="rgba(150,180,225,0.28)"; ctx.lineWidth=1.2; ctx.stroke();
+      // subtle atmosphere halo
+      const h=ctx.createRadialGradient(cx,cy,R*0.98, cx,cy,R*1.08);
+      h.addColorStop(0,"rgba(95,156,238,0.16)"); h.addColorStop(1,"rgba(95,156,238,0)");
+      ctx.beginPath(); ctx.arc(cx,cy,R*1.08,0,2*Math.PI); ctx.fillStyle=h; ctx.fill();
+    }
+    return { resize, render, get R(){return R;} };
+  })();
+
+  // ================= §H  state fan-out (M1: static from hash) ===================================
+  const state = { day:0, camLon:META.lon0 };
+
+  function fmtClock(day){
+    const utc=(META.start_utc_hour+day*24)%24;
+    const hh=String(Math.floor(utc)).padStart(2,"0");
+    const mm=String(Math.floor((utc%1)*60)).padStart(2,"0");
+    const di=Math.min(D.days.length-1, Math.max(0, bisect(D.days, day)));
+    const isDay = D.series.is_day[di]===1;
+    return `day ${Math.floor(day)} · ${hh}:${mm} UTC · ${isDay?"daylight":"night"} (model)`;
+  }
+  function bisect(arr, x){ let lo=0,hi=arr.length-1; while(lo<hi){const m=(lo+hi)>>1; if(arr[m]<x)lo=m+1; else hi=m;} return lo; }
+
+  function setSimDay(day){
+    state.day=Math.max(0, Math.min(META.days_total, day));
+    GlobeView.render(state);
+    document.getElementById("clock").textContent=fmtClock(state.day);
+    // caption (last entry with day<=now)
+    let cap=D.captions[0];
+    for(const c of D.captions) if(c.day<=state.day) cap=c;
+    document.getElementById("cap-txt").innerHTML=cap.html;
+    document.getElementById("cap-tick").textContent="day "+(state.day<1?state.day.toFixed(2):state.day.toFixed(1));
+    // dilution readout (nearest sample)
+    const di=Math.max(0,Math.min(D.days.length-1,bisect(D.days,state.day)));
+    document.getElementById("dil").textContent="×"+Math.round(D.series.V[di]).toLocaleString();
+    const w=D.series.side_m[di];
+    document.getElementById("width").textContent=w>=1000?(w/1000).toFixed(1)+" km":Math.round(w)+" m";
+    api.simDay=state.day; api.subsolarLon=subsolar(state.day).lon;
+    api.camLon=state.camLon;
+  }
+
+  // hash: #t=<day>&paused=1
+  function parseHash(){
+    const h={}; location.hash.replace(/^#/,"").split("&").forEach(kv=>{
+      const [k,val]=kv.split("="); if(k) h[k]=val; });
+    return h;
+  }
+
+  function boot(){
+    document.getElementById("loading").hidden=true;
+    document.getElementById("stage").hidden=false;
+    GlobeView.resize();
+    const h=parseHash();
+    setSimDay(h.t!==undefined ? parseFloat(h.t) : 0);
+    api.ready=true;
+    api.meta=META;
+    api.legend=document.querySelector(".legend").innerText;
+  }
+  window.addEventListener("resize", ()=>{ GlobeView.resize(); setSimDay(state.day); });
+  boot();
 })();
 </script>
 </body>
