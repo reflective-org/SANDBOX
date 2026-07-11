@@ -373,20 +373,6 @@
       ctx.restore();
     }
 
-    function drawSun(day, camLon){
-      const ss=subsolar(day), s=ll2xyz(ss.lat,ss.lon), v=ll2xyz(CAM_LAT,camLon);
-      if(dot(s,v)<=0.02) return;                        // sun on far side
-      const e=norm([Math.cos(camLon*DEG),0,-Math.sin(camLon*DEG)]);
-      const nb=norm([-Math.sin(CAM_LAT*DEG)*Math.sin(camLon*DEG),Math.cos(CAM_LAT*DEG),
-                     -Math.sin(CAM_LAT*DEG)*Math.cos(camLon*DEG)]);
-      const px=cx+R*dot(s,e), py=cy-R*dot(s,nb);
-      const g=ctx.createRadialGradient(px,py,0,px,py,26);
-      g.addColorStop(0,"rgba(255,236,170,0.95)"); g.addColorStop(.4,"rgba(255,206,94,0.5)");
-      g.addColorStop(1,"rgba(255,206,94,0)");
-      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(px,py,26,0,2*Math.PI); ctx.fill();
-      ctx.fillStyle="rgba(255,244,210,0.95)"; ctx.beginPath(); ctx.arc(px,py,4.5,0,2*Math.PI); ctx.fill();
-    }
-
     // project a (lat,lon) to screen for the current camera; {x,y,vis}
     let _cam={sf0:0,cf0:1,sl0:0,cl0:1};
     function project(latDeg, lonDeg){
@@ -460,9 +446,8 @@
       drawLines(GRAT, camLon, sf0,cf0,sl0,cl0, "rgba(90,116,168,0.20)", 1);
       drawLines(COAST, camLon, sf0,cf0,sl0,cl0, "rgba(143,176,220,0.62)", 1);
       ctx.restore();
-      // night + sun
+      // night terminator
       drawNight(day, camLon);
-      drawSun(day, camLon);
       // plume filament + injection point
       drawInjection();
       drawPlume(state.filament);
