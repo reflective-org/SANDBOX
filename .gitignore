@@ -17,3 +17,4 @@ gas_phase_chemistry/tuvx_10day.png
 # per-run text log (regenerated every run; the script always writes <out>/run.log)
 run.log
 coupled/analyses/
+coupled/viz/cache/
