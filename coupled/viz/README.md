@@ -80,8 +80,13 @@ and hard-fails if the file would exceed 800 KB.
   (~8 m/s at 30°N, ~2 m/s at 60°N).
 - **Shear / filament**: vertical wind shear (~2 m/s per km) acting over an assumed layer depth
   growing 10 m → ~1 km stretches the 15 km track into a long along-wind filament. Plume **width is
-  exaggerated ~×120** so it is visible at globe scale; **length is to scale**. The altitude inset
-  shows the classic shear picture (a layer tilting into a sloped sliver).
+  exaggerated per case** (the case's final width draws ~8 px, never below real scale — the legend
+  states the factor); **length is to scale**. Ribbon brightness tracks the plume's
+  distinguishability from background (SO₂ excess early, excess aerosol surface area late), so the
+  veil fades out exactly where the timeline ends. The filament stays in the injection latitude
+  band — consistent with the real interhemispheric mixing barrier, a NH plume does not cross into
+  the SH on these timescales. The altitude inset shows the classic shear picture (a layer tilting
+  into a sloped sliver).
 - **Globe terminator**: physically correct solar geometry for the date/UTC — but note the model's
   photolysis was computed at the *fixed* injection point (0°E), so late in a run the drifting
   plume's local solar time differs from the globe terminator. The legend states this.

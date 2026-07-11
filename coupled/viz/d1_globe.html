@@ -198,7 +198,7 @@
   // ---- current case (C) + per-case derived state, rebuilt by applyCase() ----------------------
   const QS = D.dist_qscale, DP_UM = D.dist_dp_um, NBIN = DP_UM.length;
   const distCache = {};                                        // caseKey -> Int8Array
-  let caseKey=null, C=null, META=null, PATH=null, DAYT=0, SEG=null, DISTQ=null;
+  let caseKey=null, C=null, META=null, PATH=null, DAYT=0, SEG=null, DISTQ=null, SA_LOGMAX=0;
 
   // ================= §B  geo / solar math =======================================================
   const DEG = Math.PI/180;
@@ -292,7 +292,12 @@
     const side=C.series.side_m[i-1]*g+C.series.side_m[i]*f;      // cross-section (m)
     const so2=C.series.so2_ppt[i-1]*g+C.series.so2_ppt[i]*f;
     const bmax=Math.log10(C.series.so2_ppt[0]/META.so2_bg_ppt);
-    const bref=Math.max(0, Math.log10(Math.max(so2,META.so2_bg_ppt)/META.so2_bg_ppt))/bmax;
+    const bso2=Math.max(0, Math.log10(Math.max(so2,META.so2_bg_ppt)/META.so2_bg_ppt))/bmax;
+    // brightness = strongest distinguishability signal: SO2 gas early, the aerosol veil (excess
+    // surface area) late — the veil fades to 0 exactly where the timeline ends (the SA criterion)
+    const sav=C.series.sa[i-1]*g+C.series.sa[i]*f;
+    const bsa=SA_LOGMAX>0 ? Math.max(0, Math.log10(Math.max(sav,META.sa_bg)/META.sa_bg))/SA_LOGMAX : 0;
+    const bref=Math.max(bso2, bsa);
     const N=33, pts=[], w=[], br=[];
     const dlonPerKm=1/(111.32*Math.cos(latc*DEG)), dlatPerKm=1/111.32;
     const halfTrack=META.track_km/2;                             // meridional half-track (km)
@@ -405,7 +410,12 @@
       return {x:cx+R*cf*sindl, y:cy-R*(_cam.cf0*sf-_cam.sf0*cf*cosdl), vis:cosc>0};
     }
 
-    function plumeExaggeration(){ return 8*R_EARTH_KM/(1.207*R); }   // final width ≈ 8 px
+    // width exaggeration per case: the case's FINAL width draws ~8 px, never below real scale.
+    // (a fixed factor tuned to one run blankets the globe when another run grows 100x wider)
+    function plumeExaggeration(){
+      const sm=C?C.series.side_m:null, endKm=(sm?sm[sm.length-1]:1207)/1000;
+      return Math.max(1, 8*R_EARTH_KM/(endKm*R));
+    }
 
     function drawPlume(fil){
       if(!fil) return;
@@ -756,8 +766,10 @@
     $("dil").textContent="×"+Math.round(C.series.V[di]).toLocaleString();
     const w=C.series.side_m[di];
     $("width").textContent=w>=1000?(w/1000).toFixed(1)+" km":Math.round(w)+" m";
-    $("note").innerHTML=`plume width &times;${Math.round(GlobeView.exaggeration)} exaggerated · length to scale<br>`+
-      `drift &amp; shear: illustrative June climatology — not model output`;
+    const ex=GlobeView.exaggeration;
+    $("note").innerHTML=(ex>1.5?`plume width &times;${Math.round(ex)} exaggerated (kept visible) · length to scale<br>`
+                               :`plume width &amp; length to scale<br>`)+
+      `drift &amp; shear: illustrative June climatology — not model output · stays in its hemisphere`;
     if(!opts.fromScrub){ const sc=$("scrub"); const v=simToAnim(state.day)*1000; sc.value=v;
       sc.style.setProperty("--f",(v/10).toFixed(1)+"%"); }
     api.simDay=state.day; api.subsolarLon=subsolar(state.day).lon; api.camLon=state.camLon;
@@ -812,6 +824,7 @@
     DISTQ=decodeDist(key);
     DAYT=META.days_total;
     SEG=buildSeg();
+    SA_LOGMAX=Math.log10(Math.max(...C.series.sa.filter(v=>v>0))/META.sa_bg);
     PATH=buildPath();
     Charts.setCase();
     buildTrack();
