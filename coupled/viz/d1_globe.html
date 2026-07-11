@@ -758,6 +758,13 @@
   }
   window.__setDay=setSimDay;
   api.sample=(name,day)=>Charts.sample(name,day===undefined?state.day:day);
+  // §I bench: full-update (globe + 3 charts + inset) cost across the timeline
+  api.bench=function(n){ n=n||240; const ts=[];
+    for(let i=0;i<n;i++){ const d=DAYT*i/(n-1), t0=performance.now();
+      setSimDay(d,{snapCam:true}); ts.push(performance.now()-t0); }
+    ts.sort((a,b)=>a-b);
+    return {n, mean:+(ts.reduce((a,b)=>a+b,0)/n).toFixed(2), p50:+ts[n>>1].toFixed(2),
+            p95:+ts[Math.floor(0.95*n)].toFixed(2), max:+ts[n-1].toFixed(2)}; };
 
   // ---- player (rAF): playback + camera easing -------------------------------------------------
   const player={ playing:false, speed:1, a01:0 };
