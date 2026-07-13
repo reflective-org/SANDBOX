@@ -17,7 +17,7 @@ why one control per (site, regime) is required.
 Duration = the paired plume run's length (read from its state.npz), rounded up to whole days.
 Output -> runs_bgstop_ctrl/<site>__sabr220__<regime>__h06_ctrl/state.npz (plume-run layout).
 
-CLI (from SANDBOX/): python -m coupled.paper_ensemble.run_bgstop_control <0..9>
+CLI (from SANDBOX/): python -m coupled.paper_ensemble.run_bgstop_control <0..29>
 """
 import dataclasses
 import os
@@ -32,38 +32,43 @@ from config import IDX, air_number_density
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _OUT = os.path.join(_HERE, "runs_bgstop_ctrl")
-_BG = ("sabr220", "sabr_220", 20.0)
 _X1 = dict(sticking=("a1p0", 1.0), nucleation=("nuc1", 1.0), coag=("cg1", 1.0))
 
-CASES = [(site, reg) for site in ("30N_20km", "60N_15km")
-         for reg in ("D1low", "D2med", "D3high", "D5vhigh", "burst")]
-_FROM_BGSTOP = {"D1low", "D2med", "burst"}
+from coupled.paper_ensemble.run_bgstop import BGS
+
+_SITES = ("30N_20km", "60N_15km")
+_ALL = ("D1low", "D2med", "D3high", "D5vhigh", "burst")
+CASES = [(site, bg, reg) for bg in ("sabr220", "sabr330", "aergeo")
+         for site in _SITES for reg in _ALL]
 
 
-def paired_plume_npz(site, reg):
-    if reg in _FROM_BGSTOP:
-        return os.path.join(_HERE, "runs_bgstop", f"{site}__sabr220__{reg}__h06_bgstop",
+def paired_plume_npz(site, bg, reg):
+    if bg == "sabr220" and reg in ("D3high", "D5vhigh"):
+        return os.path.join(_HERE, "runs_start_time", f"{site}__sabr220__{reg}__h06",
                             "state.npz")
-    return os.path.join(_HERE, "runs_start_time", f"{site}__sabr220__{reg}__h06", "state.npz")
+    return os.path.join(_HERE, "runs_bgstop", f"{site}__{bg}__{reg}__h06_bgstop", "state.npz")
 
 
-def build_scenario(site, reg, days):
+def build_scenario(site, bg, reg, days):
     la = next(l for l in _re.LAT_ALT if l[0] == site)
     dil = next(d for d in _re.DILUTION if d[0] == reg)
-    sc = _re.build_scenario(dict(lat_alt=la, background=_BG, dilution=dil, **_X1))
+    sc = _re.build_scenario(dict(lat_alt=la, background=BGS[bg], dilution=dil, **_X1))
     conc = dict(sc.concentrations)
-    conc["SO2"] = 20.0                       # background SO2, NOT the spike
+    conc["SO2"] = float(BGS[bg][2])          # background SO2, NOT the spike
     return dataclasses.replace(sc, start_utc_hour=6.0, days=days, concentrations=conc)
 
 
 def main(i):
-    site, reg = CASES[i]
-    plume = np.load(paired_plume_npz(site, reg), allow_pickle=True)
-    days = int(np.ceil(plume["t"][-1] / 86400.0))
-    cid = f"{site}__sabr220__{reg}__h06_ctrl"
+    site, bg, reg = CASES[i]
+    cid = f"{site}__{bg}__{reg}__h06_ctrl"
     out = os.path.join(_OUT, cid)
+    if os.path.exists(os.path.join(out, "state.npz")):
+        print(f"SKIP {cid} (state.npz exists)", flush=True)
+        return
+    plume = np.load(paired_plume_npz(site, bg, reg), allow_pickle=True)
+    days = int(np.ceil(plume["t"][-1] / 86400.0))
     os.makedirs(out, exist_ok=True)
-    sc = build_scenario(site, reg, days)
+    sc = build_scenario(site, bg, reg, days)
     print(f"[{i}] {cid}: control for {days} d (paired plume ends "
           f"{plume['t'][-1]/86400.0:.2f} d)", flush=True)
     t, x, aero, st_final, sd, jrec = run_coupled(
