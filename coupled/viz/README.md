@@ -75,13 +75,15 @@ and hard-fails if the file would exceed 800 KB.
 
 **Real model output** (from the coupled gas-chemistry + TUV-x photolysis + TOMAS aerosol runs):
 - the size distribution dN/dlogDₚ, total particle number, effective radius;
-- the sulfur panel, two toggleable views: **"vs control · tonnes"** (default) is the
-  dilution-corrected budget against a PAIRED no-injection control run — same site, same dilution
-  regime, so the dilution terms cancel in (plume − control)×V and the SO₂/particle split decays
-  only through genuine chemistry differences (total conserved at exactly the injected 1 t; a
-  naive excess-over-static-background budget instead claims 100% conversion the moment plume SO₂
-  blends down to background). **"share of plume air"** is the raw, uncorrected per-cm³ partition,
-  which converges to the background mix (dashed line);
+- the sulfur panel, one normalized 0–100% stack with two toggleable denominators:
+  **"of the injected tonne"** (default) is the dilution-corrected budget against a PAIRED
+  no-injection control run — same site, background and dilution regime, so the dilution terms
+  cancel in (plume − control)×V and the SO₂/particle split decays only through genuine chemistry
+  differences (total conserved at exactly the injected 1 t; a naive excess-over-static-background
+  budget instead claims 100% conversion the moment plume SO₂ blends down to background; the
+  headline "N% converted by day M" states the end-of-life conversion). **"of the plume air"** is
+  the raw, uncorrected per-cm³ partition, which converges to the background mix (dashed reference
+  line, drawn only when it sits usefully inside the plot);
 - dilution factor V(t)/V₀ and each case's background-relaxation endpoint;
 - day/night for the **chemistry** (from the run's photolysis rates), shown as the chart night bands
   and the "daylight/night (model)" readout.

@@ -51,9 +51,12 @@
   .chartcard h3{margin:0 0 2px;font-size:12.5px;font-weight:600;letter-spacing:.01em}
   .chartcard .csub{margin:0 0 6px;font-size:11px;color:var(--faint);font-family:var(--mono)}
   .bmode{background:transparent;color:var(--faint);border:1px solid var(--panel-edge);
-    font-family:var(--mono);font-size:10px;padding:2px 7px;cursor:pointer;border-radius:7px;margin-right:4px}
+    font-family:var(--mono);font-size:10px;padding:2px 7px;cursor:pointer;margin-right:0;border-radius:0}
+  .bmode:first-child{border-radius:7px 0 0 7px}
+  .bmode+.bmode{border-left:none;border-radius:0 7px 7px 0}
   .bmode.on{color:#04120f;background:var(--accent);border-color:var(--accent)}
-  .bmode:not(.on):hover{border-color:var(--accent);color:var(--muted)}
+  .bmode:not(.on):hover{color:var(--muted)}
+  #bmode-note{margin-left:8px;color:var(--faint);font-size:10px}
   .chartcard canvas{flex:1;width:100%;min-height:0}
 
   /* globe overlays */
@@ -145,8 +148,9 @@
           <canvas id="dist"></canvas></div>
         <div class="card chartcard"><h3>Where is the sulfur?</h3>
           <p class="csub" id="budget-sub">
-            <button class="bmode on" data-m="ctrl" title="plume minus paired no-injection control run, × plume volume — the injected tonne's own budget">vs control · tonnes</button>
-            <button class="bmode" data-m="share" title="raw share of sulfur in plume air, not dilution-corrected">share of plume air</button>
+            <button class="bmode on" data-m="ctrl" title="plume minus a paired no-injection control run — dilution cancels, so this is the injected tonne's own budget">of the injected tonne</button>
+            <button class="bmode" data-m="share" title="raw sulfur mix of the plume air — not dilution-corrected; ends at the background mix">of the plume air</button>
+            <span id="bmode-note">dilution removed (vs a paired control run)</span>
           </p>
           <canvas id="budget"></canvas></div>
         <div class="card chartcard"><h3>Particles per cm³ of plume air</h3>
@@ -608,26 +612,28 @@
 
   const Charts=(function(){
     const dist=makeCanvas("dist"), budget=makeCanvas("budget"), count=makeCanvas("count");
-    let bg0=null, countMax=3e7, distMaxE=8.5, XT=[];
+    // FIXED axes, identical for every case, so switching options never rescales a chart:
+    // dist 1e-2..1e8 (all 30 cases peak below 1e8), count 0.8..1e7 (all peaks ~2-3e6).
+    const COUNT_MAX=1e7, DIST_MAX_E=8.5;
+    let bg0=null, XT=[];
 
     function setCase(){
       bg0=distAt(0);
-      const nMax=Math.max(...C.series.total_n);
-      countMax=Math.pow(10, Math.ceil(L10(nMax)*2)/2 + 1);       // half-decade ceil + 1 decade
-      let qm=-128; for(let i=0;i<DISTQ.length;i++) if(DISTQ[i]>qm) qm=DISTQ[i];
-      distMaxE=Math.ceil(qm/QS)+0.5;
       XT=dayTicks(DAYT);
     }
 
+    // night shading: alpha scaled by band count, so a 5-day run reads clearly and a 36-day run
+    // gets a subtle texture instead of glitchy stripes
     function nightBands(o, X, padT, plotH){
-      o.ctx.fillStyle=NIGHT_BAND;
+      const a=Math.min(0.15, 1.6/Math.max(1,C.nights.length));
+      o.ctx.fillStyle="rgba(70,92,130,"+a.toFixed(3)+")";
       for(const [n0,n1] of C.nights) o.ctx.fillRect(X(n0),padT,X(n1)-X(n0),plotH);
     }
 
     // ---- size distribution (log-log) ----------------------------------------------------------
     function drawDist(day){
       const o=dist, ctx=o.ctx, padL=40,padR=12,padT=8,padB=20;
-      const xmin=1.5e-3, xmax=20, ymin=1e-2, ymaxE=distMaxE;
+      const xmin=1.5e-3, xmax=20, ymin=1e-2, ymaxE=DIST_MAX_E;
       const plotW=o.W-padL-padR, plotH=o.H-padT-padB;
       const X=d=>padL+(L10(d)-L10(xmin))/(L10(xmax)-L10(xmin))*plotW;
       const Y=v=>padT+(1-(L10(Math.max(v,ymin))-L10(ymin))/(ymaxE-L10(ymin)))*plotH;
@@ -647,7 +653,12 @@
         ctx.strokeStyle=stroke; ctx.lineWidth=width; ctx.setLineDash(dash||[]); ctx.lineJoin="round"; ctx.stroke();
         ctx.setLineDash([]);
       };
-      curve(bg0,"rgba(150,160,180,0.5)",1.2,[4,3]);               // background (dashed)
+      curve(bg0,"rgba(150,160,180,0.45)",1.2,[4,3]);              // background (dashed)
+      // label the background curve at its peak, so the dashed line is self-explanatory
+      { let bi=0; for(let b=1;b<NBIN;b++) if(bg0[b]>bg0[bi]) bi=b;
+        if(bg0[bi]>ymin){ ctx.font=MONO; ctx.fillStyle="rgba(150,160,180,0.65)";
+          ctx.textAlign="center"; ctx.textBaseline="bottom";
+          ctx.fillText("background",X(DP_UM[bi]),Y(bg0[bi])-3); } }
       [0.45,0.6,0.72,0.83,0.92].forEach((fr,k)=>{ if(day*fr>0.002)
         curve(distAt(day*fr),"rgba(58,134,224,"+(0.06+0.05*k).toFixed(2)+")",1.1); });
       curve(distAt(day),C_PARTLINE,2.2);                          // current (bold)
@@ -664,74 +675,65 @@
     // 'share': raw per-cm³ share of sulfur in plume air, NOT dilution-corrected; converges to the
     //         background partition (dashed) as the plume blends away.
     let budgetMode="ctrl";
+    // both modes share ONE presentation: a normalized 0-100% stack, orange = still SO2 gas,
+    // blue = in particles. Only the denominator changes:
+    //   ctrl : % of the INJECTED tonne (plume minus paired control — dilution cancels)
+    //   share: % of the sulfur in plume air (raw mix — converges to the background partition)
+    function budgetFrac(){
+      const so2=C.series.so2_t, su=C.series.sulf_t, fr=C.series.so2_frac, n=C.days.length;
+      const out=new Float64Array(n);
+      if(budgetMode==="ctrl"){ for(let i=0;i<n;i++){ const t=so2[i]+su[i]; out[i]=t>0?so2[i]/t:0; } }
+      else { for(let i=0;i<n;i++) out[i]=fr[i]; }
+      return out;
+    }
     function drawBudget(day){
-      if(budgetMode==="ctrl") drawBudgetCtrl(day); else drawBudgetShare(day);
-    }
-    function drawBudgetCtrl(day){
-      const o=budget, ctx=o.ctx, padL=34,padR=10,padT=8,padB=18;
-      const plotW=o.W-padL-padR, plotH=o.H-padT-padB;
-      const days=C.days, so2=C.series.so2_t, su=C.series.sulf_t;
-      let tmax=0; for(let i=0;i<days.length;i++) tmax=Math.max(tmax,so2[i]+su[i]);
-      const ymax=tmax*1.18;
-      const X=d=>padL+d/DAYT*plotW, Y=v=>padT+(1-v/ymax)*plotH;
-      ctx.clearRect(0,0,o.W,o.H);
-      nightBands(o,X,padT,plotH);
-      const area=(top,bot,fill)=>{ ctx.beginPath(); ctx.moveTo(X(days[0]),Y(bot(0)));
-        for(let i=0;i<days.length;i++)ctx.lineTo(X(days[i]),Y(top(i)));
-        for(let i=days.length-1;i>=0;i--)ctx.lineTo(X(days[i]),Y(bot(i)));
-        ctx.closePath(); ctx.fillStyle=fill; ctx.fill(); };
-      area(i=>so2[i], i=>0, "rgba(240,168,30,0.55)");
-      area(i=>so2[i]+su[i], i=>so2[i], "rgba(58,134,224,0.6)");
-      ctx.font=MONO; ctx.fillStyle=C_AX; ctx.textAlign="right"; ctx.textBaseline="middle";
-      const step=[0.1,0.2,0.25,0.5,1][[0.1,0.2,0.25,0.5,1].findIndex(s=>ymax/s<=5.5)]||1;
-      for(let v=0;v<=ymax;v+=step){ const y=Y(v); ctx.fillText((+v.toFixed(2))+"",padL-4,y);
-        ctx.strokeStyle=C_GRID; ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(padL+plotW,y); ctx.stroke(); }
-      ctx.textAlign="center"; ctx.textBaseline="top";
-      for(const d of XT) ctx.fillText(d+"",X(d),padT+plotH+3);
-      const so2At=q=>so2[Math.min(so2.length-1,Math.round(q*(so2.length-1)))];
-      const suAt=q=>su[Math.min(su.length-1,Math.round(q*(su.length-1)))];
-      ctx.textAlign="center"; ctx.fillStyle="rgba(120,84,10,0.95)"; ctx.font="10px ui-monospace,Menlo,monospace";
-      ctx.fillText("still SO₂ gas",X(DAYT*0.3),Y(so2At(0.3)*0.5));
-      ctx.fillStyle="rgba(150,190,240,0.95)";
-      ctx.fillText("became particles",X(DAYT*0.75),Y(so2At(0.75)+suAt(0.75)*0.5));
-      cursor(o,X(day),padT,plotH);
-    }
-    function drawBudgetShare(day){
-      const o=budget, ctx=o.ctx, padL=34,padR=10,padT=8,padB=18;
+      const o=budget, ctx=o.ctx, padL=38,padR=10,padT=8,padB=18;
       const plotW=o.W-padL-padR, plotH=o.H-padT-padB;
       const X=d=>padL+d/DAYT*plotW, Y=f=>padT+(1-f)*plotH;
       ctx.clearRect(0,0,o.W,o.H);
-      nightBands(o,X,padT,plotH);
-      const days=C.days, fr=C.series.so2_frac;
+      const days=C.days, fr=budgetFrac();
       const area=(top,bot,fill)=>{ ctx.beginPath(); ctx.moveTo(X(days[0]),Y(bot(0)));
         for(let i=0;i<days.length;i++)ctx.lineTo(X(days[i]),Y(top(i)));
         for(let i=days.length-1;i>=0;i--)ctx.lineTo(X(days[i]),Y(bot(i)));
         ctx.closePath(); ctx.fillStyle=fill; ctx.fill(); };
-      area(i=>fr[i], i=>0, "rgba(240,168,30,0.55)");
-      area(i=>1, i=>fr[i], "rgba(58,134,224,0.6)");
+      area(i=>fr[i], i=>0, "rgba(240,168,30,0.62)");
+      area(i=>1, i=>fr[i], "rgba(58,134,224,0.55)");
+      nightBands(o,X,padT,plotH);                                 // subtle, over the fills
       ctx.font=MONO; ctx.fillStyle=C_AX; ctx.textAlign="right"; ctx.textBaseline="middle";
       for(const f of [0,0.25,0.5,0.75,1]){ const y=Y(f); ctx.fillText((f*100)+"%",padL-4,y);
         ctx.strokeStyle=C_GRID; ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(padL+plotW,y); ctx.stroke(); }
       ctx.textAlign="center"; ctx.textBaseline="top";
       for(const d of XT) ctx.fillText(d+"",X(d),padT+plotH+3);
-      // background partition (where the mix ends up once the plume is fully blended)
-      ctx.setLineDash([2,3]); ctx.strokeStyle="rgba(230,238,250,0.5)"; ctx.beginPath();
-      ctx.moveTo(padL,Y(META.bg_so2_frac)); ctx.lineTo(padL+plotW,Y(META.bg_so2_frac)); ctx.stroke(); ctx.setLineDash([]);
-      // labels placed from the data so they sit inside their own band
+      // share mode: dashed line at the background partition, only when it sits usefully inside
+      if(budgetMode==="share" && META.bg_so2_frac>0.06 && META.bg_so2_frac<0.94){
+        ctx.setLineDash([2,3]); ctx.strokeStyle="rgba(230,238,250,0.4)"; ctx.beginPath();
+        ctx.moveTo(padL,Y(META.bg_so2_frac)); ctx.lineTo(padL+plotW,Y(META.bg_so2_frac));
+        ctx.stroke(); ctx.setLineDash([]);
+        ctx.font=MONO; ctx.fillStyle="rgba(230,238,250,0.55)"; ctx.textAlign="right";
+        ctx.textBaseline="bottom";
+        ctx.fillText("background mix",padL+plotW-4,Y(META.bg_so2_frac)-2);
+      }
+      // band labels, placed from the data so each sits inside its own band
       const frAt=q=>fr[Math.min(fr.length-1,Math.round(q*(fr.length-1)))];
-      ctx.textAlign="center"; ctx.fillStyle="rgba(120,84,10,0.95)"; ctx.font="10px ui-monospace,Menlo,monospace";
-      ctx.fillText("still SO₂ gas",X(DAYT*0.3),Y(frAt(0.3)*0.5));
-      ctx.fillStyle="rgba(150,190,240,0.95)";
-      ctx.fillText("in particles",X(DAYT*0.75),Y((1+frAt(0.75))/2));
-      ctx.fillStyle="rgba(230,238,250,0.6)"; ctx.textAlign="left";
-      ctx.fillText("background mix",padL+4,Y(META.bg_so2_frac)+4);
+      ctx.font="10px ui-monospace,Menlo,monospace"; ctx.textAlign="center"; ctx.textBaseline="middle";
+      const qO=frAt(0.28)>0.25?0.28:0.12;                        // keep orange label in a thick spot
+      ctx.fillStyle="rgba(255,222,150,0.9)";
+      ctx.fillText("still SO₂ gas",X(DAYT*qO),Y(frAt(qO)*0.5));
+      ctx.fillStyle="rgba(165,200,245,0.95)";
+      ctx.fillText("in particles",X(DAYT*0.78),Y((1+frAt(0.78))/2));
+      // headline: conversion of the injected tonne when the plume fades (ctrl mode)
+      if(budgetMode==="ctrl"){
+        const conv=Math.round((1-fr[fr.length-1])*100);
+        ctx.fillStyle="rgba(165,200,245,0.95)"; ctx.textAlign="right"; ctx.textBaseline="top";
+        ctx.fillText(conv+"% converted by day "+Math.round(DAYT),padL+plotW-4,padT+3);
+      }
       cursor(o,X(day),padT,plotH);
     }
 
     // ---- particle number (log) ----------------------------------------------------------------
     function drawCount(day){
       const o=count, ctx=o.ctx, padL=40,padR=10,padT=10,padB=18;
-      const plotW=o.W-padL-padR, plotH=o.H-padT-padB, ymin=0.8, ymax=countMax;
+      const plotW=o.W-padL-padR, plotH=o.H-padT-padB, ymin=0.8, ymax=COUNT_MAX;
       const X=d=>padL+d/DAYT*plotW, Y=v=>padT+(1-(L10(Math.max(v,ymin))-L10(ymin))/(L10(ymax)-L10(ymin)))*plotH;
       ctx.clearRect(0,0,o.W,o.H);
       nightBands(o,X,padT,plotH);
@@ -740,9 +742,11 @@
         ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(padL+plotW,y); ctx.stroke(); ctx.fillText(pow10Label(e),padL-4,y); }
       ctx.textAlign="center"; ctx.textBaseline="top";
       for(const d of XT) ctx.fillText(d+"",X(d),padT+plotH+3);
-      // background level (dotted)
-      ctx.setLineDash([2,3]); ctx.strokeStyle="rgba(150,160,180,0.55)"; ctx.beginPath();
+      // background level (dotted, labeled)
+      ctx.setLineDash([2,3]); ctx.strokeStyle="rgba(150,160,180,0.5)"; ctx.beginPath();
       ctx.moveTo(padL,Y(C.series.total_n[0])); ctx.lineTo(padL+plotW,Y(C.series.total_n[0])); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle="rgba(150,160,180,0.65)"; ctx.textAlign="right"; ctx.textBaseline="bottom";
+      ctx.fillText("background",padL+plotW-4,Y(C.series.total_n[0])-2);
       const tn=C.series.total_n, days=C.days;
       ctx.beginPath(); for(let i=0;i<days.length;i++){ const x=X(days[i]),y=Y(tn[i]); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
       ctx.strokeStyle=C_PARTLINE; ctx.lineWidth=1.8; ctx.lineJoin="round"; ctx.stroke();
@@ -894,11 +898,13 @@
   function switchCase(key, keepDay){
     if(!D.cases[key] || key===caseKey) return;
     const day=keepDay?Math.min(state.day,D.cases[key].meta.days_total):0;
+    const wasPlaying=player.playing;                            // keep the story running
     setPlaying(false);
     applyCase(key);
     player.a01=simToAnim(day);
     const sc=$("scrub"); sc.value=player.a01*1000; sc.style.setProperty("--f",(sc.value/10)+"%");
     setSimDay(day,{snapCam:true});
+    if(wasPlaying) setPlaying(true);
   }
   api.setCase=k=>switchCase(k,true);
   api.listCases=()=>Object.keys(D.cases);
@@ -924,12 +930,12 @@
   function buildTrack(){
     const ticks=$("ticks"), ph=$("phases");
     ticks.innerHTML=""; ph.innerHTML="";
-    const cand=[0,0.25,0.5,1,2,3,5,10,15,20,25,30,35,40].filter(d=>d<DAYT*0.96);
-    const lab=d=>d===0.25?"¼":d===0.5?"½":d+"";
+    const cand=[0,0.5,1,2,3,5,10,15,20,25,30,35,40].filter(d=>d<DAYT*0.93);
+    const lab=d=>d===0.5?"½":d+"";
     let lastX=-1;
     for(const d of cand.concat([DAYT])){
       const x=simToAnim(d)*100;
-      if(x-lastX<3.2 && d!==0) continue;
+      if(x-lastX<4.5 && d!==0) continue;
       lastX=x;
       const s=document.createElement("span"); s.style.left=x.toFixed(2)+"%";
       s.textContent=(d===DAYT)?(Math.round(DAYT)+"d"):lab(d);
@@ -944,6 +950,9 @@
     document.querySelectorAll(".bmode").forEach(b=>b.addEventListener("click",()=>{
       Charts.setBudgetMode(b.dataset.m);
       document.querySelectorAll(".bmode").forEach(x=>x.classList.toggle("on",x===b));
+      $("bmode-note").textContent=b.dataset.m==="ctrl"
+        ?"dilution removed (vs a paired control run)"
+        :"raw mix — ends at the background";
       Charts.render(state.day);
       api.budgetMode=b.dataset.m;
     }));
