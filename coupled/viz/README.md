@@ -59,7 +59,9 @@ Default `--runs-root` is `coupled/paper_ensemble/` in the sibling working copy (
 - `runs_bgstop/<site>__sabr220__{D1low,D2med,burst}__h06_bgstop/state.npz` — 60-day-max runs with
   the run-time background stop (`run_bgstop.py`);
 - `runs_start_time/<site>__sabr220__{D3high,D5vhigh}__h06/state.npz` — 10-day runs that reach the
-  criterion in-window; the bake truncates them at it.
+  criterion in-window; the bake truncates them at it;
+- `runs_bgstop_ctrl/<site>__sabr220__<regime>__h06_ctrl/state.npz` — paired no-injection control
+  runs (`run_bgstop_control.py`), one per case, for the dilution-corrected sulfur budget.
 
 On first run it downloads Natural Earth 110 m coastlines into `cache/` (gitignored); pass
 `--no-net` to require the cache. The bake prints per-case lifetimes and a per-section byte report,
@@ -69,10 +71,13 @@ and hard-fails if the file would exceed 800 KB.
 
 **Real model output** (from the coupled gas-chemistry + TUV-x photolysis + TOMAS aerosol runs):
 - the size distribution dN/dlogDₚ, total particle number, effective radius;
-- the sulfur partition of plume air (share of sulfur still SO₂ gas vs in particles, raw per-cm³
-  concentrations, deliberately **not** dilution-corrected: a dilution-corrected excess×V budget
-  claims 100% conversion the moment plume SO₂ touches background, which is chemically wrong on
-  short runs — the share instead converges to the background partition, drawn as a dashed line);
+- the sulfur panel, two toggleable views: **"vs control · tonnes"** (default) is the
+  dilution-corrected budget against a PAIRED no-injection control run — same site, same dilution
+  regime, so the dilution terms cancel in (plume − control)×V and the SO₂/particle split decays
+  only through genuine chemistry differences (total conserved at exactly the injected 1 t; a
+  naive excess-over-static-background budget instead claims 100% conversion the moment plume SO₂
+  blends down to background). **"share of plume air"** is the raw, uncorrected per-cm³ partition,
+  which converges to the background mix (dashed line);
 - dilution factor V(t)/V₀ and each case's background-relaxation endpoint;
 - day/night for the **chemistry** (from the run's photolysis rates), shown as the chart night bands
   and the "daylight/night (model)" readout.

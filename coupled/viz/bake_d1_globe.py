@@ -52,6 +52,7 @@ _MARK_B = "/*__D1_DATA_END__*/"
 _SIZE_LIMIT = 800_000
 
 _AVOG = 6.02214076e23
+_V0_CM3 = 1.5e12                     # 10 m x 10 m x 15 km (run_ensemble.py)
 _SO2_INJ_T = 1.0                     # tonnes injected
 _SO2_BG_PPT = 20.0                   # SABR-220 background SO2
 _SIDE0_M = 10.0
@@ -90,6 +91,11 @@ def _npz_path(runs_root, site, regime):
                             f"{site}__sabr220__{regime}__h06_bgstop", "state.npz")
     return os.path.join(runs_root, "runs_start_time",
                         f"{site}__sabr220__{regime}__h06", "state.npz")
+
+
+def _ctrl_npz_path(runs_root, site, regime):
+    return os.path.join(runs_root, "runs_bgstop_ctrl",
+                        f"{site}__sabr220__{regime}__h06_ctrl", "state.npz")
 
 
 def _t_star(t, sa):
@@ -183,7 +189,7 @@ def _captions(site, tend, t_burst):
     ]
 
 
-def assemble_case(npz_path, site, regime):
+def assemble_case(npz_path, site, regime, ctrl_path):
     r = np.load(npz_path, allow_pickle=True)
     t = np.asarray(r["t"], float)
     sa = np.asarray(r["SA"], float)
@@ -218,11 +224,30 @@ def assemble_case(npz_path, site, regime):
     bg_so2_frac = so2_bg / (so2_bg + partS[0])                   # background partition (h2so4 ~ 0)
     total_n = np.asarray(r["total_n"], float)[:i_end + 1]
 
+    # dilution-corrected budget vs the PAIRED no-injection control (same site, same regime, same
+    # k_dil(t), per Ali): the dilution terms cancel in the difference, so (plume - control) x V is
+    # the injected tonne's own budget and decays only through genuine chemistry differences.
+    c = np.load(ctrl_path, allow_pickle=True)
+    tc = np.asarray(c["t"], float)
+    assert len(tc) >= i_end + 1 and np.allclose(tc[:i_end + 1], t), \
+        f"control t grid mismatch: {ctrl_path}"
+    cs = [str(s) for s in c["species"]]
+    to_t = _V0_CM3 * V / _AVOG * 64.0 / 1e6                      # conc -> SO2-equiv tonnes
+    dso2 = (x_so2 - np.asarray(c["x"], float)[:i_end + 1, cs.index("SO2")]) * to_t
+    dpart = (partS - np.asarray(c["particulate_S"], float)[:i_end + 1]) * to_t
+    dh2so4 = (x_h2so4 - np.asarray(c["x"], float)[:i_end + 1, cs.index("H2SO4")]) * to_t
+    so2_t = np.maximum(dso2, 0.0)
+    sulf_t = np.maximum(dpart + dh2so4, 0.0)
+    cons = dso2 + dpart + dh2so4                                 # should stay ~= injected 1 t
+    print(f"      budget conservation vs control: total in [{cons.min():.3f}, {cons.max():.3f}] t")
+
     series = dict(
         so2_ppt=_sig(x_so2[keep] / M * 1e12),
         side_m=_sig(_SIDE0_M * np.sqrt(V[keep])),
         V=_sig(V[keep]),
         so2_frac=_sig(so2_frac[keep]),
+        so2_t=_sig(so2_t[keep]),
+        sulf_t=_sig(sulf_t[keep]),
         total_n=_sig(total_n[keep]),
         reff_um=_sig(np.asarray(r["radius_cm"], float)[:i_end + 1][keep] * 1e4),
         sa=_sig(sa[:i_end + 1][keep]),
@@ -235,6 +260,7 @@ def assemble_case(npz_path, site, regime):
     meta = dict(
         scenario=f"{site['key']} / {regime['key']} — SABR-220, 1 t SO2, 06:00 release, 80-bin",
         npz=os.path.relpath(npz_path, os.path.dirname(os.path.dirname(npz_path))),
+        ctrl_npz=os.path.relpath(ctrl_path, os.path.dirname(os.path.dirname(ctrl_path))),
         n_keep=int(len(keep)), n_full=int(len(days)),
         lat0=site["lat0"], lon0=site["lon0"], alt_km=site["alt_km"], p_hpa=site["p_hpa"],
         doy=172, start_utc_hour=6.0, side0_m=_SIDE0_M, track_km=_TRACK_KM,
@@ -312,9 +338,11 @@ def assemble(runs_root, coast_cache, allow_net):
     for site in SITES:
         for reg in REGIMES:
             p = _npz_path(runs_root, site["key"], reg["key"])
-            if not os.path.exists(p):
-                sys.exit(f"missing run: {p}")
-            case, r = assemble_case(p, site, reg)
+            pc = _ctrl_npz_path(runs_root, site["key"], reg["key"])
+            for path in (p, pc):
+                if not os.path.exists(path):
+                    sys.exit(f"missing run: {path}")
+            case, r = assemble_case(p, site, reg, pc)
             cases[f"{site['key']}|{reg['key']}"] = case
             dp = _sig(np.asarray(r["dp_mid_um"], float), 4)
             if dp_um is None:
