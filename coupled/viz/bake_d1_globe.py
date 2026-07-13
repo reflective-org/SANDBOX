@@ -52,7 +52,6 @@ _MARK_B = "/*__D1_DATA_END__*/"
 _SIZE_LIMIT = 800_000
 
 _AVOG = 6.02214076e23
-_V0_CM3 = 1.5e12                     # 10 m x 10 m x 15 km (run_ensemble.py)
 _SO2_INJ_T = 1.0                     # tonnes injected
 _SO2_BG_PPT = 20.0                   # SABR-220 background SO2
 _SIDE0_M = 10.0
@@ -206,27 +205,24 @@ def assemble_case(npz_path, site, regime):
     dk = days[keep]
 
     V = np.asarray(r["V_ratio"], float)[:i_end + 1]
-    Vt_cm3 = _V0_CM3 * V
     x_so2 = np.asarray(r["x"], float)[:i_end + 1, species.index("SO2")]
-    # plume-integrated EXCESS (above-background) masses: dilution relaxes conc toward the
-    # background, so excess x V is the conserved plume budget; absolute conc x V would blow up
-    # once V is huge and the plume is nearly background (entrained background sulfur dominates).
+    x_h2so4 = np.asarray(r["x"], float)[:i_end + 1, species.index("H2SO4")]
+    partS = np.asarray(r["particulate_S"], float)[:i_end + 1]
+    # sulfur partition of PLUME AIR, per cm^3, deliberately NOT dilution-corrected: the share of
+    # sulfur (S atoms) still in SO2 gas vs already in particles (+ trace acid vapour). A
+    # dilution-corrected excess x V budget claims 100% conversion the moment the plume SO2 conc
+    # touches background -- chemically wrong on short runs, where the SO2 mostly blends away.
+    # This share instead converges to the BACKGROUND sulfur partition (mostly particulate).
+    so2_frac = x_so2 / (x_so2 + x_h2so4 + partS)
     so2_bg = _SO2_BG_PPT * 1e-12 * float(r["M"])
-    so2_t = np.maximum(x_so2 - so2_bg, 0.0) * Vt_cm3 / _AVOG * 64.0 / 1e6      # tonnes SO2
-    # converted injected sulfur = injected - still-gas excess. Excess x V is exactly conserved
-    # under the model's dilution, so this is the injected tonne's own budget; the converted share
-    # lives in the particles (trace gas H2SO4 is kilograms). Any absolute conc x V (particulate_S,
-    # gas H2SO4) would instead count processed ENTRAINED background sulfur, which exceeds 1 t once
-    # V ~ 1e7 -- misleading, so it is not baked.
-    sulf_t = np.maximum(so2_t[0] - so2_t, 0.0)                                 # SO2-equiv tonnes
+    bg_so2_frac = so2_bg / (so2_bg + partS[0])                   # background partition (h2so4 ~ 0)
     total_n = np.asarray(r["total_n"], float)[:i_end + 1]
 
     series = dict(
         so2_ppt=_sig(x_so2[keep] / M * 1e12),
         side_m=_sig(_SIDE0_M * np.sqrt(V[keep])),
         V=_sig(V[keep]),
-        so2_t=_sig(so2_t[keep]),
-        sulf_t=_sig(sulf_t[keep]),
+        so2_frac=_sig(so2_frac[keep]),
         total_n=_sig(total_n[keep]),
         reff_um=_sig(np.asarray(r["radius_cm"], float)[:i_end + 1][keep] * 1e4),
         sa=_sig(sa[:i_end + 1][keep]),
@@ -243,6 +239,7 @@ def assemble_case(npz_path, site, regime):
         lat0=site["lat0"], lon0=site["lon0"], alt_km=site["alt_km"], p_hpa=site["p_hpa"],
         doy=172, start_utc_hour=6.0, side0_m=_SIDE0_M, track_km=_TRACK_KM,
         so2_bg_ppt=_SO2_BG_PPT, so2_inj_t=_SO2_INJ_T,
+        bg_so2_frac=float(f"{bg_so2_frac:.4g}"),
         days_total=tend, t_star_day=float(round(ts / 86400.0, 4)),
         sa_bg=float(f"{sa[np.isfinite(sa)][0]:.4g}"),
         n_bg_cm3=float(f"{series['total_n'][0]:.3g}"),

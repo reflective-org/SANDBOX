@@ -69,8 +69,10 @@ and hard-fails if the file would exceed 800 KB.
 
 **Real model output** (from the coupled gas-chemistry + TUV-x photolysis + TOMAS aerosol runs):
 - the size distribution dN/dlogDₚ, total particle number, effective radius;
-- the sulfur budget (above-background SO₂ gas → particulate sulfate, plume-integrated tonnes —
-  the *excess* over the entrained background, which is the conserved quantity under dilution);
+- the sulfur partition of plume air (share of sulfur still SO₂ gas vs in particles, raw per-cm³
+  concentrations, deliberately **not** dilution-corrected: a dilution-corrected excess×V budget
+  claims 100% conversion the moment plume SO₂ touches background, which is chemically wrong on
+  short runs — the share instead converges to the background partition, drawn as a dashed line);
 - dilution factor V(t)/V₀ and each case's background-relaxation endpoint;
 - day/night for the **chemistry** (from the run's photolysis rates), shown as the chart night bands
   and the "daylight/night (model)" readout.
