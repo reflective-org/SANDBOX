@@ -3,21 +3,24 @@
 """Bake the paper-ensemble dilution runs into the self-contained web visualization.
 
 v2 of the bake: instead of the single D1 clean-stratosphere run, this bakes a GRID of cases --
-every dilution parameterization (D1 low Kz, D2 med, D3 high, D5 very high, turbulence burst) at
-every start location (30N/20 km, 60N/15 km) -- into one JSON blob with dropdown metadata. Each
-case is truncated where the plume stops being distinguishable from the background: the first time
-the wet aerosol surface area has stayed within 10% of the background SA for 24 h straight (the
-same run-time stop criterion as coupled/paper_ensemble/run_60day.py / run_bgstop.py on the
-paper/simulations branch). That endpoint differs per regime (~5 d for D5 up to ~35 d for D1).
+every dilution parameterization (D1 low Kz, D2 med, D3 high, D5 very high, turbulence burst) x
+start location (30N/20 km, 60N/15 km) x background aerosol (SABR-220 N2O-aged, SABR-330
+N2O-young, AER-2D geoengineered) -- into one JSON blob with dropdown metadata. Each case is
+truncated where the plume stops being distinguishable from the background: the first time the
+wet aerosol surface area has stayed within 10% of the background SA for 24 h straight (the same
+run-time stop criterion as coupled/paper_ensemble/run_60day.py / run_bgstop.py on the
+paper/simulations branch). That endpoint differs per regime (~5 d for D5 up to ~5 weeks for D1).
 
 Sources (sibling working copy, paper/simulations branch):
-  * D1low / D2med / burst : paper_ensemble/runs_bgstop/<site>__sabr220__<reg>__h06_bgstop/
-    (60-day-max runs with the run-time background stop; they end at the criterion)
-  * D3high / D5vhigh      : paper_ensemble/runs_start_time/<site>__sabr220__<reg>__h06/
-    (10-day runs; they reach the criterion in-window and are truncated here)
+  * paper_ensemble/runs_bgstop/<site>__<bg>__<reg>__h06_bgstop/ -- 60-day-max runs with the
+    run-time background stop (all cases except the two below);
+  * paper_ensemble/runs_start_time/<site>__sabr220__{D3high,D5vhigh}__h06/ -- 10-day runs that
+    reach the criterion in-window and are truncated here;
+  * paper_ensemble/runs_bgstop_ctrl/<site>__<bg>__<reg>__h06_ctrl/ -- PAIRED no-injection
+    control runs (same k_dil), for the dilution-corrected sulfur budget.
 
-All cases share one scenario family (run_ensemble ICs, SABR-220 background, 1 t SO2 into
-10 m x 10 m x 15 km, release 06:00 local, doy 172, alpha x1 / nuc x1 / coag x1).
+All cases share one scenario family (run_ensemble ICs, 1 t SO2 into 10 m x 10 m x 15 km,
+release 06:00 local, doy 172, alpha x1 / nuc x1 / coag x1).
 
 The chemistry / aerosol arrays are REAL model output. The wind table (used only to advect and
 shear the plume for the globe view) is a hand-specified illustrative June climatology -- NOT
@@ -49,12 +52,11 @@ _COAST_URL = ("https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ma
 
 _MARK_A = "/*__D1_DATA_BEGIN__*/"
 _MARK_B = "/*__D1_DATA_END__*/"
-_SIZE_LIMIT = 800_000
+_SIZE_LIMIT = 1_600_000   # 30-case grid; still loads instantly as a local file or static page
 
 _AVOG = 6.02214076e23
 _V0_CM3 = 1.5e12                     # 10 m x 10 m x 15 km (run_ensemble.py)
 _SO2_INJ_T = 1.0                     # tonnes injected
-_SO2_BG_PPT = 20.0                   # SABR-220 background SO2
 _SIDE0_M = 10.0
 _TRACK_KM = 15.0
 
@@ -65,6 +67,11 @@ SITES = [
     dict(key="30N_20km", label="30°N · 20 km", lat0=30.0, lon0=0.0, alt_km=20.0, p_hpa=55.0),
     dict(key="60N_15km", label="60°N · 15 km", lat0=60.0, lon0=0.0, alt_km=15.0, p_hpa=120.0),
 ]
+BACKGROUNDS = [   # key, dropdown label, background SO2 [pptv] (run_ensemble/run_geo_ensemble)
+    dict(key="sabr220", label="N₂O aged air (SABR 220)", so2_bg_ppt=20.0),
+    dict(key="sabr330", label="N₂O young air (SABR 330)", so2_bg_ppt=20.0),
+    dict(key="aergeo",  label="Geoengineered (AER-2D)", so2_bg_ppt=100.0),
+]
 REGIMES = [   # key, dropdown label (Schumann k or burst; TABLE_dilution_parameters.md)
     dict(key="D1low",   label="D1 — low Kz (slowest mixing)"),
     dict(key="D2med",   label="D2 — medium Kz (default)"),
@@ -73,7 +80,7 @@ REGIMES = [   # key, dropdown label (Schumann k or burst; TABLE_dilution_paramet
     dict(key="burst",   label="Turbulence burst (~14 h of strong mixing)"),
 ]
 _FROM_BGSTOP = {"D1low", "D2med", "burst"}
-_DEFAULT_CASE = dict(site="30N_20km", regime="D2med")
+_DEFAULT_CASE = dict(site="30N_20km", background="sabr220", regime="D2med")
 
 # illustrative June ~50 hPa climatology (subtropical summer easterlies). NOT model output.
 _WIND = dict(
@@ -85,17 +92,17 @@ _WIND = dict(
 )
 
 
-def _npz_path(runs_root, site, regime):
-    if regime in _FROM_BGSTOP:
-        return os.path.join(runs_root, "runs_bgstop",
-                            f"{site}__sabr220__{regime}__h06_bgstop", "state.npz")
-    return os.path.join(runs_root, "runs_start_time",
-                        f"{site}__sabr220__{regime}__h06", "state.npz")
+def _npz_path(runs_root, site, bg, regime):
+    if bg == "sabr220" and regime not in _FROM_BGSTOP:
+        return os.path.join(runs_root, "runs_start_time",
+                            f"{site}__sabr220__{regime}__h06", "state.npz")
+    return os.path.join(runs_root, "runs_bgstop",
+                        f"{site}__{bg}__{regime}__h06_bgstop", "state.npz")
 
 
-def _ctrl_npz_path(runs_root, site, regime):
+def _ctrl_npz_path(runs_root, site, bg, regime):
     return os.path.join(runs_root, "runs_bgstop_ctrl",
-                        f"{site}__sabr220__{regime}__h06_ctrl", "state.npz")
+                        f"{site}__{bg}__{regime}__h06_ctrl", "state.npz")
 
 
 def _t_star(t, sa):
@@ -189,7 +196,7 @@ def _captions(site, tend, t_burst):
     ]
 
 
-def assemble_case(npz_path, site, regime, ctrl_path):
+def assemble_case(npz_path, site, bgd, regime, ctrl_path):
     r = np.load(npz_path, allow_pickle=True)
     t = np.asarray(r["t"], float)
     sa = np.asarray(r["SA"], float)
@@ -220,7 +227,7 @@ def assemble_case(npz_path, site, regime, ctrl_path):
     # touches background -- chemically wrong on short runs, where the SO2 mostly blends away.
     # This share instead converges to the BACKGROUND sulfur partition (mostly particulate).
     so2_frac = x_so2 / (x_so2 + x_h2so4 + partS)
-    so2_bg = _SO2_BG_PPT * 1e-12 * float(r["M"])
+    so2_bg = bgd["so2_bg_ppt"] * 1e-12 * float(r["M"])
     bg_so2_frac = so2_bg / (so2_bg + partS[0])                   # background partition (h2so4 ~ 0)
     total_n = np.asarray(r["total_n"], float)[:i_end + 1]
 
@@ -249,7 +256,6 @@ def assemble_case(npz_path, site, regime, ctrl_path):
         so2_t=_sig(so2_t[keep]),
         sulf_t=_sig(sulf_t[keep]),
         total_n=_sig(total_n[keep]),
-        reff_um=_sig(np.asarray(r["radius_cm"], float)[:i_end + 1][keep] * 1e4),
         sa=_sig(sa[:i_end + 1][keep]),
     )
     is_day, nights = _day_night(np.asarray(r["J"]), np.asarray(r["J_tmid"], float), dk)
@@ -258,13 +264,13 @@ def assemble_case(npz_path, site, regime, ctrl_path):
     tend = float(round(days[-1], 4))
     t_burst = float(days[:len(total_n)][int(np.argmax(total_n))])
     meta = dict(
-        scenario=f"{site['key']} / {regime['key']} — SABR-220, 1 t SO2, 06:00 release, 80-bin",
+        scenario=f"{site['key']} / {bgd['key']} / {regime['key']} — 1 t SO2, 06:00 release, 80-bin",
         npz=os.path.relpath(npz_path, os.path.dirname(os.path.dirname(npz_path))),
         ctrl_npz=os.path.relpath(ctrl_path, os.path.dirname(os.path.dirname(ctrl_path))),
         n_keep=int(len(keep)), n_full=int(len(days)),
         lat0=site["lat0"], lon0=site["lon0"], alt_km=site["alt_km"], p_hpa=site["p_hpa"],
         doy=172, start_utc_hour=6.0, side0_m=_SIDE0_M, track_km=_TRACK_KM,
-        so2_bg_ppt=_SO2_BG_PPT, so2_inj_t=_SO2_INJ_T,
+        so2_bg_ppt=bgd["so2_bg_ppt"], so2_inj_t=_SO2_INJ_T,
         bg_so2_frac=float(f"{bg_so2_frac:.4g}"),
         days_total=tend, t_star_day=float(round(ts / 86400.0, 4)),
         sa_bg=float(f"{sa[np.isfinite(sa)][0]:.4g}"),
@@ -336,23 +342,25 @@ def _pack_coastline(geo, q=10, min_bbox_deg=1.5):
 def assemble(runs_root, coast_cache, allow_net):
     cases, dp_um = {}, None
     for site in SITES:
-        for reg in REGIMES:
-            p = _npz_path(runs_root, site["key"], reg["key"])
-            pc = _ctrl_npz_path(runs_root, site["key"], reg["key"])
-            for path in (p, pc):
-                if not os.path.exists(path):
-                    sys.exit(f"missing run: {path}")
-            case, r = assemble_case(p, site, reg, pc)
-            cases[f"{site['key']}|{reg['key']}"] = case
-            dp = _sig(np.asarray(r["dp_mid_um"], float), 4)
-            if dp_um is None:
-                dp_um = dp
-            elif dp != dp_um:
-                sys.exit("dp grid differs between cases -- per-case dp not implemented")
-            print(f"  {site['key']:9s} {reg['key']:8s} end={case['meta']['days_total']:6.2f} d  "
-                  f"t*={case['meta']['t_star_day']:6.2f} d  frames={case['meta']['n_keep']}")
+        for bgd in BACKGROUNDS:
+            for reg in REGIMES:
+                p = _npz_path(runs_root, site["key"], bgd["key"], reg["key"])
+                pc = _ctrl_npz_path(runs_root, site["key"], bgd["key"], reg["key"])
+                for path in (p, pc):
+                    if not os.path.exists(path):
+                        sys.exit(f"missing run: {path}")
+                case, r = assemble_case(p, site, bgd, reg, pc)
+                cases[f"{site['key']}|{bgd['key']}|{reg['key']}"] = case
+                dp = _sig(np.asarray(r["dp_mid_um"], float), 4)
+                if dp_um is None:
+                    dp_um = dp
+                elif dp != dp_um:
+                    sys.exit("dp grid differs between cases -- per-case dp not implemented")
+                print(f"  {site['key']:9s} {bgd['key']:8s} {reg['key']:8s} "
+                      f"end={case['meta']['days_total']:6.2f} d  "
+                      f"t*={case['meta']['t_star_day']:6.2f} d  frames={case['meta']['n_keep']}")
     return dict(
-        sites=SITES, regimes=REGIMES, default=_DEFAULT_CASE,
+        sites=SITES, backgrounds=BACKGROUNDS, regimes=REGIMES, default=_DEFAULT_CASE,
         dist_dp_um=dp_um, dist_qscale=14,
         cases=cases,
         ussa=_load_ussa(),

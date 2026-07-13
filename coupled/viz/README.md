@@ -4,20 +4,24 @@
 stratosphere for a non-specialist audience: injected as a 10 m-wide trail, drifting and shearing
 over a stylized Earth while its chemistry and aerosol microphysics play out in synchronized panels.
 
-It shows a **grid of paper-ensemble runs** selectable from two dropdowns:
+It shows a **grid of paper-ensemble runs** selectable from three dropdowns:
 
 - **Dilution parameterization** — D1 low Kz, D2 medium (default), D3 high, D5 very high, and the
   transient turbulence burst (Schumann-type V(t)/V₀ expansions; see
   `paper_ensemble/TABLE_dilution_parameters.md` on the `paper/simulations` branch).
+- **Background aerosol** — SABR 220 (N₂O-aged air, default), SABR 330 (N₂O-young air), and the
+  AER-2D geoengineered stratosphere (Pierce fig. 2; N = 120 cm⁻³, Dg = 0.30 µm — background SO₂
+  100 pptv instead of 20).
 - **Start location** — 30°N / 20 km (55 hPa) and 60°N / 15 km (120 hPa).
 
 Every case runs until the plume is indistinguishable from the background — the timeline ends at
 the first time the wet aerosol surface area has stayed within 10% of the background SA for 24 h
 straight (the run-time stop criterion of `paper_ensemble/run_60day.py` / `run_bgstop.py`). That
-lifetime is regime-dependent (≈5 days for D5 up to ≈5 weeks for D1), so each case has its own
-timeline length; the header states it.
+lifetime depends on regime and background (≈3 days for a fast-mixing plume in the geoengineered
+background up to ≈5 weeks for D1 in clean aged air), so each case has its own timeline length;
+the header states it.
 
-All cases share one scenario family (`paper_ensemble/run_ensemble.py` ICs: SABR-220 background,
+All cases share one scenario family (`paper_ensemble/run_ensemble.py` ICs,
 1 t SO₂ into 10 m × 10 m × 15 km, release 06:00 local, doy 172, α×1 / nuc×1 / coag×1, 80 bins,
 aerosol→J off). It is the interactive "v2" of the matplotlib GIF in `coupled/animate_d1_plume.py`.
 
@@ -30,18 +34,18 @@ open coupled/viz/d1_globe.html          # macOS
 ```
 
 It also works as a hosted page (GitHub Pages, any static host) and as a Claude Artifact. The whole
-thing is well under the 800 KB bake limit with all ten cases, coastlines, and code inlined.
+thing stays under the 1.6 MB bake limit with all thirty cases, coastlines, and code inlined.
 
 ### Controls
-- **Dropdowns** for dilution regime and start location (state is kept across switches: the current
-  sim day carries over, clamped to the new case's lifetime).
+- **Dropdowns** for dilution regime, background aerosol, and start location (state is kept across
+  switches: the current sim day carries over, clamped to the new case's lifetime).
 - **Play / pause** ▶, speed **0.5–4×**, draggable **scrubber** (time is warped so the first-day
   nucleation burst gets proportional room; diamonds mark narrative beats).
 - **Keyboard:** Space = play/pause, ←/→ step (Shift = bigger), Home/End = jump to start/end.
 - **Drag** on any time-axis chart to scrub.
 - Respects `prefers-reduced-motion` (starts paused).
-- URL hash for deep links / testing: `#t=<day>&paused=1&case=<site>|<regime>`
-  (e.g. `d1_globe.html#t=2&paused=1&case=60N_15km|D5vhigh`).
+- URL hash for deep links / testing: `#t=<day>&paused=1&case=<site>|<background>|<regime>`
+  (e.g. `d1_globe.html#t=2&paused=1&case=60N_15km|aergeo|D5vhigh`).
 
 ## Re-bake the data
 
@@ -56,11 +60,11 @@ python coupled/viz/bake_d1_globe.py [--runs-root ...] [--html d1_globe.html] [--
 Default `--runs-root` is `coupled/paper_ensemble/` in the sibling working copy (the
 `paper/simulations` branch), reading:
 
-- `runs_bgstop/<site>__sabr220__{D1low,D2med,burst}__h06_bgstop/state.npz` — 60-day-max runs with
-  the run-time background stop (`run_bgstop.py`);
+- `runs_bgstop/<site>__<bg>__<regime>__h06_bgstop/state.npz` — 60-day-max runs with the run-time
+  background stop (`run_bgstop.py`; all cases except the two below);
 - `runs_start_time/<site>__sabr220__{D3high,D5vhigh}__h06/state.npz` — 10-day runs that reach the
   criterion in-window; the bake truncates them at it;
-- `runs_bgstop_ctrl/<site>__sabr220__<regime>__h06_ctrl/state.npz` — paired no-injection control
+- `runs_bgstop_ctrl/<site>__<bg>__<regime>__h06_ctrl/state.npz` — paired no-injection control
   runs (`run_bgstop_control.py`), one per case, for the dilution-corrected sulfur budget.
 
 On first run it downloads Natural Earth 110 m coastlines into `cache/` (gitignored); pass
