@@ -69,7 +69,7 @@ Default `--runs-root` is `coupled/paper_ensemble/` in the sibling working copy (
 
 On first run it downloads Natural Earth 110 m coastlines into `cache/` (gitignored); pass
 `--no-net` to require the cache. The bake prints per-case lifetimes and a per-section byte report,
-and hard-fails if the file would exceed 800 KB.
+and hard-fails if the file would exceed 1.6 MB.
 
 ## What is real, and what is illustrative
 
@@ -117,8 +117,8 @@ one IIFE. The IIFE is sectioned:
 - **§D** time-warp + interpolation helpers
 - **§E** globe renderer (Canvas 2D: disc, graticule, coastlines, terminator, plume ribbon)
 - **§F** altitude side-view inset
-- **§G** microphysics charts (size distribution, sulfur budget, particle count; axes rescale
-  per case)
+- **§G** microphysics charts (size distribution, sulfur budget, particle count; axes are FIXED
+  across cases so dropdown switches never rescale)
 - **§H** state fan-out (`setSimDay`) + `Player` (rAF, camera easing) + controls
 - **§J** case switching (`applyCase` rebuilds the per-case derived state: path, time-warp,
   chart scales, track ticks, captions)
