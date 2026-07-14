@@ -98,6 +98,26 @@ def compute_all():
     return cases, drf
 
 
+_FREACT_CACHE = os.path.join(_OUT, "_freact_cache.npz")
+_IDX_SO2 = 32
+
+
+def compute_freact(cases):
+    """Fraction of injected SO2 chemically consumed by t* (plume-integrated)."""
+    if os.path.exists(_FREACT_CACHE):
+        return np.load(_FREACT_CACHE)["f"]
+    f = np.full(len(cases), np.nan)
+    for i, cid in enumerate(cases):
+        z = np.load(os.path.join(case_dir(cid), "state.npz"))
+        it = int(np.searchsorted(z["t"], EVAL_DAY[_tokens(cid)[2]] * 86400.0 - 1e-6))
+        bg_ppt = 20.0 if _tokens(cid)[1].startswith("sabr") else 100.0
+        n_bg = bg_ppt * 1e-12 * float(z["M"])
+        remaining = (z["x"][it, _IDX_SO2] - n_bg) * float(z["V_ratio"][it])
+        f[i] = np.clip(1.0 - remaining / 6.273063291666667e15, 1e-3, 1.0)
+    np.savez_compressed(_FREACT_CACHE, f=f)
+    return f
+
+
 def figs(cases, drf):
     toks = [_tokens(c) for c in cases]
 
@@ -126,6 +146,33 @@ def figs(cases, drf):
     fig.savefig(os.path.join(_OUT, "drf_boxplot.png"), bbox_inches="tight")
     plt.close(fig)
     print("  drf_boxplot.png")
+
+    # 1b) per Mt-S injected vs per Mt-S REACTED by t* (does conversion explain the spread?)
+    f_react = compute_freact(cases)
+    fig, axes2 = plt.subplots(1, 2, figsize=(11.5, 4.8), sharex=True)
+    for a, vals, note in ((axes2[0], drf, "per Mt-S INJECTED"),
+                          (axes2[1], drf / f_react, "per Mt-S REACTED by t*")):
+        data = [vals[[t[2] == reg for t in toks]] for reg in REGIMES]
+        bp = a.boxplot(data, positions=range(len(REGIMES)), widths=0.62, patch_artist=True,
+                       showfliers=False, medianprops={"color": "#0b0b0b"})
+        for b, col in zip(bp["boxes"], [REGIME_COLOR[r] for r in REGIMES]):
+            b.set(facecolor=col, alpha=0.35, lw=0.6)
+        for i, (v, col) in enumerate(zip(data, [REGIME_COLOR[r] for r in REGIMES])):
+            a.scatter(i + rng.uniform(-0.22, 0.22, len(v)), v, s=5, color=col, alpha=0.55,
+                      edgecolors="none", zorder=3)
+        a.set_xticks(range(len(REGIMES)),
+                     [REGIME_LABEL[r].replace(" ", "\n") for r in REGIMES])
+        a.set_title(note, fontsize=11)
+        a.set_ylabel("dRF/dS at t* [W m$^{-2}$ (Mt-S)$^{-1}$]")
+    fig.suptitle("Normalizing by reacted rather than injected sulfur", y=1.02, fontsize=12)
+    fig.tight_layout()
+    fig.savefig(os.path.join(_OUT, "drf_injected_vs_reacted.png"), bbox_inches="tight")
+    plt.close(fig)
+    print("  drf_injected_vs_reacted.png")
+    for reg in REGIMES:
+        m = [t[2] == reg for t in toks]
+        print(f"    {reg:8s} f_react median {np.median(f_react[m]):.3f}  "
+              f"dRF/dS_reacted median {np.median((drf / f_react)[m]):+.4f}")
 
     # 2) by microphysics axis (nucleation / coagulation / condensation), regime-colored
     AXES = [(4, NUC_LEVELS, "nucleation", "drf_by_nucleation.png"),

@@ -46,6 +46,13 @@ _V0_CM3 = (10.0 * 10.0 * 15000.0) * 1e6          # 1.5e12 cm^3
 _SO2_NUMBER_DENSITY = _SO2_MASS_G / _SO2_MW * _AVOG / _V0_CM3   # 6.273e15 molec/cm^3
 
 # --- stratospheric background gas composition [pptv] (initial plume = background + SO2 spike). ---
+# NOTE (Ali, 2026-07-08) FOR ALL FUTURE PRODUCTION RUNS: initialize from SPUN-UP control-run
+# chemistry instead of this static list, exactly as run_60day.py does -- run the frank-model
+# (or gas-only) 60-d control at the SAME site/season, sample it at the release hour, transfer
+# as mixing ratios, and zero gas H2SO4/SO3 (aerosol-free-control artifacts). One control per
+# site is required (30N harvest: runs_60day/frank_control_ic.json, P=60 hPa preset; a 60N/15 km
+# control must use the nearest preset, P=100 hPa). The static list below is retained only to
+# reproduce the existing 810-run ensemble.
 _BG_GAS_PPT = {"O2": 2.1e11, "O3": 1.18e6, "OH": 0.5, "HO2": 3.0,
                "NO": 450.0, "NO2": 450.0, "HCl": 777.0, "ClONO2": 127.0, "HNO3": 5000.0}
 

@@ -155,8 +155,50 @@ def fig_dilution_banana(sa=False):
     print(f"  {fname}")
 
 
+# site + background sensitivity panels (all D2 med, alpha x1, nuc x1, coag x1)
+SITE_BG_PANELS = [
+    ("30N_20km__sabr220__D2med__a1p0__nuc1__cg1",
+     "(a)  30°N, 20 km, 210 K, 55 hPa — SABR-220 (aged air)"),
+    ("60N_15km__sabr330__D2med__a1p0__nuc1__cg1",
+     "(b)  60°N, 15 km, 210 K, 120 hPa — SABR-330 (young air)"),
+    ("30N_20km_213K__aergeo__D2med__a1p0__nuc1__cg1",
+     "(c)  30°N, 20 km, 213 K, 55 hPa — AER-2D geoengineered"),
+]
+
+
+def fig_site_bg_banana(sa=False):
+    """3-panel site+background sensitivity banana; ``sa=True`` colors by dSA/dlogDp."""
+    norm = LogNorm(1e-2, 2e3) if sa else LogNorm(1e2, 1e8)
+    label = "dSA/dlogD$_p$ [µm$^2$ cm$^{-3}$]" if sa else "dN/dlogD$_p$ [cm$^{-3}$]"
+    fig, axs = plt.subplots(3, 1, figsize=(9.0, 10.5), sharex=True, sharey=True)
+    pc = None
+    for ax, (cid, lab) in zip(axs, SITE_BG_PANELS):
+        z = np.load(os.path.join(case_dir(cid), "state.npz"))
+        t, dp = z["t"] / 86400.0, z["dp_mid_um"]
+        field = z["dNdlogDp"] * np.pi * dp ** 2 if sa else z["dNdlogDp"]
+        pc = ax.pcolormesh(t, dp, np.maximum(field, 1e-9).T, norm=norm,
+                           cmap="viridis", rasterized=True, shading="nearest")
+        ax.set_yscale("log")
+        ax.set_ylim(dp[0], 3.0)
+        ax.set_ylabel("dry diameter [µm]")
+        ax.text(0.02, 0.95, lab, transform=ax.transAxes, fontsize=10.5, color="white",
+                va="top", fontweight="bold")
+    axs[-1].set_xlabel("day")
+    fig.suptitle("Plume evolution vs stratospheric background state — D2 med, α ×1, "
+                 "nuc ×1, coag ×1", y=0.995, fontsize=12)
+    fig.tight_layout(rect=(0, 0, 0.88, 1))
+    cax = fig.add_axes((0.90, 0.12, 0.02, 0.76))
+    fig.colorbar(pc, cax=cax, label=label)
+    fname = f"banana_site_background{'_SA' if sa else ''}.png"
+    fig.savefig(os.path.join(_OUT, fname), bbox_inches="tight")
+    plt.close(fig)
+    print(f"  {fname}")
+
+
 def main():
     os.makedirs(_OUT, exist_ok=True)
+    fig_site_bg_banana()
+    fig_site_bg_banana(sa=True)
     fig_dilution_banana()
     fig_dilution_banana(sa=True)
     fig_background_dists()

@@ -1,6 +1,7 @@
 # Paper ensemble: runs & figures inventory
 
-Everything in `coupled/paper_ensemble/`. All commands run from `SANDBOX/`. Every figure is
+Everything in `coupled/paper_ensemble/`. Setup + reproduction instructions: `README.md`
+(same dir). All commands run from `SANDBOX/`. Every figure is
 saved as PNG **and** PDF (a savefig hook in `make_paper_candidate_plots.py`, imported by every
 figure module, writes the twin automatically). Rerunning any `make_*` script regenerates its
 figures; heavy reductions are cached (`runs/plots/_reduced_cache*.npz`, `_nd_eval_cache*.npz`,
@@ -10,7 +11,9 @@ Shared conventions (documented in the module docstrings):
 - **t\*** end-of-plume-life evaluation: day 10 (D1/D2/burst), day 5 (D3), day 3 (D5) — the
   last whole day before ANY run of that regime relaxes to within 10% of the background
   surface area (threshold-insensitive 5–10%). Day-10-only comparisons are unfair for D3/D5.
-- Runs start at **local midnight** (t = 2/5/10 d snapshots = end-of-day midnight).
+- Runs start at **local midnight** (t = 2/5/10 d snapshots = end-of-day midnight) —
+  except the start-time sweeps (by design) and the 06:00-release sets (`runs_60day/`,
+  `runs_bgstop/`, `runs_bgstop_ctrl/`).
 - "Clean" background = **SABR-220** (aged air, low N2O). Geoengineered = **cesm_g6_amb**
   (ambient-corrected CESM; the original `runs/` cesm cases used a spurious STP factor and are
   superseded) or **aer_geo** (Pierce fig. 2; N = 120 cm^-3 per Ali — caption says 50).
@@ -27,7 +30,10 @@ Shared conventions (documented in the module docstrings):
 | `runs_start_time_geo/` | 16 | {30N, 60N} × 8 hours, D2 med, aer_geo, ×1 knobs | `run_start_time_geo.py` |
 | `runs_boxsize/` | 12 | V0 × {2,5,10,20,50,100} (SO2 conc ÷F) × {D2med, D1low}, 30N, SABR-220, ×1 knobs | `run_boxsize.py` |
 | `runs_special/` | 1 | constant-OH (5e5, pinned in the ODE) twin of the D2med case study | `make_constant_oh_banana.py run stage` |
-| `runs_no_sai/` | 0 | **never produced output** (inputs docs only) — background-only reference runs still TODO | `run_no_sai.py` |
+| `runs_60day/` | 2 | {D2med, D1low}, 30N, SABR-220, 06:00 release, **spun-up frank-model ICs**, 60-d max with background-SA stop (ended 16.8 / 35.9 d) | `run_60day.py` |
+| `runs_bgstop/` | 26 | {sabr220 (slow regimes only), sabr330, aergeo} × {30N, 60N} × dilutions; 06:00, 60-d max with background-SA stop | `run_bgstop.py` |
+| `runs_bgstop_ctrl/` | 30 | paired NO-injection controls (same site/regime/V(t) as the bgstop plumes) for dilution-corrected budgets | `run_bgstop_control.py` |
+| `runs_no_sai/` | 0 | **never produced output** (inputs docs only) — superseded in purpose by `runs_bgstop_ctrl/` | `run_no_sai.py` |
 
 Every run dir has `manifest.csv`, per-case `state.npz` (full time series: 36 gas species,
 80-bin size distribution, SA/r_eff/wt%, particulate S, V(t), per-reaction J), `summary.csv`
@@ -35,6 +41,10 @@ Every run dir has `manifest.csv`, per-case `state.npz` (full time series: 36 gas
 (`plan | one <i> | run <lo> <hi>`) and **skip cases whose `state.npz` exists** (resumable).
 
 ## 2. What can be run (not yet run)
+
+- **STANDING NOTE: all future production runs use spun-up ICs** (frank-model control at the
+  same site/season sampled at the release hour, H2SO4/SO3 zeroed) per the 2026-07-08
+  decision -- see run_60day.py; the existing ensembles used the static background list.
 
 - `runs_no_sai/`: the 3 background-only baselines (no SO2 injection).
 - 160-bin versions of anything (`tomas_nbins=160`; ~2× cost/run).
@@ -76,6 +86,8 @@ H2SO4, direct labels). SABR-220 only (no geo dependence).
 
 ### Background comparison — `runs/plots/` (`make_background_banana.py`)
 `banana_backgrounds_D2med(_SA)` (SABR-330 / SABR-220 / aer_geo, same plume);
+`banana_site_background(_SA)` (3 panels: 30N/SABR-220, 60N/SABR-330, 30N-213K/aer_geo —
+site + background sensitivity, D2 med ×1 knobs);
 `banana_dilution_D2med_burst(_SA)` (D2 vs burst, SABR-220);
 `background_sizedists(_linear, _STP_linear)` (the seeded backgrounds themselves).
 
@@ -102,13 +114,21 @@ no vertical transport). From the ACTUAL run distributions (`make_rf_runs.py`, ca
 per-bin wet-diameter Mie x Chylek & Wong scene, per Mt-S injected — `drf_boxplot` (by
 regime + pooled, jittered points; NOTE 60N/15 km gives ~half the 30N values — site
 bimodality), `drf_by_nucleation` / `drf_by_coagulation` / `drf_by_condensation`
-(regime-colored boxes + points). Day-10 evaluation is NOT usable for D3/D5 (V/V0 up to
-3e21 amplifies background-reference residuals; hence t*).
+(regime-colored boxes + points), `drf_injected_vs_reacted` (same boxes normalized per
+Mt-S injected vs per Mt-S REACTED by t*, via `compute_freact()` / `_freact_cache.npz` —
+the reacted basis compresses the cross-regime spread ~17× → ~4.7×). Day-10 evaluation is
+NOT usable for D3/D5 (V/V0 up to 3e21 amplifies background-reference residuals; hence t*).
 
 ### Area per injected sulfur — `runs/plots/` (`make_area_per_injected_s.py`)
 `dAdlogDp_per_injectedS`: plume-integrated excess dA/dlogDp per injected S atom [m^2] at
 ages 2/5/10 d, five regimes; curves dropped once within 10% of background SA (D5 after
 114 h, D3 after 175 h); age-2d panel on its own tighter y-scale.
+
+### 60-day full plume life — `runs_60day/plots/` (`make_60day_plots.py`)
+`banana_60day(_SA)` (D2 med 16.8 d over D1 low 35.9 d, shared time axis);
+`sulfur_budget_60day` (plume-integrated excess pools / injected S, shaded where
+static-background attribution degrades); `sulfur_budget_inbox_{D2med,D1low}`
+(in-box pure-sulfur budget, oxidation-figure styling).
 
 ### Diagnostics — `coupled/analyses/day12_wall/` (`probe_day12_wall.py`)
 `species_all`, `species_zoom`, `banana`, `sizedist_at_stall`, `jacobian_timescales.txt`,

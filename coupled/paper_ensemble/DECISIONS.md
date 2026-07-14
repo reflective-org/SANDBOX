@@ -138,3 +138,14 @@ first_step=1e-2 retry is therefore the PERMANENT mode beyond day 12.14 (safe to 
 60-day capability validated: plume life to background+10% (24 h sustained, run-time stop) =
 16.8 d (D2 med), 35.9 d (D1 low); runs in runs_60day/ (run_60day.py; ICs from the
 frank-model 60-d control via runs_60day/frank_control_ic.json).
+
+## Decision (2026-07-08): spun-up initial conditions for ALL future runs
+
+Future 10-day (and longer) production runs must initialize the gas phase from a SPUN-UP
+chemistry-only control (frank-model 60-d control at the same site/season, sampled at the
+release hour, transferred as mixing ratios; gas H2SO4/SO3 zeroed as aerosol-free-control
+artifacts) -- the pattern implemented in run_60day.py. The existing 810-run ensemble (and
+its derivatives) used the static climatological background list instead; the largest IC
+differences vs the spun-up state are O3 (1.18 -> 1.86 ppmv), HNO3 (5.0 -> 3.9 ppbv) and the
+NOx/HCl partitioning, so a future re-run can shift OH and hence SO2-conversion rates
+modestly. One control harvest per site is required (30N: runs_60day/frank_control_ic.json).
