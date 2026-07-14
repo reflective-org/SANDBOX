@@ -79,8 +79,19 @@
   .caption .txt{font-size:14.5px;color:var(--ink)}
   .caption sub,.caption sup{font-size:.72em}
 
-  .controls{margin-top:14px;display:flex;align-items:center;gap:16px;
-    font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .banana-card{margin-top:14px;height:240px;padding:12px 14px 8px;display:flex;flex-direction:column}
+  .banana-card h3{margin:0 0 2px;font-size:12.5px;font-weight:600;letter-spacing:.01em}
+  .banana-card .csub{margin:0 0 6px;font-size:11px;color:var(--faint);font-family:var(--mono)}
+  .banana-card canvas{flex:1;width:100%;min-height:0}
+
+  /* transport bar floats over the page bottom; #app reserves room for it */
+  #app{padding-bottom:96px}
+  .controls{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:30;
+    width:min(1476px,calc(100vw - 44px));display:flex;align-items:center;gap:16px;
+    font-family:var(--mono);font-size:12px;color:var(--muted);
+    background:linear-gradient(180deg,rgba(14,21,38,.92),rgba(9,14,27,.94));
+    border:1px solid var(--panel-edge);border-radius:14px;padding:10px 16px;
+    box-shadow:0 6px 28px rgba(0,0,0,.5);backdrop-filter:blur(8px)}
   .btn{background:var(--panel2,#111a2e);color:var(--ink);border:1px solid var(--panel-edge);
     border-radius:9px;width:40px;height:40px;font-size:15px;cursor:pointer;display:flex;
     align-items:center;justify-content:center;transition:border-color .15s,background .15s;flex:none}
@@ -163,6 +174,9 @@
       <span class="tick" id="cap-tick">day 0</span>
       <span class="txt" id="cap-txt">—</span>
     </div>
+    <div class="card banana-card"><h3>The whole story at once — size distribution through time</h3>
+      <p class="csub">dN/dlogD<sub>p</sub> per cm³ (colour, log scale) · drag to scrub</p>
+      <canvas id="banana"></canvas></div>
     <div class="controls" id="controls">
       <button id="play" class="btn" aria-label="Play">▶</button>
       <div class="scrub-wrap">
@@ -611,15 +625,85 @@
   const pow10Label=e=>e===0?"1":"10"+String(e).split("").map(c=>SUPS[c]||c).join("");
 
   const Charts=(function(){
-    const dist=makeCanvas("dist"), budget=makeCanvas("budget"), count=makeCanvas("count");
+    const dist=makeCanvas("dist"), budget=makeCanvas("budget"), count=makeCanvas("count"),
+          ban=makeCanvas("banana");
     // FIXED axes, identical for every case, so switching options never rescales a chart:
-    // dist 1e-2..1e8 (all 30 cases peak below 1e8), count 0.8..1e7 (all peaks ~2-3e6).
-    const COUNT_MAX=1e7, DIST_MAX_E=8.5;
-    let bg0=null, XT=[];
+    // dist 1e-2..1e8 (all 30 cases peak below 1e8), count 0.8..1e7 (all peaks ~2-3e6),
+    // banana colour scale 1e-1..1e7.
+    const COUNT_MAX=1e7, DIST_MAX_E=8.5, BAN_E0=-1, BAN_E1=7;
+    let bg0=null, XT=[], banImg=null;
 
     function setCase(){
       bg0=distAt(0);
       XT=dayTicks(DAYT);
+      banImg=null;                                              // rebuild banana raster lazily
+    }
+
+    // ---- inferno-like colormap for the banana raster -------------------------------------------
+    const INFERNO=[[0,0,4],[40,11,84],[101,21,110],[159,42,99],[212,72,66],[245,125,21],
+                   [250,193,39],[252,255,164]];
+    function infernoCSS(t){
+      t=Math.max(0,Math.min(1,t));
+      const x=t*(INFERNO.length-1), i=Math.min(INFERNO.length-2,Math.floor(x)), f=x-i;
+      const a=INFERNO[i], b=INFERNO[i+1];
+      return `rgb(${a[0]+f*(b[0]-a[0])|0},${a[1]+f*(b[1]-a[1])|0},${a[2]+f*(b[2]-a[2])|0})`;
+    }
+    const BAN_PAD={L:40,R:52,T:6,B:18};
+    function buildBanana(){
+      // one offscreen raster per case+size: day-columns (kept, non-uniform grid) x 80 log-Dp bins
+      const W=ban.W-BAN_PAD.L-BAN_PAD.R, H=ban.H-BAN_PAD.T-BAN_PAD.B;
+      if(W<20||H<20) return;
+      banImg=document.createElement("canvas");
+      banImg.width=Math.max(1,Math.round(W*ban.dpr)); banImg.height=Math.max(1,Math.round(H*ban.dpr));
+      const c=banImg.getContext("2d");
+      c.scale(ban.dpr,ban.dpr);
+      c.fillStyle="#0a0f1a"; c.fillRect(0,0,W,H);
+      const days=C.days, n=days.length, rowH=H/NBIN;
+      for(let i=0;i<n;i++){
+        const d0=i? 0.5*(days[i-1]+days[i]) : 0;
+        const d1=(i<n-1)? 0.5*(days[i]+days[i+1]) : DAYT;
+        const x0=d0/DAYT*W, w=Math.max(0.5, (d1-d0)/DAYT*W);
+        for(let b=0;b<NBIN;b++){
+          const q=DISTQ[i*NBIN+b];
+          if(q===-128) continue;
+          const t=(q/QS-BAN_E0)/(BAN_E1-BAN_E0);                // log10 value -> [0,1]
+          if(t<=0) continue;
+          c.fillStyle=infernoCSS(t);
+          c.fillRect(x0, H-(b+1)*rowH, w, rowH+0.4);
+        }
+      }
+    }
+    function drawBanana(day){
+      const o=ban, ctx=o.ctx, padL=BAN_PAD.L,padR=BAN_PAD.R,padT=BAN_PAD.T,padB=BAN_PAD.B;
+      const plotW=o.W-padL-padR, plotH=o.H-padT-padB;
+      if(!banImg) buildBanana();
+      if(!banImg) return;
+      ctx.clearRect(0,0,o.W,o.H);
+      ctx.drawImage(banImg, padL, padT, plotW, plotH);
+      // y ticks on the fixed log-Dp bin grid
+      const X=d=>padL+d/DAYT*plotW;
+      const yOf=dp=>{                                          // log position within [dp0,dpN]
+        const l0=L10(DP_UM[0]), l1=L10(DP_UM[NBIN-1]);
+        return padT+(1-(L10(dp)-l0)/(l1-l0))*plotH; };
+      ctx.font=MONO; ctx.fillStyle=C_AX; ctx.textAlign="right"; ctx.textBaseline="middle";
+      for(const [v,l] of [[2e-3,"2nm"],[1e-2,"10nm"],[0.1,"0.1µm"],[1,"1µm"],[10,"10µm"]]){
+        const y=yOf(v); ctx.fillText(l,padL-4,y);
+        ctx.strokeStyle="rgba(150,165,195,0.18)";
+        ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(padL+4,y); ctx.stroke();
+      }
+      ctx.textAlign="center"; ctx.textBaseline="top";
+      for(const d of XT) ctx.fillText(d+"",X(d),padT+plotH+3);
+      // colorbar
+      const cbX=padL+plotW+14, cbW=9;
+      for(let y=0;y<plotH;y++){ ctx.fillStyle=infernoCSS(1-y/plotH);
+        ctx.fillRect(cbX,padT+y,cbW,1.5); }
+      ctx.fillStyle=C_AX; ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.font=MONO;
+      ctx.fillText(pow10Label(BAN_E1),cbX+cbW+3,padT+4);
+      ctx.fillText(pow10Label(3),cbX+cbW+3,padT+plotH*0.5);
+      ctx.fillText(pow10Label(BAN_E0),cbX+cbW+3,padT+plotH-4);
+      // time cursor
+      ctx.strokeStyle="rgba(240,240,250,0.75)"; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.moveTo(X(day),padT); ctx.lineTo(X(day),padT+plotH); ctx.stroke();
     }
 
     // night shading: alpha scaled by band count, so a 5-day run reads clearly and a 36-day run
@@ -762,9 +846,9 @@
     function cursor(o,x,padT,plotH){ o.ctx.strokeStyle="rgba(240,240,250,0.5)"; o.ctx.lineWidth=1;
       o.ctx.beginPath(); o.ctx.moveTo(x,padT); o.ctx.lineTo(x,padT+plotH); o.ctx.stroke(); }
 
-    // drag-to-scrub on the time-axis charts
-    function wireScrub(o){
-      const toDay=ev=>{ const r=o.cv.getBoundingClientRect(), padL=36, padR=10;
+    // drag-to-scrub on the time-axis charts (pads must match each chart's plot rect)
+    function wireScrub(o, padL, padR){
+      const toDay=ev=>{ const r=o.cv.getBoundingClientRect();
         const fx=(ev.clientX-r.left-padL)/(r.width-padL-padR); return Math.max(0,Math.min(1,fx))*DAYT; };
       let drag=false;
       o.cv.addEventListener("pointerdown",e=>{drag=true;o.cv.setPointerCapture(e.pointerId);window.__setDay&&__setDay(toDay(e));});
@@ -773,9 +857,9 @@
       o.cv.style.cursor="ew-resize";
     }
 
-    function resize(){ dist.resize(); budget.resize(); count.resize(); }
-    function render(day){ drawDist(day); drawBudget(day); drawCount(day); }
-    wireScrub(budget); wireScrub(count);
+    function resize(){ dist.resize(); budget.resize(); count.resize(); ban.resize(); banImg=null; }
+    function render(day){ drawDist(day); drawBudget(day); drawCount(day); drawBanana(day); }
+    wireScrub(budget,38,10); wireScrub(count,40,10); wireScrub(ban,BAN_PAD.L,BAN_PAD.R);
     return {resize, render, setCase,
       setBudgetMode:m=>{budgetMode=m;}, get budgetMode(){return budgetMode;},
       sample:(name,day)=>name==="total_n"?lerpLog(name,day):lerpSeries(name,day),

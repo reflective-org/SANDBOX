@@ -40,7 +40,8 @@ thing stays under the 1.6 MB bake limit with all thirty cases, coastlines, and c
 - **Dropdowns** for dilution regime, background aerosol, and start location (state is kept across
   switches: the current sim day carries over, clamped to the new case's lifetime).
 - **Play / pause** ▶, speed **0.5–4×**, draggable **scrubber** (time is warped so the first-day
-  nucleation burst gets proportional room; diamonds mark narrative beats).
+  nucleation burst gets proportional room; diamonds mark narrative beats). The transport bar
+  floats at the bottom of the viewport so it stays reachable while scrolling.
 - **Keyboard:** Space = play/pause, ←/→ step (Shift = bigger), Home/End = jump to start/end.
 - **Drag** on any time-axis chart to scrub.
 - Respects `prefers-reduced-motion` (starts paused).
@@ -74,7 +75,9 @@ and hard-fails if the file would exceed 1.6 MB.
 ## What is real, and what is illustrative
 
 **Real model output** (from the coupled gas-chemistry + TUV-x photolysis + TOMAS aerosol runs):
-- the size distribution dN/dlogDₚ, total particle number, effective radius;
+- the size distribution dN/dlogDₚ (current-curve panel AND the full-width banana plot — time ×
+  log-diameter, colour = log dN/dlogDₚ on a fixed 10⁻¹…10⁷ scale, rendered once per case from the
+  baked int8 raster), total particle number, effective radius;
 - the sulfur panel, one normalized 0–100% stack with two toggleable denominators:
   **"of the injected tonne"** (default) is the dilution-corrected budget against a PAIRED
   no-injection control run — same site, background and dilution regime, so the dilution terms
