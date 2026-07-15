@@ -18,10 +18,15 @@ Four documents, four roles:
 ## 1. Setup
 
 ```bash
-cd SANDBOX
+git clone --recursive <SANDBOX repo>       # --recursive pulls the tomas-jax submodule
+cd SANDBOX                                 # (or: git submodule update --init)
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,jax-chemistry]"     # JAX (CPU), Diffrax, SciPy, matplotlib
 ```
+
+The TOMAS-JAX microphysics lives in the `tomas-jax/` git submodule (SHA-pinned;
+`coupled/tomas_bridge.py` puts it on `sys.path`). If the submodule directory is empty,
+run `git submodule update --init`.
 
 **Every command below is run from `SANDBOX/`** (the scripts are `python -m` modules under
 `coupled.paper_ensemble`). Everything is CPU; a 10-day 80-bin run takes ~3–5 min, a 60-day

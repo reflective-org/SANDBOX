@@ -7,9 +7,11 @@ This is the ONE place the coupling layer reaches into ``tomas_jax``. It builds a
 constructs the microphysics step with TOMAS's own SO2 chemistry OMITTED -- the gas-phase model
 (frank) owns sulfur and hands gaseous H2SO4 to TOMAS via ``Gc[SRTSO4]`` each outer step.
 
-Packaging note (interim, AD-3.1): ``tomas_jax`` is not installed; we add ``../tomas-jax`` (and its
-``experimental_case`` dir, for the Marianna distribution loader) to ``sys.path`` here, mirroring the
-gas-model bridge. Pinning to branch ``feat/marianna-dilution`` (AD-3.2). Proper packaging: DEFERRED.
+Packaging note (interim, AD-3.1): ``tomas_jax`` is not installed; we add the ``tomas-jax``
+git submodule at the repo root (SHA-pinned; ``git submodule update --init`` after clone) — or,
+if the submodule is not checked out, a sibling ``../tomas-jax`` checkout — plus its
+``experimental_case`` dir (Marianna distribution loader) to ``sys.path`` here, mirroring the
+gas-model bridge. Proper packaging: DEFERRED.
 """
 
 from __future__ import annotations
@@ -21,7 +23,10 @@ import sys
 from . import model_bridge  # noqa: F401  (side effect: puts gas_phase_chemistry on sys.path)
 from aerosol import h2so4wp_at  # noqa: E402  (gas model: water activity a_W from T,P,H2O)
 
-_TOMAS = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "tomas-jax"))
+_HERE = os.path.dirname(__file__)
+_TOMAS = os.path.abspath(os.path.join(_HERE, "..", "tomas-jax"))          # git submodule (preferred)
+if not os.path.isdir(os.path.join(_TOMAS, "tomas_jax")):
+    _TOMAS = os.path.abspath(os.path.join(_HERE, "..", "..", "tomas-jax"))  # sibling checkout fallback
 for _p in (_TOMAS, os.path.join(_TOMAS, "experimental_case")):
     if _p not in sys.path:
         sys.path.insert(0, _p)

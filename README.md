@@ -16,11 +16,13 @@ dilution coupling are in progress — see the roadmap):
    precision against the Fortran TUV-x.
 2. **`gas_phase_chemistry/`** — a stratospheric gas-phase chemistry box model (NumPy/SciPy reference
    + a JAX/Diffrax backend). Its photolysis is driven by the TUV-x port above.
-3. *(in progress)* **TOMAS aerosol microphysics** (sectional, JAX; from `tomas-jax`) and **dilution**
-   with background entrainment — coupled via a single operator-split JAX driver.
+3. **TOMAS aerosol microphysics** (sectional, JAX; the `tomas-jax/` **git submodule**, SHA-pinned)
+   and **dilution** with background entrainment — coupled via a single operator-split JAX driver
+   in `coupled/`.
 
 Everything needed to run and validate the photolysis + chemistry — including the bundled TUV-x/JPL
-data — lives here; no dependence on the original TUV-x Fortran repo at runtime.
+data — lives here; no dependence on the original TUV-x Fortran repo at runtime. Clone with
+`git clone --recursive` (or run `git submodule update --init`) to get the TOMAS submodule.
 
 ## Roadmap & documentation
 

@@ -132,7 +132,7 @@ class CoupledScenario:
     # --- sensitivity knobs (Phase 7; free multipliers, default 1.0; for Phase-8 sweeps) ---
     nucleation_rate_scale: float = 1.0   # -> TOMAS make_step nucleation fn_scale
     condensation_alpha: float = 1.0      # -> TomasState alpha (Fuchs accommodation coefficient), (0,1]
-    coag_kernel_scale: float = 1.0       # NOT wired in tomas-jax yet (AD-7.2): must stay 1.0 (raises)
+    coag_kernel_scale: float = 1.0       # -> TOMAS make_step kernel multiplier (AD-7.2)
 
     # --- aerosol -> photolysis (Phase 4) ---
     # Where the box aerosol sits in the TUV-x RT column when switches.aerosol_to_j is on. By DEFAULT

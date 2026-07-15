@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A single self-contained project coupling two models:
+A single self-contained project coupling two models (plus the TOMAS-JAX aerosol microphysics,
+pulled in as the `tomas-jax/` git submodule — run `git submodule update --init` after clone;
+`coupled/tomas_bridge.py` puts it on `sys.path`):
 
 1. **`tuvx_photolysis/`** — a Python/JAX port of NCAR's TUV-x actinic-flux + photolysis-rate
    pipeline. Solves the radiation field (delta-Eddington two-stream) and integrates
