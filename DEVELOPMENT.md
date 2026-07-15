@@ -1,5 +1,10 @@
 # Development log
 
+> **Note (2026-07-15):** this is the historical log of building the TUV-x port and its chemistry
+> coupling. Paths reflect the pre-split monorepo layout: `tuvx_photolysis/`, `data/`, `tests/`,
+> `validation/` now live in the `tuvx-jax/` submodule, and `gas_phase_chemistry/` is the
+> `stratchem-jax/` submodule.
+
 Detailed record of how this package was built, the design decisions taken, and the validation at
 each step. The guiding rule throughout: **reproduce the Fortran TUV-x exactly and prove it against
 the reference output; never silently approximate.**

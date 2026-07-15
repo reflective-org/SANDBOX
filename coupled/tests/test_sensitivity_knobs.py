@@ -18,9 +18,10 @@ def test_knob_validation():
         CoupledScenario(condensation_alpha=0.0)      # must be in (0,1]
     with pytest.raises(ValueError):
         CoupledScenario(condensation_alpha=1.5)
-    # coag_kernel_scale is NOT wired -> anything != 1.0 fails loudly (no silent no-op)
-    with pytest.raises(NotImplementedError):
-        CoupledScenario(coag_kernel_scale=2.0)
+    # coag_kernel_scale is wired (AD-7.2): a free multiplier, only negatives rejected
+    with pytest.raises(ValueError):
+        CoupledScenario(coag_kernel_scale=-2.0)
+    CoupledScenario(coag_kernel_scale=2.0)
     # defaults are all 1.0 and allowed
     sc = CoupledScenario()
     assert (sc.nucleation_rate_scale, sc.condensation_alpha, sc.coag_kernel_scale) == (1.0, 1.0, 1.0)

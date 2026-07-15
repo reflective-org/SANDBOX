@@ -2,3 +2,9 @@
 	path = tomas-jax
 	url = git@github.com:reflective-org/tomas-jax.git
 	branch = feat/marianna-dilution
+[submodule "tuvx-jax"]
+	path = tuvx-jax
+	url = git@github.com:reflective-org/tuvx-jax.git
+[submodule "stratchem-jax"]
+	path = stratchem-jax
+	url = git@github.com:reflective-org/stratchem-jax.git

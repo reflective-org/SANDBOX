@@ -18,14 +18,15 @@ Four documents, four roles:
 ## 1. Setup
 
 ```bash
-git clone --recursive <SANDBOX repo>       # --recursive pulls the tomas-jax submodule
+git clone --recursive <SANDBOX repo>       # --recursive pulls the model submodules
 cd SANDBOX                                 # (or: git submodule update --init)
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,jax-chemistry]"     # JAX (CPU), Diffrax, SciPy, matplotlib
 ```
 
-The TOMAS-JAX microphysics lives in the `tomas-jax/` git submodule (SHA-pinned;
-`coupled/tomas_bridge.py` puts it on `sys.path`). If the submodule directory is empty,
+The three models live in SHA-pinned git submodules — `tuvx-jax/` (photolysis),
+`stratchem-jax/` (gas chemistry), `tomas-jax/` (TOMAS microphysics) — put on `sys.path`
+by `coupled/model_bridge.py` / `coupled/tomas_bridge.py`. If those directories are empty,
 run `git submodule update --init`.
 
 **Every command below is run from `SANDBOX/`** (the scripts are `python -m` modules under
