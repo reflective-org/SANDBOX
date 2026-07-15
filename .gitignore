@@ -21,3 +21,5 @@ coupled/analyses/
 # runners and make_* scripts; see coupled/paper_ensemble/FIGURES.md)
 coupled/paper_ensemble/runs*/
 coupled/paper_ensemble/overnight_launch.log
+# archived MATLAB snapshots (reference kept locally, not part of the repo)
+gas_phase_chemistry/src-matlab_sulfur-chain_*.zip
