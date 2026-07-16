@@ -94,6 +94,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   .pickers{display:flex;gap:14px;align-items:center;justify-content:center;
     margin:0 0 14px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--muted)}
   .pickers label{display:flex;gap:7px;align-items:center}
+  .pickers label+.info{margin-left:-8px}
   .pickers select{background:var(--panel);color:var(--ink);border:1px solid var(--panel-edge);
     border-radius:8px;padding:7px 9px;font-family:var(--mono);font-size:12px;cursor:pointer;
     max-width:320px}
@@ -257,7 +258,8 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       </label>
       <label>background
         <select id="sel-bg" aria-label="Background aerosol"></select>
-        <span class="info" tabindex="0" role="note" aria-label="About the backgrounds">?<span
+      </label>
+      <span class="info" tabindex="0" role="note" aria-label="About the backgrounds">?<span
           class="tip">The aged and young stratospheric air states (distinguished by their
           N₂O) are anchored in measurements from the NOAA
           <a href="https://csl.noaa.gov/projects/sabre/" target="_blank" rel="noopener">SABRE
@@ -265,13 +267,12 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
           <a href="https://www.science.org/doi/10.1126/science.adw8939" target="_blank"
           rel="noopener">Science paper</a>. The SAI-deployed state represents a stratosphere
           already seeded with injected aerosol.</span></span>
-      </label>
       <label>start location
         <select id="sel-site" aria-label="Start location"></select>
-        <span class="info" tabindex="0" role="note" aria-label="About the release heights">?<span
+      </label>
+      <span class="info" tabindex="0" role="note" aria-label="About the release heights">?<span
           class="tip">Both releases sit in the lower stratosphere: it starts near 20&nbsp;km
           at 30°N but closer to 15&nbsp;km at 60°N, where the tropopause is lower.</span></span>
-      </label>
       <span class="life" id="lifetime"></span>
     </div>
     <div class="grid">
@@ -1424,7 +1425,8 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       player.speed=parseFloat(b.dataset.s);
       [...$("speed").children].forEach(x=>x.classList.toggle("on",x===b)); });
     document.addEventListener("keydown",e=>{
-      if(e.target.tagName==="SELECT") return;
+      if(e.target.tagName==="SELECT"||e.target.tagName==="A"||
+         (e.target.closest&&e.target.closest(".info"))) return;
       if(e.key===" "){ e.preventDefault(); setPlaying(!player.playing); }
       else if(e.key==="ArrowRight"){ e.preventDefault(); setPlaying(false); nudge(e.shiftKey?0.05:0.012); }
       else if(e.key==="ArrowLeft"){ e.preventDefault(); setPlaying(false); nudge(e.shiftKey?-0.05:-0.012); }
