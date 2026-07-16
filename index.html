@@ -152,6 +152,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   footer{margin-top:24px;border-top:1px solid var(--panel-edge);padding:16px 2px 6px;
     color:var(--muted);font-family:var(--serif);font-size:14px;max-width:86ch;line-height:1.55}
   footer .byline{color:var(--ink);margin:0 0 6px}
+  footer a{color:var(--accent)}
   footer p{margin:0 0 6px}
   footer .keys{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:10px}
   footer kbd{font-family:var(--mono);border:1px solid var(--panel-edge);border-bottom-width:2px;
@@ -204,6 +205,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     .banana-card{height:240px}
     .controls{gap:10px;padding:8px 10px}
     .speed button{padding:8px 9px}
+    #bmode-note{display:block;margin:4px 0 0}
   }
 </style>
 </head>
@@ -288,6 +290,8 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
         photolysis model of one plume; the day/night shading follows the model's own
         photolysis rates. Each case runs until the plume's surface area has stayed within
         10% of the background for a full day.</p>
+      <p>For more information, the model architecture and documentation live on
+        <a href="https://github.com/reflective-org/SANDBOX">GitHub</a>.</p>
       <p class="keys"><kbd>Space</kbd> play/pause · <kbd>←</kbd><kbd>→</kbd> step
         (<kbd>Shift</kbd> bigger) · <kbd>Home</kbd>/<kbd>End</kbd> jump</p>
     </footer>
@@ -1050,8 +1054,11 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
         curve(distAt(day*fr),"rgba("+PAL.trail+","+(0.06+0.05*k).toFixed(2)+")",1.1); });
       curve(distAt(day),C_PARTLINE,2.2);                          // current (bold)
       ctx.textAlign="left"; ctx.textBaseline="top"; ctx.fillStyle=C_PARTLINE; ctx.font="11px "+ "ui-monospace,Menlo,monospace";
-      let ph=""; if(day<0.04)ph=""; else if(day<0.6)ph="a burst of nanometer particles";
-      else if(day<Math.min(8,0.75*DAYT))ph="growth and coagulation shift the mode right";
+      let ph="", phS="";                                        // full + short (narrow plots)
+      if(day<0.04){} else if(day<0.6){ph="a burst of nanometer particles";phS="nanometer burst";}
+      else if(day<Math.min(8,0.75*DAYT)){ph="growth and coagulation shift the mode right";
+        phS="growth and coagulation";}
+      if(ph && ctx.measureText(ph).width>plotW-12) ph=phS;
       ctx.fillText(ph,padL+4,padT+2);
     }
 
@@ -1108,24 +1115,22 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       ctx.fillText("still SO₂ gas",X(DAYT*qO),Y(frAt(qO)*0.5));
       ctx.fillStyle=PAL.partLabel;
       ctx.fillText("in particles",X(DAYT*0.78),Y((1+frAt(0.78))/2));
-      // headline: each mode states its endpoint fact
-      ctx.fillStyle=PAL.partLabel; ctx.textAlign="right"; ctx.textBaseline="top";
-      if(budgetMode==="ctrl"){
-        const conv=Math.round((1-fr[fr.length-1])*100);
-        ctx.fillText(conv+"% of the tonne converted by day "+Math.round(DAYT),
-                     padL+plotW-4,padT+3);
-      } else {
-        ctx.fillText("back to the background mix by day "+Math.round(DAYT),
-                     padL+plotW-4,padT+3);
-      }
       cursor(o,X(day),padT,plotH);
-      // live split at the cursor
+      // top row: live split left, endpoint headline right; STACK them when the plot is
+      // too narrow for both (mobile), instead of letting the strings collide
       const frNow=(budgetMode==="ctrl")
         ? (function(){ const s=lerpSeries("so2_t",day), u=lerpSeries("sulf_t",day);
                        return (s+u)>0? s/(s+u) : 0; })()
         : lerpSeries("so2_frac",day);
-      readout(o, Math.round(frNow*100)+"% SO₂ · "+Math.round((1-frNow)*100)+"% particles",
-              padL+4, padT+3, "left");
+      const readTxt=Math.round(frNow*100)+"% SO₂ · "+Math.round((1-frNow)*100)+"% particles";
+      const headTxt=(budgetMode==="ctrl")
+        ? Math.round((1-fr[fr.length-1])*100)+"% of the tonne converted by day "+Math.round(DAYT)
+        : "back to the background mix by day "+Math.round(DAYT);
+      ctx.font=MONO;
+      const fits=ctx.measureText(readTxt).width+ctx.measureText(headTxt).width+20 < plotW;
+      readout(o, readTxt, padL+4, padT+3, "left");
+      ctx.font=MONO; ctx.fillStyle=PAL.partLabel; ctx.textAlign="right"; ctx.textBaseline="top";
+      ctx.fillText(headTxt, padL+plotW-4, fits?padT+3:padT+16);
     }
 
     // ---- particle number (log) ----------------------------------------------------------------
@@ -1153,7 +1158,9 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       ctx.strokeStyle=C_PARTLINE; ctx.lineWidth=1.8; ctx.lineJoin="round"; ctx.stroke();
       let pk=0,pi=0; for(let i=0;i<tn.length;i++) if(tn[i]>pk){pk=tn[i];pi=i;}
       ctx.fillStyle=PAL.peak; ctx.textAlign="left"; ctx.font="10px ui-monospace,Menlo,monospace";
-      ctx.fillText("peak "+fmtN(pk),Math.min(X(days[pi])+6,padL+plotW-52),Y(pk)+2);
+      const pkTxt="peak "+fmtN(pk);
+      const pkX=Math.min(X(days[pi])+6, padL+plotW-56-ctx.measureText(pkTxt).width);
+      ctx.fillText(pkTxt, pkX, Math.max(Y(pk)+2, padT+14));
       cursor(o,X(day),padT,plotH);
       const v=lerpLog("total_n",day); ctx.fillStyle=C_PARTLINE;
       ctx.beginPath(); ctx.arc(X(day),Y(v),3.5,0,2*Math.PI); ctx.fill();
