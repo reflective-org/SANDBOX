@@ -153,11 +153,12 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   .altbox .cap{position:absolute;top:6px;left:9px;font-family:var(--mono);font-size:10px;
     letter-spacing:.06em;color:#9aa8c2;text-transform:uppercase}
 
-  .caption{margin:16px auto 0;max-width:920px;min-height:52px;display:flex;
-    align-items:baseline;gap:14px;border-left:2px solid var(--gas);padding:10px 18px 10px 16px}
+  /* caption is a full-width panel like the plot cards, with the gold accent kept as its edge */
+  .caption{margin:16px 0 0;min-height:52px;display:flex;align-items:baseline;gap:14px;
+    background:var(--panel);border:1px solid var(--panel-edge);border-left:3px solid var(--gas);
+    border-radius:14px;padding:12px 22px 12px 18px}
   .caption .tick{font-family:var(--mono);font-size:12px;color:var(--gas-glow);white-space:nowrap}
-  .caption .txt{font-family:var(--serif);font-size:16px;color:var(--ink);max-width:78ch;
-    line-height:1.5}
+  .caption .txt{font-family:var(--serif);font-size:16px;color:var(--ink);line-height:1.5}
   .caption sub,.caption sup{font-size:.72em}
 
   .banana-card{margin-top:16px;height:320px;padding:0 14px 8px;display:flex;
@@ -174,9 +175,11 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   .topnav .logo{display:block;width:fit-content}
   .logo-img{display:block;width:136px;height:21px;background:var(--logo) no-repeat;
     background-size:contain}
-  .callout{margin:36px auto 0;padding:16px 24px;max-width:104ch;
-    border:1px solid rgba(240,168,30,.5);border-left:4px solid var(--gas);border-radius:8px;
-    background:rgba(240,168,30,.12);
+  /* callout matches the plot-card geometry (full width, same radius); a faint gold wash over
+     the panel background keeps its "note" character */
+  .callout{margin:16px 0 0;padding:14px 22px 14px 18px;
+    border:1px solid var(--panel-edge);border-left:3px solid var(--gas);border-radius:14px;
+    background:linear-gradient(0deg,rgba(240,168,30,.07),rgba(240,168,30,.07)),var(--panel);
     font-family:var(--serif);font-size:15px;color:var(--ink);line-height:1.6}
   .callout strong{color:var(--gas-glow)}
   /* footer spreads across the page width: logo + about on the left, links + keys on the right */
