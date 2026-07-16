@@ -32,11 +32,21 @@ def _two_piece(k):
 
 
 #: V(t)/V0 piecewise segments per regime (matches tomas-jax DILUTIONS).
+# "burst" = burst-of-turbulence (Kz=10 m^2/s for 14.2 h): 4-piece Schumann + slow/fast/slow exponential
+# growth; the prefactors (1585, 1906, 4.83e4) are chosen so V(t)/V0 is continuous at the breakpoints.
+# "D5" (Low Lx, 5.33e-8) is the user's "Very high" regime (its own t_max=509,300 s cap is irrelevant
+# for our 10-day runs -- the plume is fully diluted well before then; the exponential simply continues).
 DILUTION_REGIMES = {
     "D1": ("Low Kz",  _two_piece(2.811e-9)),
     "D2": ("Med Kz",  _two_piece(8.89e-9)),
     "D3": ("High Kz", _two_piece(2.811e-8)),
-    "D5": ("Low Lx",  _two_piece(5.33e-8)),
+    "D5": ("Very high (Low Lx)", _two_piece(5.33e-8)),
+    "burst": ("Burst of turbulence", (
+        (1.0e4,   ("power", 0.8)),
+        (1.728e5, ("exp", 1585.0,  2.811e-9, 1.0e4,   1.5)),
+        (2.238e5, ("exp", 1906.0,  2.811e-7, 1.728e5, 1.5)),
+        (_BIG_T,  ("exp", 4.83e4,  2.811e-9, 2.238e5, 1.5)),
+    )),
 }
 
 

@@ -38,6 +38,8 @@ behavior. Use ``reference`` here only for continuous-SZA testing, not for MATLAB
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 
 # model_bridge puts gas_phase_chemistry on sys.path (interim; see DEFERRED) -- import it first.
@@ -55,7 +57,7 @@ from reactions import photolysis_coeffs                      # noqa: E402
 from solar import cos_solar_zenith, photolysis_scale         # noqa: E402  (single SZA source)
 from tuvx_photolysis_adapter import (compute_j_and_heating, calculator_grids,  # noqa: E402
                                      _box_altitude_km, _TUVX_ROOT)
-from jaxmodel.model import make_frozen_step                  # noqa: E402
+from jaxmodel.model import make_frozen_step  # noqa: E402
 
 import jax.numpy as jnp                                      # noqa: E402
 
@@ -101,6 +103,13 @@ def _frozen_j_and_heating(cfg, t_mid: float, aerosol_props=None):
     if cfg.photolysis != "tuvx":
         return None, None
     return compute_j_and_heating(cfg, t_mid, aerosol_props=aerosol_props)
+
+
+# Gas-ODE stall handling: Diffrax Kvaerno5 with the standard first_step=1e-10 can enter a
+# reject/shrink loop of the PID controller on rare benign states (isolated to EXACTLY dt0=1e-10;
+# dt0 >= 1e-8 solves the same state in ~30 steps -- see paper_ensemble/debug_day12_isolation.py).
+# The remedy is a pure-Diffrax RETRY with a larger initial step; no SciPy fallback.
+_RETRY_FIRST_STEP = 1.0e-2
 
 
 # H2SO4 number density [molec/cm^3] below which gaseous sulfuric acid is negligible for nucleation --
@@ -205,7 +214,7 @@ def _envelope_grid(t0, t1, n_pts: int = 301):
 
 
 def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_dist=False,
-                return_photolysis=False):
+                return_photolysis=False, stop_condition=None):
     """Integrate a CoupledScenario with operator splitting.
 
     Returns ``(t [s], states [n_t, n_species])``. With ``return_aerosol=True`` also returns a dict of
@@ -224,7 +233,8 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     params = dict(T=cfg.T, M=cfg.M, P=cfg.P, SA=cfg.SA, WTR=cfg.WTR, Yn2o5=cfg.Yn2o5)
 
     tomas_step = make_microphysics_step(scenario.switches,
-                                        ion_pair_rate=float(scenario.ion_pair_rate))
+                                        ion_pair_rate=float(scenario.ion_pair_rate),
+                                        coag_kernel_scale=float(scenario.coag_kernel_scale))
     tomas_active = tomas_step is not None
     tstate = initial_tomas_state(scenario) if tomas_active else None
     het = het_inputs(tstate) if tomas_active else None
@@ -236,8 +246,16 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     # jit_grid + forward_only make the per-outer-step gas solve ~85x faster (eager diffeqsolve ~1.2 s
     # -> jitted+LU ~15 ms): the coupled forward run takes no gradients through the solve, and the
     # envelope grid has a fixed length so the jit compiles once. Bit-identical to the eager solve.
+    # Primary solve gets a FAIL-FAST step budget: a healthy interval needs <~1e3 steps, so a
+    # 5e4 cap costs ~10 s on a genuine dt0 stall instead of ~3 min at 1e6. The retry solver
+    # (larger first_step) keeps the deep budget.
+    _probe_maxsteps = int(os.environ.get("COUPLED_GAS_MAXSTEPS", "50000"))
     step = make_frozen_step(cfg.opt, atol=jnp.asarray(_abstol(cfg.opt)),
-                            jit_grid=True, forward_only=True)
+                            max_steps=_probe_maxsteps, jit_grid=True, forward_only=True)
+    # stall-retry twin: identical solve from a larger initial step (see _RETRY_FIRST_STEP note)
+    step_retry = make_frozen_step(cfg.opt, atol=jnp.asarray(_abstol(cfg.opt)),
+                                  max_steps=1_000_000, jit_grid=True, forward_only=True,
+                                  first_step=_RETRY_FIRST_STEP)
 
     nuc_scale = float(scenario.nucleation_rate_scale)   # Phase 7 knob -> TOMAS nucleation fn_scale
     # Phase 6: dilution -> relaxation toward a background (AD-6.3). Background gas = initial state with
@@ -313,7 +331,12 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         _photo_eqs = [MECHANISM.active[i].equation for i in _photo_idx]
         j_tmid, j_rows = [], []
     yc = jnp.asarray(y0)
+    _gas_retries = []         # outer-step t0's where the gas solve needed the larger-dt0 retry
+    _use_retry = False        # STICKY-RETRY: inside a stall region, skip the doomed probe
+    _ivl = 0
+    _REPROBE = 48             # re-probe the standard dt0 every N intervals to exit the region
     for t0, t1 in _outer_intervals(cfg, scenario.days, scenario.dt_couple):
+        _ivl += 1
         t_mid = 0.5 * (t0 + t1)
         # plain float: photolysis_scale returns 0.0 (float) at night but np.float64 by day, and the
         # weak/strong dtype flip would force an extra one-time trace of the jitted gas solve.
@@ -325,7 +348,8 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         if return_photolysis:
             j_tmid.append(t_mid)
             j_rows.append(np.asarray(override)[_photo_idx])
-        args = {**params, "j_scale": j_scale, "sulfur_chain": sulfur, "photo_override": override}
+        args = {**params, "j_scale": j_scale, "sulfur_chain": sulfur, "photo_override": override,
+                "k_so2_ho2": float(scenario.so2_ho2_rate)}
         if tomas_active:   # freeze this interval's aerosol het inputs (end-of-previous-interval state)
             args = {**args, "SA": het["SA"], "particle_radius": het["radius_cm"],
                     "h2so4wp": het["h2so4wp"]}
@@ -336,19 +360,61 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
             # gas H2SO4 = envelope(t1) minus cumulative TOMAS removal. Two-level split that keeps
             # nucleation from seeing a whole interval's H2SO4 at once (docs/time-integration-plan).
             ts_grid = _envelope_grid(t0, t1, env_pts)
-            sol = step(yc, t0, t1, args, save_ts=ts_grid)
-            env_grid = np.asarray(sol.ys[:, h2so4_idx])       # smooth H2SO4 envelope [molec/cm^3]
+            # Kvaerno5 with first_step=1e-10 can (rarely) stall in the PID controller's
+            # reject loop on a benign state; the SAME solver from first_step=1e-2 sails
+            # through (~30 steps). Stalls come in contiguous REGIONS, so after one stall we
+            # go STICKY on the retry solver (skip the doomed probe) and only re-probe the
+            # standard dt0 every _REPROBE intervals. Pure Diffrax; genuine failures propagate.
+            _try_std = (not _use_retry) or (_ivl % _REPROBE == 0)
+            sol = None
+            if _try_std:
+                try:
+                    sol = step(yc, t0, t1, args, save_ts=ts_grid)
+                    if _use_retry:
+                        _use_retry = False
+                        print(f"[gas] standard dt0 recovered at t0={t0/86400:.3f}d", flush=True)
+                except Exception:
+                    sol = None
+            if sol is None:
+                if _try_std:                       # a fresh stall (not a sticky skip)
+                    _gas_retries.append(float(t0))
+                    if not _use_retry:
+                        _use_retry = True
+                        print(f"[gas] dt0 stall at t0={t0:.1f}s ({t0/86400:.3f}d) -> sticky "
+                              f"retry, first_step={_RETRY_FIRST_STEP:g} "
+                              f"(stall #{len(_gas_retries)})", flush=True)
+                sol = step_retry(yc, t0, t1, args, save_ts=ts_grid)
+            env_grid = np.asarray(sol.ys[:, h2so4_idx]); yc_end = sol.ys[-1]
             tstate, removal_kg, dt_micro, n_micro = micro_consume(
                 lambda tt: float(np.interp(tt, ts_grid, env_grid)), t0, t1, tstate, tomas_step,
                 nuc_scale, eps, floor, cap, dt_micro)
             micro_total += n_micro
-            yc = sol.ys[-1]
+            yc = yc_end
             env_end_kg = conc_to_mass(float(env_grid[-1]), BOXVOL_CM3, MW_H2SO4)   # envelope(t1)
             yc = yc.at[h2so4_idx].set(
                 mass_to_conc(max(env_end_kg - removal_kg, 0.0), BOXVOL_CM3, MW_H2SO4))
             het = het_inputs(tstate)                          # for the next interval
         else:
-            yc = step(yc, t0, t1, args)                       # gas-only endpoint (Phase-2 path)
+            _try_std = (not _use_retry) or (_ivl % _REPROBE == 0)
+            _done = False
+            if _try_std:                                      # gas-only endpoint (Phase-2 path)
+                try:
+                    yc = step(yc, t0, t1, args)
+                    _done = True
+                    if _use_retry:
+                        _use_retry = False
+                        print(f"[gas] standard dt0 recovered at t0={t0/86400:.3f}d", flush=True)
+                except Exception:
+                    pass
+            if not _done:
+                if _try_std:
+                    _gas_retries.append(float(t0))
+                    if not _use_retry:
+                        _use_retry = True
+                        print(f"[gas] dt0 stall at t0={t0:.1f}s ({t0/86400:.3f}d) -> sticky "
+                              f"retry, first_step={_RETRY_FIRST_STEP:g} "
+                              f"(stall #{len(_gas_retries)})", flush=True)
+                yc = step_retry(yc, t0, t1, args)
 
         if heating_active:
             # radiative heating -> box T (forward-Euler over the interval). The updated T feeds the
@@ -377,6 +443,12 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
             nk, dp = _sizedist_record()
             nk_list.append(nk)
             dp_list.append(dp)
+        # optional early stop (e.g. plume relaxed to background): called once per outer
+        # interval with (t1 [s], wet SA [um^2/cm^3] or nan when TOMAS inactive)
+        if stop_condition is not None and stop_condition(
+                float(t1), float(het["SA"]) if het is not None else float("nan")):
+            print(f"[stop] condition met at t={t1/86400.0:.3f} d -- ending run early", flush=True)
+            break
 
     t = np.asarray(t_list)
     x = np.asarray(x_list)
