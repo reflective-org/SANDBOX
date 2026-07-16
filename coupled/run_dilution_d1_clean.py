@@ -33,6 +33,8 @@ matplotlib.use("Agg")
 # Publication style: only x/y axes (no top/right spines), recessive grid/ticks, clear fonts.
 matplotlib.rcParams.update({
     "figure.dpi": 110, "savefig.dpi": 150,
+    "font.family": "sans-serif",
+    "font.sans-serif": ["Helvetica", "Helvetica Neue", "Arial", "DejaVu Sans"],
     "font.size": 11, "axes.titlesize": 12.5, "axes.labelsize": 11.5,
     "xtick.labelsize": 10, "ytick.labelsize": 10,
     "axes.spines.top": False, "axes.spines.right": False,
@@ -73,18 +75,32 @@ _BG_PPT = {"SO2": 15.0,                             # ambient stratospheric SO2
            "OH": _ppt_from_conc(5.0e5)}             # 5e5 molec/cm^3 (~0.27 pptv)
 
 
-def _scenario(nbins=40):
+def _scenario(nbins=40, aerosol_to_j=True, days=10, control=False, bg="sabr_330"):
+    if control:
+        # no-SAI CONTROL: NO SO2 injection (SO2 at clean 20 pptv background), NO dilution (closed box),
+        # ensemble reference baseline (30N / 20 km / 210 K, RH 3% -> WTR 6.91), background aerosol
+        # distribution ``bg``. Shows the diurnal photochemical steady state with no SAI forcing.
+        return CoupledScenario(
+            T=210.0, P=55.0, WTR=6.9104,
+            latitude=30.0, longitude=0.0, day_of_year=172, start_utc_hour=0.0,
+            days=days, DT=600.0, dt_couple=600.0, photolysis="tuvx", tomas_nbins=nbins,
+            background_dist=bg, ion_pair_rate=30.0, so2_ho2_rate=1.0e-18,
+            switches=Switches(sulfur=True, nucleation=True, condensation=True, coagulation=True,
+                              aerosol_to_j=aerosol_to_j, heating_to_t=False, dilution=False),
+            concentrations={"O2": 2.1e11, "O3": 1.18e6, "SO2": 20.0, "OH": 0.5, "HO2": 3.0,
+                            "NO": 450.0, "NO2": 450.0, "HCl": 777.0, "ClONO2": 127.0,
+                            "HNO3": 5000.0})
     return CoupledScenario(
         T=_T, P=_P, WTR=_WTR,
         latitude=30.0, longitude=0.0, day_of_year=172, start_utc_hour=6.0,
-        days=10, DT=600.0, dt_couple=600.0, photolysis="tuvx",
+        days=days, DT=600.0, dt_couple=600.0, photolysis="tuvx",
         dilution_regime="D1", dilution_zero_species=_ZERO_BG, dilution_background=_BG_PPT,
         ion_pair_rate=30.0,                          # Dunne ion-induced nucleation (GCR ~20 km)
         tomas_nbins=nbins,
         # heating_to_t OFF (group decision): the heating term is SW-only (no LW cooling, AD-5.4),
         # so leaving it on gives a spurious monotonic ~+1.2 K / 10 d drift. Box T stays at input T.
         switches=Switches(sulfur=True, nucleation=True, condensation=True, coagulation=True,
-                          aerosol_to_j=True, heating_to_t=False, dilution=True),
+                          aerosol_to_j=aerosol_to_j, heating_to_t=False, dilution=True),
         concentrations={"O2": 2.1e11, "O3": 1.18e6, "SO2": _SO2_PPT, "OH": 0.5, "HO2": 3.0,
                         "NO": 450.0, "NO2": 450.0, "HCl": 777.0, "ClONO2": 127.0, "HNO3": 5000.0,
                         "H2SO4": _ppt_from_conc(1.0e5)})   # 1e5 molec/cm^3 (~0.054 pptv)
@@ -155,7 +171,7 @@ def _input_rows(sc, het0):
             "initial distribution"),
         ("**Aerosol (TOMAS)**", "", ""),
         ("", "Bins", f"{sc.tomas_nbins} "
-            f"({'mass-doubling' if sc.tomas_nbins == 40 else 'sqrt(2) mass ratio'}), "
+            f"({ {40: 'mass-doubling', 80: 'sqrt(2) mass ratio', 160: '2^0.25 mass ratio'}.get(sc.tomas_nbins, f'2^(40/{sc.tomas_nbins}) mass ratio') }), "
             "dry Dp 1.7 nm - 17.5 um"),
         ("", "Initial + background distribution", "Marianna 'redcircles' clean stratosphere "
             "(obs 220-230 ppbv, STP -> ambient x0.069; N ~ 3 cm^-3)"),
@@ -389,12 +405,18 @@ def _make_plots(d):
     fig.suptitle("Reaction rates [molec cm$^{-3}$ s$^{-1}$]", y=1.001)
     _save(fig, "d1_reaction_rates.png")
 
-    # 7) dilution alone: plume volume + rate
+    # 7) dilution alone: plume volume + rate  (degenerate for a closed-box control -> linear, flat)
     V, kdil = d["V"], d["kdil"]
+    diluting = np.nanmax(kdil) > 0
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4.4))
-    a1.plot(days, V, lw=1.8); a1.set_yscale("log")
-    a1.set_title("plume volume V(t)/V$_0$ (D1 'Low Kz', Schumann)"); a1.set_xlabel("day")
-    a2.plot(days[1:], kdil, lw=1.6, color="C1"); a2.set_yscale("log")
+    a1.plot(days, V, lw=1.8)
+    if diluting:
+        a1.set_yscale("log")
+    a1.set_title("plume volume V(t)/V$_0$" + ("" if diluting else " — dilution OFF (V=1)"))
+    a1.set_xlabel("day")
+    a2.plot(days[1:], kdil, lw=1.6, color="C1")
+    if diluting:
+        a2.set_yscale("log")
     a2.set_title("dilution rate k$_{dil}$(t) [s$^{-1}$]"); a2.set_xlabel("day")
     _save(fig, "d1_dilution.png")
 
@@ -522,11 +544,15 @@ def _make_plots(d):
     _save(fig, "d1_aerosol_props.png")
 
 
-def main(nbins=40, replot=False):
+def main(nbins=40, replot=False, aerosol_to_j=True, days=10, control=False, bg="sabr_330"):
     global _OUT
-    _OUT = os.path.join(os.path.dirname(__file__), "analyses", f"d1_clean_{nbins}bin")
+    suffix = ("" if aerosol_to_j else "_noaeroj") + ("" if days == 10 else f"_{days}d")
+    if control:   # all control runs live under paper_ensemble/runs_no_sai/<background>/
+        _OUT = os.path.join(os.path.dirname(__file__), "paper_ensemble", "runs_no_sai", bg)
+    else:
+        _OUT = os.path.join(os.path.dirname(__file__), "analyses", f"d1_clean_{nbins}bin{suffix}")
     os.makedirs(_OUT, exist_ok=True)
-    sc = _scenario(nbins)
+    sc = _scenario(nbins, aerosol_to_j=aerosol_to_j, days=days, control=control, bg=bg)
     _write_inputs_md(sc, het_inputs(tb.initial_tomas_state(sc)))
     _export_observations(sc)
 
@@ -543,8 +569,8 @@ def main(nbins=40, replot=False):
         print(f"replotted 16 figures from the saved npz -> {_OUT}/")
         return
 
-    print(f"Running Dilution-1 clean-stratosphere ({nbins} bins; 20 km, 30N, summer, 10 d, "
-          f"full coupling) -> {_OUT}/ ...")
+    print(f"Running Dilution-1 clean-stratosphere ({nbins} bins; 20 km, 30N, summer, {sc.days} d, "
+          f"aerosol->J {'on' if aerosol_to_j else 'OFF'}) -> {_OUT}/ ...")
     try:
         # run_coupled appends extras in order: aerosol, state, size_dist, photolysis
         t, x, aero, st_final, sd, jrec = run_coupled(
@@ -561,8 +587,12 @@ def main(nbins=40, replot=False):
     dp_mid = np.sqrt(edges[:-1] * edges[1:])
     dlogdp = np.log10(edges[1:] / edges[:-1])
     dNdlogDp = sd["n_cm3"] / dlogdp[None, :]                      # (n_t, nbins) cm^-3
-    V = dl.volume_ratio(t, "D1")
-    kdil = np.array([dl.kdil_from_regime("D1", t[i], t[i + 1]) for i in range(len(t) - 1)])
+    if bool(sc.switches.dilution) and sc.dilution_regime in dl.DILUTION_REGIMES:
+        V = dl.volume_ratio(t, sc.dilution_regime)
+        kdil = np.array([dl.kdil_from_regime(sc.dilution_regime, t[i], t[i + 1])
+                         for i in range(len(t) - 1)])
+    else:                                            # dilution OFF (control): closed box, V=1, kdil=0
+        V = np.ones_like(t); kdil = np.zeros(len(t) - 1)
     total_n = sd["n_cm3"].sum(axis=1)                             # cm^-3
     # particulate_S is H2SO4-equivalent molec/cm^3 -> dry sulfate mass concentration [ug/m^3]
     mass_ug_m3 = aero["particulate_S"] * 98.0 / _AVOG * 1e12
@@ -603,5 +633,11 @@ def main(nbins=40, replot=False):
 
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:]]
+    _days = next((int(a.split("=")[1]) for a in args if a.startswith("days=")), 10)
+    _bg = next((a.split("=")[1] for a in args if a.startswith("bg=")), "sabr_330")
     main(nbins=int(args[0]) if args and args[0].isdigit() else 40,
-         replot=("replot" in args))
+         replot=("replot" in args),
+         aerosol_to_j=("noaeroj" not in args),
+         days=_days,
+         control=("control" in args),
+         bg=_bg)

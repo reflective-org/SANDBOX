@@ -119,11 +119,20 @@ class CoupledScenario:
     # both span dry Dp 1.7 nm - 17.5 um. Everything downstream (initial state, Mie table, optics)
     # follows the state's own xk grid.
     tomas_nbins: int = 40
+    # Background aerosol size distribution seeded into the initial TomasState. "redcircles" (Marianna,
+    # default) uses the tabulated loader; "sabr_330"/"sabr_220"/"cesm_g6" seed a (multi-)lognormal
+    # from tomas_bridge.BACKGROUND_MODES (digitized from SABR/CESM plots -- see paper_ensemble docs).
+    background_dist: str = "redcircles"
+    # Rate constant [cm^3/molec/s] for SO2 + HO2 -> SO3 + OH (JPL 19-5 I34). JPL gives only an UPPER
+    # LIMIT (~1e-18) and recommends NO products, so this is a deliberate sensitivity knob: 0.0
+    # eliminates the channel; 1e-18/1e-17/1e-16 scan the plausible range. Only active in the sulfur
+    # chain (non-reference photolysis). Default 1e-18 = the current hardcoded value (no behavior change).
+    so2_ho2_rate: float = 1.0e-18
 
     # --- sensitivity knobs (Phase 7; free multipliers, default 1.0; for Phase-8 sweeps) ---
     nucleation_rate_scale: float = 1.0   # -> TOMAS make_step nucleation fn_scale
     condensation_alpha: float = 1.0      # -> TomasState alpha (Fuchs accommodation coefficient), (0,1]
-    coag_kernel_scale: float = 1.0       # NOT wired in tomas-jax yet (AD-7.2): must stay 1.0 (raises)
+    coag_kernel_scale: float = 1.0       # -> TOMAS make_step kernel multiplier (AD-7.2)
 
     # --- aerosol -> photolysis (Phase 4) ---
     # Where the box aerosol sits in the TUV-x RT column when switches.aerosol_to_j is on. By DEFAULT
@@ -175,17 +184,19 @@ class CoupledScenario:
         if self.dilution_rate < 0.0:
             raise ValueError(f"dilution_rate must be >= 0, got {self.dilution_rate}")
         self.dilution_zero_species = tuple(self.dilution_zero_species)   # YAML list -> tuple
-        _VALID_REGIMES = ("", "D1", "D2", "D3", "D5")
+        _VALID_REGIMES = ("", "D1", "D2", "D3", "D5", "burst")
         if self.dilution_regime not in _VALID_REGIMES:
             raise ValueError(f"dilution_regime must be one of {_VALID_REGIMES}, got {self.dilution_regime!r}")
         if self.nucleation_rate_scale < 0.0:
             raise ValueError(f"nucleation_rate_scale must be >= 0, got {self.nucleation_rate_scale}")
         if not (0.0 < self.condensation_alpha <= 1.0):
             raise ValueError(f"condensation_alpha must be in (0, 1], got {self.condensation_alpha}")
-        if self.coag_kernel_scale != 1.0:   # not wired in tomas-jax -- fail loud, don't silently ignore
-            raise NotImplementedError(
-                "coag_kernel_scale is not wired yet (tomas-jax has no coagulation-kernel scale knob); "
-                "it must stay 1.0 until that Phase-8/tomas-jax change lands (see AD-7.2, DEFERRED.md).")
+        if self.coag_kernel_scale < 0.0:   # now wired (AD-7.2): free multiplier on the coag kernel
+            raise ValueError(f"coag_kernel_scale must be >= 0, got {self.coag_kernel_scale}")
+        from coupled.tomas_bridge import BACKGROUND_MODES
+        if str(self.background_dist) not in ("redcircles", *BACKGROUND_MODES):
+            raise ValueError(f"background_dist must be 'redcircles' or one of "
+                             f"{sorted(BACKGROUND_MODES)}, got {self.background_dist!r}")
         if self.dt_couple > self.DT:
             raise ValueError(f"dt_couple ({self.dt_couple}) must be <= output step DT ({self.DT})")
         # dt_couple drives sub-stepping within an output interval, so DT must be a whole multiple of it

@@ -3,9 +3,9 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tuvx_photolysis"
+name = "sandbox-coupled"
 version = "0.1.0"
-description = "TUV-x photolysis (JAX) coupled with a gas-phase chemistry box model, in one place"
+description = "Coupled SAI plume box model: TUV-x photolysis (tuvx-jax) + stratospheric chemistry (stratchem-jax) + TOMAS microphysics (tomas-jax), wired by the coupled/ driver"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
@@ -35,12 +35,16 @@ jax-chemistry = [
     "lineax>=0.0.4",
 ]
 
+# the models themselves live in the tuvx-jax / stratchem-jax / tomas-jax git submodules
+# (put on sys.path by coupled/model_bridge.py and coupled/tomas_bridge.py); this project
+# installs the coupling layer + shared dependencies.
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["tuvx_photolysis*"]
+include = ["coupled*"]
+exclude = ["coupled.paper_ensemble.runs*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["coupled/tests"]
 markers = [
     "slow: end-to-end runs that invoke the real TOMAS microphysics or TUV-x port (deselect with -m 'not slow')",
 ]

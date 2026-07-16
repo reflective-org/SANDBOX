@@ -2,13 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 """Bridge from the coupled config to the gas-phase model (CoupledScenario -> ModelConfig + state).
 
-This is the ONE place the coupling layer reaches into ``gas_phase_chemistry``. It maps the single
-``CoupledScenario`` onto the gas model's ``ModelConfig`` and builds the initial state vector, so the
-duplicated fields (T/P/SA/WTR/... ) have a single, tested mapping and can't drift.
+This is the ONE place the coupling layer reaches into the gas model (the ``stratchem-jax``
+submodule). It maps the single ``CoupledScenario`` onto the gas model's ``ModelConfig`` and builds
+the initial state vector, so the duplicated fields (T/P/SA/WTR/... ) have a single, tested mapping
+and can't drift.
 
-Packaging note (interim): ``gas_phase_chemistry`` is not an installed package (its own tests rely on
-a conftest ``sys.path`` insert), so we add it to ``sys.path`` here once, with eyes open. Making it a
-real importable package is the tracked follow-up in docs/DEFERRED.md.
+Packaging note (interim): the gas model is not an installed package (its modules import each other
+by plain name via a conftest ``sys.path`` insert), so we add its submodule root to ``sys.path``
+here once, with eyes open — and likewise the ``tuvx-jax`` submodule root so the direct
+``import tuvx_photolysis`` in the coupled modules resolves. Making them real importable packages is
+the tracked follow-up in docs/DEFERRED.md.
 """
 
 from __future__ import annotations
@@ -16,9 +19,16 @@ from __future__ import annotations
 import os
 import sys
 
-_GAS = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "gas_phase_chemistry"))
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_GAS = os.path.join(_ROOT, "stratchem-jax")             # git submodule (preferred)
+if not os.path.isfile(os.path.join(_GAS, "config.py")):
+    _GAS = os.path.join(_ROOT, "gas_phase_chemistry")   # legacy vendored layout
 if _GAS not in sys.path:
     sys.path.insert(0, _GAS)
+
+_TUVX = os.path.join(_ROOT, "tuvx-jax")                 # TUV-x port submodule
+if os.path.isdir(os.path.join(_TUVX, "tuvx_photolysis")) and _TUVX not in sys.path:
+    sys.path.insert(0, _TUVX)
 
 import numpy as np
 

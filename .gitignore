@@ -10,10 +10,13 @@ dist/
 # self-contained and self-validating on clone.
 .DS_Store
 
-# gas-phase-chemistry run outputs (regenerated every run)
-gas_phase_chemistry/plots/
-gas_phase_chemistry/output/
-gas_phase_chemistry/tuvx_10day.png
 # per-run text log (regenerated every run; the script always writes <out>/run.log)
 run.log
 coupled/analyses/
+# paper-ensemble run outputs: per-case state.npz + generated figures (regenerable via the
+# runners and make_* scripts; see coupled/paper_ensemble/FIGURES.md)
+coupled/paper_ensemble/runs*/
+coupled/paper_ensemble/overnight_launch.log
+# archived MATLAB snapshots kept locally in the leftover gas_phase_chemistry/ dir
+# (the model itself moved to the stratchem-jax submodule)
+gas_phase_chemistry/
