@@ -62,13 +62,23 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   header{display:block;margin-bottom:16px}
   .topnav{display:flex;align-items:center;justify-content:space-between;height:54px;
     border-bottom:1px solid var(--panel-edge);margin-bottom:26px}
-  .hero{text-align:center;max-width:900px;margin:0 auto 8px}
+  /* split masthead: title + subtitle left, per-case lifetime + release facts right */
+  .masthead{display:flex;align-items:flex-end;justify-content:space-between;
+    gap:18px 56px;flex-wrap:wrap;margin:4px 2px 18px}
+  .hero{text-align:left;max-width:66ch;margin:0}
   header h1{margin:0;font-family:var(--serif);font-size:30px;font-weight:600;
     letter-spacing:-.008em;line-height:1.15}
   header .sub{display:block;color:var(--muted);font-family:var(--serif);font-size:15px;
-    margin:8px auto 0;max-width:72ch}
-  header .caseline{display:block;color:var(--faint);font-family:var(--mono);font-size:11px;
-    margin-top:9px}
+    margin:10px 0 0;max-width:64ch}
+  .headmeta{margin-left:auto;display:flex;flex-direction:column;gap:9px;
+    align-items:flex-end;text-align:right;padding-bottom:3px}
+  .headmeta .life{color:var(--gas-glow);font-family:var(--mono);font-size:13px}
+  header .caseline{display:block;color:var(--faint);font-family:var(--mono);font-size:11px}
+  .headmeta .info .tip{left:auto;right:-6px;transform:none}   /* keep popover on-screen */
+  @media (max-width:900px){
+    .masthead{flex-direction:column;align-items:flex-start}
+    .headmeta{margin-left:0;align-items:flex-start;text-align:left}
+  }
   .themes{display:flex;gap:2px;flex:none}
   .themes button{background:transparent;color:var(--muted);border:1px solid var(--panel-edge);
     padding:5px 10px;font-family:var(--mono);font-size:11px;cursor:pointer;border-radius:0}
@@ -94,7 +104,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   .info .tip a{color:var(--accent)}
   .info.down .tip{bottom:auto;top:calc(100% + 8px)}
 
-  .pickers{display:flex;gap:14px;align-items:center;justify-content:center;
+  .pickers{display:flex;gap:14px;align-items:center;justify-content:flex-start;
     margin:0 0 14px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--muted)}
   .pickers label{display:flex;gap:7px;align-items:center}
   .pickers label+.info{margin-left:-8px}
@@ -249,12 +259,17 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
         <button data-t="auto" class="on">auto</button><button data-t="dark">dark</button><button data-t="light">light</button>
       </div>
     </nav>
-    <div class="hero">
-      <h1>Modeling Stratospheric Plume Dynamics</h1>
-      <span class="sub">Idealized simulations of a one-tonne SO₂ release across a ten-meter
-        corridor. This model tracks dilution, aerosol microphysics, gas-phase chemistry, and
-        photolysis rates until complete assimilation into ambient baseline levels.</span>
-      <span class="caseline" id="caseline"></span>
+    <div class="masthead">
+      <div class="hero">
+        <h1>Modeling Stratospheric Plume Dynamics</h1>
+        <span class="sub">Idealized simulations of a one-tonne SO₂ release across a ten-meter
+          corridor. This model tracks dilution, aerosol microphysics, gas-phase chemistry, and
+          photolysis rates until complete assimilation into ambient baseline levels.</span>
+      </div>
+      <div class="headmeta">
+        <span class="life" id="lifetime"></span>
+        <span class="caseline" id="caseline"></span>
+      </div>
     </div>
   </header>
 
@@ -282,7 +297,6 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       <span class="info" tabindex="0" role="note" aria-label="About the release heights">?<span
           class="tip">Both releases sit in the lower stratosphere: it starts near 20&nbsp;km
           at 30°N but closer to 15&nbsp;km at 60°N, where the tropopause is lower.</span></span>
-      <span class="life" id="lifetime"></span>
     </div>
     <div class="grid">
       <div class="card globe-card">
