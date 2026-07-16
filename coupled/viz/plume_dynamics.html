@@ -144,6 +144,11 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   header .logo{flex:0 0 100%;display:block;margin:0 0 12px;width:fit-content}
   .logo-img{display:block;width:142px;height:22px;background:var(--logo) no-repeat;
     background-size:contain}
+  .callout{margin-top:18px;padding:12px 18px;max-width:86ch;
+    border:1px solid rgba(240,168,30,.5);border-left:4px solid var(--gas);border-radius:8px;
+    background:rgba(240,168,30,.12);
+    font-family:var(--serif);font-size:15px;color:var(--ink);line-height:1.55}
+  .callout strong{color:var(--gas-glow)}
   footer{margin-top:24px;border-top:1px solid var(--panel-edge);padding:16px 2px 6px;
     color:var(--muted);font-family:var(--serif);font-size:14px;max-width:86ch;line-height:1.55}
   footer .byline{color:var(--ink);margin:0 0 6px}
@@ -270,16 +275,19 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       <p class="csub">color = dN/dlogD<sub>p</sub>, log scale · drag to scrub</p>
       <canvas id="banana"></canvas></div>
 
+    <div class="callout" role="note">
+      <strong>The plume's movement across the globe is illustrative, not a simulation of
+      stratospheric transport.</strong> Drift and shear follow a typical June wind so the
+      plume has somewhere to live; the point is to show how dilution scales against the size
+      of the Earth. Faithful transport would require running a global climate model.
+    </div>
+
     <footer>
       <p class="byline">Created by Ali Akherati, PhD and the science team at Reflective · July 2026</p>
       <p>Every curve on this page is output from a coupled chemistry, microphysics, and
         photolysis model of one plume; the day/night shading follows the model's own
         photolysis rates. Each case runs until the plume's surface area has stayed within
         10% of the background for a full day.</p>
-      <p><strong>The plume's movement across the globe is illustrative, not a simulation of
-        stratospheric transport.</strong> Drift and shear follow a typical June wind so the
-        plume has somewhere to live; the point is to show how dilution scales against the
-        size of the Earth. Faithful transport would require running a global climate model.</p>
       <p class="keys"><kbd>Space</kbd> play/pause · <kbd>←</kbd><kbd>→</kbd> step
         (<kbd>Shift</kbd> bigger) · <kbd>Home</kbd>/<kbd>End</kbd> jump</p>
     </footer>
