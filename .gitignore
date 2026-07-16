@@ -13,6 +13,7 @@ dist/
 # per-run text log (regenerated every run; the script always writes <out>/run.log)
 run.log
 coupled/analyses/
+coupled/viz/cache/
 # paper-ensemble run outputs: per-case state.npz + generated figures (regenerable via the
 # runners and make_* scripts; see coupled/paper_ensemble/FIGURES.md)
 coupled/paper_ensemble/runs*/
