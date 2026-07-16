@@ -48,13 +48,16 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     }
   }
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%}
-  body{background:
-      radial-gradient(1200px 700px at 30% -10%, var(--body-grad-a) 0%, transparent 60%),
-      radial-gradient(900px 600px at 100% 110%, var(--body-grad-b) 0%, transparent 55%),
-      var(--bg);
+  html,body{margin:0;min-height:100%}
+  body{background:var(--bg);
     color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;
     line-height:1.45}
+  /* decorative gradients live on a viewport-FIXED layer: sizing them on the body paints them
+     against the first screen only, leaving a visible color seam partway down the page */
+  body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(1200px 700px at 30% -10%, var(--body-grad-a) 0%, transparent 60%),
+      radial-gradient(900px 600px at 100% 110%, var(--body-grad-b) 0%, transparent 55%)}
   #app{max-width:1520px;margin:0 auto;padding:0 22px 26px}
   header{display:block;margin-bottom:16px}
   .topnav{display:flex;align-items:center;justify-content:space-between;height:54px;
@@ -161,21 +164,26 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   .topnav .logo{display:block;width:fit-content}
   .logo-img{display:block;width:136px;height:21px;background:var(--logo) no-repeat;
     background-size:contain}
-  .callout{margin:18px auto 0;padding:12px 18px;max-width:86ch;
+  .callout{margin:36px auto 0;padding:16px 24px;max-width:104ch;
     border:1px solid rgba(240,168,30,.5);border-left:4px solid var(--gas);border-radius:8px;
     background:rgba(240,168,30,.12);
-    font-family:var(--serif);font-size:15px;color:var(--ink);line-height:1.55}
+    font-family:var(--serif);font-size:15px;color:var(--ink);line-height:1.6}
   .callout strong{color:var(--gas-glow)}
-  footer{margin:26px auto 0;border-top:1px solid var(--panel-edge);padding:16px 2px 6px;
-    color:var(--muted);font-family:var(--serif);font-size:14px;max-width:86ch;line-height:1.55;
-    text-align:center}
-  footer .logo{display:inline-block;margin:0 0 12px}
-  footer .logo .logo-img{margin:0 auto}
+  /* footer spreads across the page width: logo + about on the left, links + keys on the right */
+  footer{margin:40px auto 0;border-top:1px solid var(--panel-edge);padding:30px 4px 12px;
+    max-width:1160px;color:var(--muted);font-family:var(--serif);font-size:14.5px;
+    line-height:1.7;display:flex;gap:28px 64px;align-items:flex-start;
+    justify-content:space-between;flex-wrap:wrap;text-align:left}
+  footer .about{flex:1 1 46ch;max-width:68ch}
+  footer .meta{flex:0 1 36ch}
+  footer .logo{display:inline-block;margin:2px 0 16px}
   footer a{color:var(--accent)}
-  footer p{margin:0 0 6px}
-  footer .keys{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:10px}
+  footer p{margin:0 0 10px}
+  footer .keys{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:14px;
+    line-height:2.1}
   footer kbd{font-family:var(--mono);border:1px solid var(--panel-edge);border-bottom-width:2px;
     border-radius:4px;padding:0 5px;font-size:10px}
+  @media (max-width:760px){ footer{flex-direction:column;gap:18px} }
 
   /* transport bar floats over the page bottom; #app reserves room for it */
   #app{padding-bottom:96px}
@@ -320,16 +328,20 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     </div>
 
     <footer>
-      <a class="logo" href="https://www.reflective.org" target="_blank" rel="noopener"
-         aria-label="Reflective"><span class="logo-img" role="img"></span></a>
-      <p>Every curve on this page is output from a coupled chemistry, microphysics, and
-        photolysis model of one plume; the day/night shading follows the model's own
-        photolysis rates. Each case runs until the plume's surface area has stayed within
-        10% of the background for a full day.</p>
-      <p>For more information, the model architecture and documentation live on
-        <a href="https://github.com/reflective-org/SANDBOX">GitHub</a>.</p>
-      <p class="keys"><kbd>Space</kbd> play/pause · <kbd>←</kbd><kbd>→</kbd> step
-        (<kbd>Shift</kbd> bigger) · <kbd>Home</kbd>/<kbd>End</kbd> jump</p>
+      <div class="about">
+        <a class="logo" href="https://www.reflective.org" target="_blank" rel="noopener"
+           aria-label="Reflective"><span class="logo-img" role="img"></span></a>
+        <p>Every curve on this page is output from a coupled chemistry, microphysics, and
+          photolysis model of one plume; the day/night shading follows the model's own
+          photolysis rates. Each case runs until the plume's surface area has stayed within
+          10% of the background for a full day.</p>
+      </div>
+      <div class="meta">
+        <p>The model architecture, validation, and documentation live on
+          <a href="https://github.com/reflective-org/SANDBOX">GitHub</a>.</p>
+        <p class="keys"><kbd>Space</kbd> play/pause · <kbd>←</kbd><kbd>→</kbd> step
+          (<kbd>Shift</kbd> bigger) · <kbd>Home</kbd>/<kbd>End</kbd> jump</p>
+      </div>
     </footer>
     <div class="controls" id="controls">
       <button id="play" class="btn" aria-label="Play">▶</button>
