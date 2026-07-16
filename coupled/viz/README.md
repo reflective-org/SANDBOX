@@ -2,16 +2,21 @@
 
 `d1_globe.html` is a single, self-contained web page that tells the story of an SO₂ plume in the
 stratosphere for a non-specialist audience: injected as a 10 m-wide trail, drifting and shearing
-over a NASA Blue Marble Earth (WebGL, with a vector-globe fallback) while its chemistry and
-aerosol microphysics play out in synchronized panels. Auto/dark/light theme (header toggle,
-persisted); Source Serif 4 (subset, embedded) for the narration voice.
+over a NASA Blue Marble Earth (WebGL day/night textures at 2048x1024 with city lights on the
+night side; vector-globe fallback) while its chemistry and aerosol microphysics play out in
+synchronized panels. Auto/dark/light theme (header toggle, persisted); Source Serif 4 (subset,
+embedded) for the narration voice; the footer carries the Reflective wordmark (linked to
+reflective.org, theme-recolored) and an explicit transport disclaimer: the globe movement is
+illustrative, the point is dilution vs the size of the Earth, and faithful transport would
+need a global climate model.
 
 It shows a **grid of paper-ensemble runs** selectable from three dropdowns:
 
 - **Dilution parameterization** — D1 low Kz, D2 medium (default), D3 high, D5 very high, and the
   transient turbulence burst (Schumann-type V(t)/V₀ expansions; see
   `paper_ensemble/TABLE_dilution_parameters.md`).
-- **Background aerosol** — "Aged air (SABR-220)" (default), "Young air (SABR-330)", and
+- **Background aerosol** — "Aged air (SABRE-220)" (default), "Young air (SABRE-330)"
+  (SABRE = the NOAA CSL field campaign, csl.noaa.gov/projects/sabre), and
   "SAI deployed" (internally the AER-2D geoengineered distribution, Pierce fig. 2;
   N = 120 cm⁻³, Dg = 0.30 µm — background SO₂ 100 pptv instead of 20. The AER-2D name is
   deliberately absent from the page).
@@ -49,7 +54,8 @@ git push origin gh-pages
 ```
 
 It also works as a hosted page (GitHub Pages, any static host) and as a Claude Artifact. The whole
-thing stays under the 1.6 MB bake limit with all thirty cases, coastlines, and code inlined.
+thing stays under the 2.0 MB bake limit with all thirty cases, textures, coastlines, and code
+inlined.
 
 The narration beats are CASE-AWARE (written per regime/background in `_captions()` with each
 case's own lifetime and end-of-life conversion percentage), in an editorial-scientific voice.
@@ -127,11 +133,11 @@ and hard-fails if the file would exceed 1.6 MB.
   photolysis was computed at the *fixed* injection point (0°E), so late in a run the drifting
   plume's local solar time differs from the globe terminator. The legend states this.
 
-These caveats are surfaced in the on-screen legend and footer, not buried here. The Blue
-Marble texture is NASA imagery (public domain, via Wikimedia Commons), desaturated at build
-time so it reads as an illustration; cached in `cache/marble_1024.jpg` and embedded as a data
-URI outside the bake markers (re-bakes never touch it). Same for the two Source Serif 4
-subsets (`cache/SourceSerif4-*.woff2`, OFL).
+These caveats are surfaced in the on-screen legend and footer, not buried here. The day (Blue
+Marble) and night (city lights) textures are NASA imagery (public domain, via Wikimedia
+Commons), processed by `embed_assets.py` and embedded as data URIs outside the bake markers
+(re-bakes never touch them). Same for the Source Serif 4 subsets (OFL) and the Reflective
+logo recolors.
 
 ## How it's built (for the next editor)
 

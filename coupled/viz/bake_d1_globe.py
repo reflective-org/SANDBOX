@@ -54,7 +54,9 @@ _COAST_URL = ("https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ma
 
 _MARK_A = "/*__D1_DATA_BEGIN__*/"
 _MARK_B = "/*__D1_DATA_END__*/"
-_SIZE_LIMIT = 1_600_000   # 30-case grid; still loads instantly as a local file or static page
+# 30-case grid + embedded day/night Earth textures (2048x1024, per Ali 2026-07-16) + fonts +
+# logo; still loads fast as a local file or static page
+_SIZE_LIMIT = 2_000_000
 
 _AVOG = 6.02214076e23
 _V0_CM3 = 1.5e12                     # 10 m x 10 m x 15 km (run_ensemble.py)
@@ -72,9 +74,11 @@ SITES = [
 BACKGROUNDS = [   # key, dropdown label, background SO2 [pptv] (run_ensemble/run_geo_ensemble)
     # "aergeo" is the AER-2D geoengineered distribution; per Ali the AER-2D name stays out of
     # everything user-facing, so the label frames it as the deployed-SAI stratosphere.
-    dict(key="sabr220", label="Aged air (SABR-220)", so2_bg_ppt=20.0,
+    # SABRE = the NOAA CSL Stratospheric Aerosol processes, Budget and Radiative Effects
+    # campaign (csl.noaa.gov/projects/sabre), whose measurements anchor these backgrounds
+    dict(key="sabr220", label="Aged air (SABRE-220)", so2_bg_ppt=20.0,
          phrase="clean aged-air background"),
-    dict(key="sabr330", label="Young air (SABR-330)", so2_bg_ppt=20.0,
+    dict(key="sabr330", label="Young air (SABRE-330)", so2_bg_ppt=20.0,
          phrase="younger, particle-richer background"),
     dict(key="aergeo",  label="SAI deployed", so2_bg_ppt=100.0,
          phrase="background of a stratosphere where SAI is already deployed"),

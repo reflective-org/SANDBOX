@@ -2,17 +2,22 @@
 # SPDX-License-Identifier: Apache-2.0
 """Fetch, process and embed the viz's static assets into d1_globe.html.
 
-Two asset groups, both embedded as data URIs OUTSIDE the bake markers (so re-running
+Asset groups, all embedded as data URIs OUTSIDE the bake markers (so re-running
 bake_d1_globe.py never touches them):
 
-  * Blue Marble texture: NASA "Whole world - land and oceans" (public domain), via the
-    Wikimedia Commons 1280px thumbnail; resized to 1024x512, desaturated 18% and darkened 8%
-    so it reads as an illustration under the data. -> the MARBLE_URI constant in the JS.
-  * Source Serif 4 (OFL) Regular + Semibold, subset to the page's character set with
-    pyftsubset (fonttools + brotli). -> the two @font-face blocks in the CSS.
+  * DAY texture: NASA "Whole world - land and oceans" (public domain), full-resolution
+    original from Wikimedia Commons (24000x12000, ~20 MB, cached); resized to 2048x1024,
+    desaturated 10% / darkened 5%. -> MARBLE_URI in the JS.
+  * NIGHT texture: NASA "The earth at night" city lights (public domain, 13500x6750);
+    resized to 2048x1024. Blended in-shader on the night side. -> NIGHT_URI.
+  * Source Serif 4 (OFL) Regular + Semibold, subset with pyftsubset (fonttools + brotli).
+    -> the two @font-face blocks in the CSS.
+  * Reflective logo, two recolors of the wordmark (yellow for dark, ink for light) at 56 px
+    height. Source EPS is provided out-of-band (--logo-eps, needs ghostscript); without it
+    the previously cached/embedded PNGs are reused. -> the two --logo CSS variables.
 
-Only needed when changing the texture or the font subset; the embedded copies are committed
-inside d1_globe.html. Downloads cache in cache/ (gitignored).
+Only needed when changing an asset; the embedded copies are committed inside d1_globe.html.
+Downloads cache in cache/ (gitignored).
 
 Run (from anywhere): python coupled/viz/embed_assets.py
 """
@@ -28,9 +33,9 @@ _CACHE = os.path.join(_HERE, "cache")
 _HTML = os.path.join(_HERE, "d1_globe.html")
 _UA = "SANDBOX-viz-bake/1.0 (research visualization)"
 
-_MARBLE_URL = ("https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/"
-               "Whole_world_-_land_and_oceans_12000.jpg/"
-               "1280px-Whole_world_-_land_and_oceans_12000.jpg")
+_MARBLE_URL = ("https://upload.wikimedia.org/wikipedia/commons/8/8f/"
+               "Whole_world_-_land_and_oceans_12000.jpg")
+_NIGHT_URL = ("https://upload.wikimedia.org/wikipedia/commons/b/ba/The_earth_at_night.jpg")
 _FONT_URL = ("https://raw.githubusercontent.com/adobe-fonts/source-serif/release/TTF/"
              "SourceSerif4-{weight}.ttf")
 # basic latin + the page's extras: degree, micro, middot, multiply, right quote, ellipsis,
@@ -47,15 +52,33 @@ def _fetch(url, dest):
     return dest
 
 
-def build_marble():
+def build_textures():
     from PIL import Image, ImageEnhance
-    src = _fetch(_MARBLE_URL, os.path.join(_CACHE, "marble_1280.jpg"))
-    img = Image.open(src).convert("RGB").resize((1024, 512), Image.LANCZOS)
-    img = ImageEnhance.Color(img).enhance(0.82)
-    img = ImageEnhance.Brightness(img).enhance(0.92)
-    out = os.path.join(_CACHE, "marble_1024.jpg")
-    img.save(out, quality=72, optimize=True)
-    return out
+    Image.MAX_IMAGE_PIXELS = 400_000_000
+    day_src = _fetch(_MARBLE_URL, os.path.join(_CACHE, "marble_full.jpg"))
+    day = Image.open(day_src).convert("RGB").resize((2048, 1024), Image.LANCZOS)
+    day = ImageEnhance.Color(day).enhance(0.90)
+    day = ImageEnhance.Brightness(day).enhance(0.95)
+    day_out = os.path.join(_CACHE, "marble_2048.jpg")
+    day.save(day_out, quality=76, optimize=True)
+    night_src = _fetch(_NIGHT_URL, os.path.join(_CACHE, "night_full.jpg"))
+    night = Image.open(night_src).convert("RGB").resize((2048, 1024), Image.LANCZOS)
+    night_out = os.path.join(_CACHE, "night_2048.jpg")
+    night.save(night_out, quality=68, optimize=True)
+    return day_out, night_out
+
+
+def build_logos(eps_path):
+    """Render the Reflective wordmark EPS to the two footer PNGs (56 px tall)."""
+    raw = os.path.join(_CACHE, "logo_raw.png")
+    subprocess.run(["gs", "-dSAFER", "-dBATCH", "-dNOPAUSE", "-dEPSCrop",
+                    "-sDEVICE=pngalpha", "-r300", f"-sOutputFile={raw}", eps_path], check=True)
+    y = os.path.join(_CACHE, "logo_yellow.png")
+    i = os.path.join(_CACHE, "logo_ink.png")
+    subprocess.run(["magick", raw, "-trim", "+repage", "-resize", "x56", f"PNG32:{y}"], check=True)
+    subprocess.run(["magick", y, "-channel", "RGB", "-fill", "#1c1d22", "-colorize", "100",
+                    f"PNG32:{i}"], check=True)
+    return y, i
 
 
 def build_fonts():
@@ -71,19 +94,36 @@ def build_fonts():
     return outs
 
 
-def inject(marble, fonts):
+def _patch(html, pattern, payloads, what):
+    it = iter(payloads)
+    out, n = re.subn(pattern, lambda m: m.group(1) + next(it), html, count=len(payloads))
+    assert n == len(payloads), f"{what}: expected {len(payloads)} slots, patched {n}"
+    return out
+
+
+def inject(day, night, fonts, logos):
     b64 = lambda p: base64.b64encode(open(p, "rb").read()).decode()
     html = open(_HTML).read()
-    html, n = re.subn(r'(url\(data:font/woff2;base64,)[A-Za-z0-9+/=]+',
-                      lambda m, it=iter(fonts): m.group(1) + b64(next(it)), html, count=2)
-    assert n == 2, f"expected 2 @font-face data URIs, patched {n}"
-    html, n = re.subn(r'(MARBLE_URI="data:image/jpeg;base64,)[A-Za-z0-9+/=]+',
-                      lambda m: m.group(1) + b64(marble), html, count=1)
-    assert n == 1, "MARBLE_URI constant not found"
+    html = _patch(html, r'(url\(data:font/woff2;base64,)[A-Za-z0-9+/=_]+',
+                  [b64(f) for f in fonts], "@font-face")
+    html = _patch(html, r'(MARBLE_URI="data:image/jpeg;base64,)[A-Za-z0-9+/=_]+',
+                  [b64(day)], "MARBLE_URI")
+    html = _patch(html, r'(NIGHT_URI="data:image/jpeg;base64,)[A-Za-z0-9+/=_]+',
+                  [b64(night)], "NIGHT_URI")
+    if logos:
+        html = _patch(html, r'(--logo:url\(data:image/png;base64,)[A-Za-z0-9+/=_]+',
+                      [b64(logos[0]), b64(logos[1]), b64(logos[1])], "--logo")
     open(_HTML, "w").write(html)
     print(f"embedded -> {_HTML}   file = {os.path.getsize(_HTML)/1024:.1f} KB")
 
 
 if __name__ == "__main__":
     os.makedirs(_CACHE, exist_ok=True)
-    inject(build_marble(), build_fonts())
+    eps = None
+    if "--logo-eps" in sys.argv:
+        eps = sys.argv[sys.argv.index("--logo-eps") + 1]
+    y, i = (build_logos(eps) if eps else
+            (os.path.join(_CACHE, "logo_yellow.png"), os.path.join(_CACHE, "logo_ink.png")))
+    logos = (y, i) if os.path.exists(y) and os.path.exists(i) else None
+    day, night = build_textures()
+    inject(day, night, build_fonts(), logos)
