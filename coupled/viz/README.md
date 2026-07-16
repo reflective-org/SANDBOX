@@ -27,10 +27,22 @@ aerosol→J off). It is the interactive "v2" of the matplotlib GIF in `coupled/a
 
 ## Open it
 
-Just open the file — no build step, no server, no network:
+Hosted (GitHub Pages, from the `gh-pages` branch — note the page is PUBLIC even though the
+repo is private): **https://reflective-org.github.io/SANDBOX/**
+
+Or just open the file — no build step, no server, no network:
 
 ```
 open coupled/viz/d1_globe.html          # macOS
+```
+
+To republish after a re-bake:
+
+```bash
+H=$(git hash-object -w coupled/viz/d1_globe.html)
+TREE=$(printf "100644 blob %s\tindex.html\n" "$H" | git mktree)
+git update-ref refs/heads/gh-pages $(git commit-tree "$TREE" -p gh-pages -m "Republish viz")
+git push origin gh-pages
 ```
 
 It also works as a hosted page (GitHub Pages, any static host) and as a Claude Artifact. The whole
