@@ -42,11 +42,13 @@ import urllib.request
 import numpy as np
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-# run outputs live in the sibling working copy (paper/simulations branch)
-_DEFAULT_RUNS = os.path.abspath(os.path.join(
-    _HERE, "..", "..", "..", "..", "SANDBOX", "coupled", "paper_ensemble"))
+# run outputs live in this working copy (paper/simulations merged to main 2026-07-16)
+_DEFAULT_RUNS = os.path.abspath(os.path.join(_HERE, "..", "paper_ensemble"))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", ".."))
-_USSA_DIR = os.path.join(_REPO, "data", "profiles", "atmosphere")
+# the US-standard-atmosphere profile ships with the tuvx-jax submodule (legacy: repo-root data/)
+_USSA_DIR = os.path.join(_REPO, "tuvx-jax", "data", "profiles", "atmosphere")
+if not os.path.isdir(_USSA_DIR):
+    _USSA_DIR = os.path.join(_REPO, "data", "profiles", "atmosphere")
 _COAST_URL = ("https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/"
               "geojson/ne_110m_coastline.geojson")
 

@@ -8,7 +8,7 @@ It shows a **grid of paper-ensemble runs** selectable from three dropdowns:
 
 - **Dilution parameterization** — D1 low Kz, D2 medium (default), D3 high, D5 very high, and the
   transient turbulence burst (Schumann-type V(t)/V₀ expansions; see
-  `paper_ensemble/TABLE_dilution_parameters.md` on the `paper/simulations` branch).
+  `paper_ensemble/TABLE_dilution_parameters.md`).
 - **Background aerosol** — SABR 220 (N₂O-aged air, default), SABR 330 (N₂O-young air), and the
   AER-2D geoengineered stratosphere (Pierce fig. 2; N = 120 cm⁻³, Dg = 0.30 µm — background SO₂
   100 pptv instead of 20).
@@ -58,8 +58,8 @@ only rewrites that one line.
 python coupled/viz/bake_d1_globe.py [--runs-root ...] [--html d1_globe.html] [--no-net]
 ```
 
-Default `--runs-root` is `coupled/paper_ensemble/` in the sibling working copy (the
-`paper/simulations` branch), reading:
+Default `--runs-root` is this repo's `coupled/paper_ensemble/` (run outputs are gitignored —
+regenerate them with the runners named below if absent), reading:
 
 - `runs_bgstop/<site>__<bg>__<regime>__h06_bgstop/state.npz` — 60-day-max runs with the run-time
   background stop (`run_bgstop.py`; all cases except the two below);
