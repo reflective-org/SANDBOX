@@ -26,7 +26,7 @@ The chemistry / aerosol arrays are REAL model output. The wind table (used only 
 shear the plume for the globe view) is a hand-specified illustrative June climatology -- NOT
 model output; it is labelled as such in the JSON and surfaced in the page legend.
 
-Run:   python coupled/viz/bake_d1_globe.py [--runs-root ...] [--html ...] [--no-net]
+Run:   python coupled/viz/bake_plume_dynamics.py [--runs-root ...] [--html ...] [--no-net]
 """
 
 from __future__ import annotations
@@ -436,7 +436,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--runs-root", default=_DEFAULT_RUNS,
                     help="paper_ensemble dir holding runs_bgstop/ + runs_start_time/")
-    ap.add_argument("--html", default=os.path.join(_HERE, "d1_globe.html"))
+    ap.add_argument("--html", default=os.path.join(_HERE, "plume_dynamics.html"))
     ap.add_argument("--coast", default=os.path.join(_HERE, "cache", "ne_110m_coastline.geojson"))
     ap.add_argument("--no-net", action="store_true")
     args = ap.parse_args()

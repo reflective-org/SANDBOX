@@ -324,7 +324,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   const api = { ready:false, error:null };
   window.__d1 = api;
   if(!D || !D.cases){
-    api.error = "no data baked: run coupled/viz/bake_d1_globe.py";
+    api.error = "no data baked: run coupled/viz/bake_plume_dynamics.py";
     const l = document.getElementById("loading"); if(l) l.textContent = api.error;
     return;
   }

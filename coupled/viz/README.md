@@ -1,6 +1,6 @@
 # The life of a stratospheric plume (interactive visualization)
 
-`d1_globe.html` is a single, self-contained web page that tells the story of an SO₂ plume in the
+`plume_dynamics.html` is a single, self-contained web page that tells the story of an SO₂ plume in the
 stratosphere for a non-specialist audience: injected as a 10 m-wide trail, drifting and shearing
 over a NASA Blue Marble Earth (WebGL day/night textures at 2048x1024 with city lights on the
 night side; vector-globe fallback) while its chemistry and aerosol microphysics play out in
@@ -41,13 +41,13 @@ repo is private): **https://reflective-org.github.io/SANDBOX/**
 Or just open the file — no build step, no server, no network:
 
 ```
-open coupled/viz/d1_globe.html          # macOS
+open coupled/viz/plume_dynamics.html          # macOS
 ```
 
 To republish after a re-bake:
 
 ```bash
-H=$(git hash-object -w coupled/viz/d1_globe.html)
+H=$(git hash-object -w coupled/viz/plume_dynamics.html)
 TREE=$(printf "100644 blob %s\tindex.html\n" "$H" | git mktree)
 git update-ref refs/heads/gh-pages $(git commit-tree "$TREE" -p gh-pages -m "Republish viz")
 git push origin gh-pages
@@ -72,16 +72,16 @@ Byline and provenance live in the on-page footer.
 - **Drag** on any time-axis chart to scrub.
 - Respects `prefers-reduced-motion` (starts paused).
 - URL hash for deep links / testing: `#t=<day>&paused=1&case=<site>|<background>|<regime>`
-  (e.g. `d1_globe.html#t=2&paused=1&case=60N_15km|aergeo|D5vhigh`).
+  (e.g. `plume_dynamics.html#t=2&paused=1&case=60N_15km|aergeo|D5vhigh`).
 
 ## Re-bake the data
 
-`bake_d1_globe.py` reads the saved runs and injects a minified JSON blob between the
+`bake_plume_dynamics.py` reads the saved runs and injects a minified JSON blob between the
 `/*__D1_DATA_BEGIN__*/ … /*__D1_DATA_END__*/` markers in the HTML. Edit the HTML freely; re-baking
 only rewrites that one line.
 
 ```
-python coupled/viz/bake_d1_globe.py [--runs-root ...] [--html d1_globe.html] [--no-net]
+python coupled/viz/bake_plume_dynamics.py [--runs-root ...] [--html plume_dynamics.html] [--no-net]
 ```
 
 Default `--runs-root` is this repo's `coupled/paper_ensemble/` (run outputs are gitignored —

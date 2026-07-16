@@ -1,9 +1,9 @@
 # Copyright (C) 2026 University Corporation for Atmospheric Research
 # SPDX-License-Identifier: Apache-2.0
-"""Fetch, process and embed the viz's static assets into d1_globe.html.
+"""Fetch, process and embed the viz's static assets into plume_dynamics.html.
 
 Asset groups, all embedded as data URIs OUTSIDE the bake markers (so re-running
-bake_d1_globe.py never touches them):
+bake_plume_dynamics.py never touches them):
 
   * DAY texture: NASA "Whole world - land and oceans" (public domain), full-resolution
     original from Wikimedia Commons (24000x12000, ~20 MB, cached); resized to 2048x1024,
@@ -16,7 +16,7 @@ bake_d1_globe.py never touches them):
     height. Source EPS is provided out-of-band (--logo-eps, needs ghostscript); without it
     the previously cached/embedded PNGs are reused. -> the two --logo CSS variables.
 
-Only needed when changing an asset; the embedded copies are committed inside d1_globe.html.
+Only needed when changing an asset; the embedded copies are committed inside plume_dynamics.html.
 Downloads cache in cache/ (gitignored).
 
 Run (from anywhere): python coupled/viz/embed_assets.py
@@ -30,7 +30,7 @@ import urllib.request
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _CACHE = os.path.join(_HERE, "cache")
-_HTML = os.path.join(_HERE, "d1_globe.html")
+_HTML = os.path.join(_HERE, "plume_dynamics.html")
 _UA = "SANDBOX-viz-bake/1.0 (research visualization)"
 
 _MARBLE_URL = ("https://upload.wikimedia.org/wikipedia/commons/8/8f/"
