@@ -200,7 +200,9 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     .globe-card{min-height:380px}
     .chartcard{min-height:170px}
     .altbox{width:190px;height:140px}
-    .legend{max-width:52%}
+    .legend{top:10px;bottom:auto;max-width:72%;font-size:10px}
+    .legend .clock{font-size:13px}
+    .legend .note{font-size:9px;max-width:250px}
     .caption .txt{font-size:15px}
     .banana-card{height:240px}
     .controls{gap:10px;padding:8px 10px}
@@ -1215,6 +1217,15 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     return `day ${Math.floor(day)} · ${hh}:${mm} UTC · ${C.series.is_day[di]===1?"daylight":"night"}`;
   }
   const $=id=>document.getElementById(id);
+  // dilution factors span 1..~10^21: compact suffixes, then superscript powers of ten
+  const _SUP={0:"⁰",1:"¹",2:"²",3:"³",4:"⁴",5:"⁵",6:"⁶",7:"⁷",8:"⁸",9:"⁹"};
+  function fmtDil(v){
+    if(v<1e4) return "×"+Math.round(v).toLocaleString();
+    for(const [lim,div,suf] of [[1e6,1e3,"k"],[1e9,1e6,"M"],[1e12,1e9,"B"],[1e15,1e12,"T"]])
+      if(v<lim){ const x=v/div; return "×"+(x>=100?Math.round(x):x.toFixed(1))+suf; }
+    const e=Math.floor(Math.log10(v)), m=v/Math.pow(10,e);
+    return "×"+m.toFixed(1)+"·10"+String(e).split("").map(c=>_SUP[c]||c).join("");
+  }
 
   function setSimDay(day, opts){
     opts=opts||{};
@@ -1231,7 +1242,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     if($("cap-txt").innerHTML!==cap.html) $("cap-txt").innerHTML=cap.html;
     $("cap-tick").textContent="day "+(state.day<1?state.day.toFixed(2):state.day.toFixed(1));
     const di=clamp(bisect(C.days,state.day),0,C.days.length-1);
-    $("dil").textContent="×"+Math.round(C.series.V[di]).toLocaleString();
+    $("dil").textContent=fmtDil(C.series.V[di]);
     const w=C.series.side_m[di];
     $("width").textContent=w>=1000?(w/1000).toFixed(1)+" km":Math.round(w)+" m";
     const ex=GlobeView.exaggeration;
