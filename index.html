@@ -169,7 +169,8 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   footer{margin:26px auto 0;border-top:1px solid var(--panel-edge);padding:16px 2px 6px;
     color:var(--muted);font-family:var(--serif);font-size:14px;max-width:86ch;line-height:1.55;
     text-align:center}
-  footer .byline{color:var(--ink);margin:0 0 6px}
+  footer .logo{display:inline-block;margin:0 0 12px}
+  footer .logo .logo-img{margin:0 auto}
   footer a{color:var(--accent)}
   footer p{margin:0 0 6px}
   footer .keys{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:10px}
@@ -319,7 +320,8 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     </div>
 
     <footer>
-      <p class="byline">Created by Ali Akherati, PhD and the science team at Reflective · July 2026</p>
+      <a class="logo" href="https://www.reflective.org" target="_blank" rel="noopener"
+         aria-label="Reflective"><span class="logo-img" role="img"></span></a>
       <p>Every curve on this page is output from a coupled chemistry, microphysics, and
         photolysis model of one plume; the day/night shading follows the model's own
         photolysis rates. Each case runs until the plume's surface area has stayed within
@@ -1161,21 +1163,13 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       ctx.fillStyle=PAL.partLabel;
       ctx.fillText("in particles",X(DAYT*0.78),Y((1+frAt(0.78))/2));
       cursor(o,X(day),padT,plotH);
-      // top row: live split left, endpoint headline right; STACK them when the plot is
-      // too narrow for both (mobile), instead of letting the strings collide
+      // one live readout, nothing else: the endpoint headlines crowded small screens
       const frNow=(budgetMode==="ctrl")
         ? (function(){ const s=lerpSeries("so2_t",day), u=lerpSeries("sulf_t",day);
                        return (s+u)>0? s/(s+u) : 0; })()
         : lerpSeries("so2_frac",day);
-      const readTxt=Math.round(frNow*100)+"% SO₂ · "+Math.round((1-frNow)*100)+"% particles";
-      const headTxt=(budgetMode==="ctrl")
-        ? Math.round((1-fr[fr.length-1])*100)+"% of the tonne converted by day "+Math.round(DAYT)
-        : "back to the background mix by day "+Math.round(DAYT);
-      ctx.font=MONO;
-      const fits=ctx.measureText(readTxt).width+ctx.measureText(headTxt).width+20 < plotW;
-      readout(o, readTxt, padL+4, padT+3, "left");
-      ctx.font=MONO; ctx.fillStyle=PAL.partLabel; ctx.textAlign="right"; ctx.textBaseline="top";
-      ctx.fillText(headTxt, padL+plotW-4, fits?padT+3:padT+16);
+      readout(o, Math.round(frNow*100)+"% SO₂ · "+Math.round((1-frNow)*100)+"% particles",
+              padL+4, padT+3, "left");
     }
 
     // ---- particle number (log) ----------------------------------------------------------------
