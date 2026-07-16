@@ -70,16 +70,21 @@ SITES = [
     dict(key="60N_15km", label="60°N · 15 km", lat0=60.0, lon0=0.0, alt_km=15.0, p_hpa=120.0),
 ]
 BACKGROUNDS = [   # key, dropdown label, background SO2 [pptv] (run_ensemble/run_geo_ensemble)
-    dict(key="sabr220", label="N₂O aged air (SABR 220)", so2_bg_ppt=20.0),
-    dict(key="sabr330", label="N₂O young air (SABR 330)", so2_bg_ppt=20.0),
-    dict(key="aergeo",  label="Geoengineered (AER-2D)", so2_bg_ppt=100.0),
+    # "aergeo" is the AER-2D geoengineered distribution; per Ali the AER-2D name stays out of
+    # everything user-facing, so the label frames it as the deployed-SAI stratosphere.
+    dict(key="sabr220", label="Aged air (SABR-220)", so2_bg_ppt=20.0,
+         phrase="clean aged-air background"),
+    dict(key="sabr330", label="Young air (SABR-330)", so2_bg_ppt=20.0,
+         phrase="younger, particle-richer background"),
+    dict(key="aergeo",  label="SAI deployed", so2_bg_ppt=100.0,
+         phrase="background of a stratosphere where SAI is already deployed"),
 ]
 REGIMES = [   # key, dropdown label (Schumann k or burst; TABLE_dilution_parameters.md)
-    dict(key="D1low",   label="D1 — low Kz (slowest mixing)"),
-    dict(key="D2med",   label="D2 — medium Kz (default)"),
-    dict(key="D3high",  label="D3 — high Kz"),
-    dict(key="D5vhigh", label="D5 — very high Kz (fastest)"),
-    dict(key="burst",   label="Turbulence burst (~14 h of strong mixing)"),
+    dict(key="D1low",   label="D1 · slowest mixing"),
+    dict(key="D2med",   label="D2 · medium"),
+    dict(key="D3high",  label="D3 · fast"),
+    dict(key="D5vhigh", label="D5 · fastest"),
+    dict(key="burst",   label="Turbulence burst · ~14 h"),
 ]
 _FROM_BGSTOP = {"D1low", "D2med", "burst"}
 _DEFAULT_CASE = dict(site="30N_20km", background="sabr220", regime="D2med")
@@ -173,29 +178,64 @@ def _quantize_dist(dN):
     return base64.b64encode(q.tobytes()).decode("ascii")
 
 
-def _captions(site, tend, t_burst):
-    """Narrative beats, generated per case (days are data-driven where they can be)."""
+# beat 6, one voice per mixing regime (editorial-scientific, no em-dashes, per Ali 2026-07-16)
+_BEAT6 = {
+    "D1low":   "Mixing is slow here. The plume stays concentrated, so particles keep colliding "
+               "and the count falls fast even as sizes climb.",
+    "D2med":   "Steady mixing thins the plume. Particle numbers fall; the survivors keep growing.",
+    "D3high":  "Vigorous mixing dilutes the plume quickly, and the background starts to show "
+               "through.",
+    "D5vhigh": "Mixing this strong tears the plume apart within days.",
+    "burst":   "A burst of turbulence, about fourteen hours of violent mixing, rips through "
+               "the plume.",
+}
+
+
+def _beat7(regime_key, bg_phrase, tend, conv_pct):
+    """Closing beat: the case's own lifetime and conversion, phrased per regime."""
+    n = f"{tend:.0f}"
+    p = f"{conv_pct:.0f}"
+    weeks = tend / 7.0
+    if regime_key == "D1low":
+        opener = (f"Five weeks on ({n} days)," if 4.5 <= weeks <= 5.5 else f"After {n} days,")
+        return (f"{opener} the plume is finally indistinguishable from the {bg_phrase}. Slow "
+                f"mixing kept it alive longer than any other regime here; roughly {p}% of the "
+                f"tonne became particles.")
+    if regime_key == "D2med":
+        return (f"After {n} days the {bg_phrase} can explain everything that remains. About "
+                f"{p}% of the tonne ended up in particles.")
+    if regime_key == "burst":
+        return (f"The burst finished the job by day {n}; after it, nothing remains that the "
+                f"{bg_phrase} cannot explain. {p}% of the tonne converted.")
+    return (f"By day {n} the plume is gone into the {bg_phrase}. Fast mixing left little time "
+            f"for chemistry: only {p}% of the tonne converted.")
+
+
+def _captions(site, regime_key, bg_phrase, tend, t_burst, conv_pct):
+    """Narrative beats, written per case: site opener, shared chemistry spine, regime-specific
+    dilution and closing beats with the case's own lifetime and conversion numbers."""
     alt = int(site["alt_km"])
-    return [
-        dict(day=0.0, html=f"06:00, day 0 &mdash; 1 tonne of SO<sub>2</sub> released at "
-                           f"{alt}&nbsp;km over {site['label'].replace(' · ', ', ')}: a plume "
-                           f"just 10&nbsp;m wide"),
-        dict(day=0.015, html="Sunlight makes OH radicals; OH oxidizes SO<sub>2</sub> gas into "
-                             "sulfuric-acid vapour (H<sub>2</sub>SO<sub>4</sub>)"),
+    lat = site["label"].split(" · ")[0]
+    so2 = "SO<sub>2</sub>"
+    beats = [
+        dict(day=0.0, html=f"At 06:00 local, one tonne of {so2} goes into the stratosphere at "
+                           f"{alt}&nbsp;km over {lat}. The trail is fifteen kilometers long and "
+                           f"ten meters wide."),
+        dict(day=0.015, html=f"Sunlight builds OH radicals, and OH starts turning the {so2} "
+                             "into sulfuric acid vapor."),
         dict(day=round(max(0.03, min(t_burst, 0.6)), 3),
-             html="Nucleation burst: H<sub>2</sub>SO<sub>4</sub> + water form millions of "
-                  "brand-new ~2&nbsp;nm particles per cm<sup>3</sup> &mdash; within hours"),
-        dict(day=0.35, html="The new particles grow &mdash; H<sub>2</sub>SO<sub>4</sub> "
-                            "condenses onto them, and they merge with each other (coagulation)"),
-        dict(day=1.0, html="Chemistry runs by day, coagulation and mixing around the clock; the "
-                           "plume keeps spreading and drifting on the stratospheric winds"),
-        dict(day=round(min(4.0, 0.45 * tend), 2),
-             html="Dilution thins the plume; particle number falls as small particles merge, "
-                  "but their size keeps growing"),
-        dict(day=round(0.9 * tend, 2),
-             html=f"Day {tend:.0f}: the plume's surface area is back at the background level "
-                  f"&mdash; under this mixing regime the plume took {tend:.0f} days to fade"),
+             html="Within hours the vapor bursts into new particles. Millions per cubic "
+                  "centimeter, each about 2&nbsp;nanometers across."),
+        dict(day=0.35, html="The newborn particles grow. Acid vapor condenses onto them; "
+                            "collisions merge them into fewer, larger ones."),
+        dict(day=1.0, html="Chemistry works only in daylight. Coagulation and mixing never stop."),
+        dict(day=round(min(4.0, 0.45 * tend), 2), html=_BEAT6[regime_key]),
+        dict(day=round(0.9 * tend, 2), html=_beat7(regime_key, bg_phrase, tend, conv_pct)),
     ]
+    for b in beats:   # template hygiene: no unexpanded placeholder or em-dash may survive
+        assert "{" not in b["html"] and "}" not in b["html"], b
+        assert "—" not in b["html"] and "&mdash;" not in b["html"], b
+    return beats
 
 
 def assemble_case(npz_path, site, bgd, regime, ctrl_path):
@@ -249,6 +289,8 @@ def assemble_case(npz_path, site, bgd, regime, ctrl_path):
     sulf_t = np.maximum(dpart + dh2so4, 0.0)
     cons = dso2 + dpart + dh2so4                                 # should stay ~= injected 1 t
     print(f"      budget conservation vs control: total in [{cons.min():.3f}, {cons.max():.3f}] t")
+    # end-of-life conversion of the injected tonne (feeds the closing narration beat)
+    conv_pct = 100.0 * (1.0 - so2_t[-1] / max(so2_t[-1] + sulf_t[-1], 1e-12))
 
     series = dict(
         so2_ppt=_sig(x_so2[keep] / M * 1e12),
@@ -259,6 +301,7 @@ def assemble_case(npz_path, site, bgd, regime, ctrl_path):
         sulf_t=_sig(sulf_t[keep]),
         total_n=_sig(total_n[keep]),
         sa=_sig(sa[:i_end + 1][keep]),
+        reff_um=_sig(np.asarray(r["radius_cm"], float)[:i_end + 1][keep] * 1e4),
     )
     is_day, nights = _day_night(np.asarray(r["J"]), np.asarray(r["J_tmid"], float), dk)
     series["is_day"] = is_day
@@ -266,7 +309,7 @@ def assemble_case(npz_path, site, bgd, regime, ctrl_path):
     tend = float(round(days[-1], 4))
     t_burst = float(days[:len(total_n)][int(np.argmax(total_n))])
     meta = dict(
-        scenario=f"{site['key']} / {bgd['key']} / {regime['key']} — 1 t SO2, 06:00 release, 80-bin",
+        scenario=f"{site['key']} / {bgd['key']} / {regime['key']}, 1 t SO2, 06:00 release, 80-bin",
         npz=os.path.relpath(npz_path, os.path.dirname(os.path.dirname(npz_path))),
         ctrl_npz=os.path.relpath(ctrl_path, os.path.dirname(os.path.dirname(ctrl_path))),
         n_keep=int(len(keep)), n_full=int(len(days)),
@@ -282,7 +325,8 @@ def assemble_case(npz_path, site, bgd, regime, ctrl_path):
     )
     return dict(meta=meta, days=_sig(dk, 5), series=series,
                 dist=dict(q_b64=_quantize_dist(np.asarray(r["dNdlogDp"])[:i_end + 1][keep])),
-                nights=nights, captions=_captions(site, tend, t_burst)), r
+                nights=nights,
+                captions=_captions(site, regime["key"], bgd["phrase"], tend, t_burst, conv_pct)), r
 
 
 def _load_ussa():

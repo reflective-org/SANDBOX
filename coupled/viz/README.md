@@ -1,17 +1,20 @@
-# Plume globe — interactive visualization
+# The life of a stratospheric plume (interactive visualization)
 
 `d1_globe.html` is a single, self-contained web page that tells the story of an SO₂ plume in the
 stratosphere for a non-specialist audience: injected as a 10 m-wide trail, drifting and shearing
-over a stylized Earth while its chemistry and aerosol microphysics play out in synchronized panels.
+over a NASA Blue Marble Earth (WebGL, with a vector-globe fallback) while its chemistry and
+aerosol microphysics play out in synchronized panels. Auto/dark/light theme (header toggle,
+persisted); Source Serif 4 (subset, embedded) for the narration voice.
 
 It shows a **grid of paper-ensemble runs** selectable from three dropdowns:
 
 - **Dilution parameterization** — D1 low Kz, D2 medium (default), D3 high, D5 very high, and the
   transient turbulence burst (Schumann-type V(t)/V₀ expansions; see
   `paper_ensemble/TABLE_dilution_parameters.md`).
-- **Background aerosol** — SABR 220 (N₂O-aged air, default), SABR 330 (N₂O-young air), and the
-  AER-2D geoengineered stratosphere (Pierce fig. 2; N = 120 cm⁻³, Dg = 0.30 µm — background SO₂
-  100 pptv instead of 20).
+- **Background aerosol** — "Aged air (SABR-220)" (default), "Young air (SABR-330)", and
+  "SAI deployed" (internally the AER-2D geoengineered distribution, Pierce fig. 2;
+  N = 120 cm⁻³, Dg = 0.30 µm — background SO₂ 100 pptv instead of 20. The AER-2D name is
+  deliberately absent from the page).
 - **Start location** — 30°N / 20 km (55 hPa) and 60°N / 15 km (120 hPa).
 
 Every case runs until the plume is indistinguishable from the background — the timeline ends at
@@ -47,6 +50,11 @@ git push origin gh-pages
 
 It also works as a hosted page (GitHub Pages, any static host) and as a Claude Artifact. The whole
 thing stays under the 1.6 MB bake limit with all thirty cases, coastlines, and code inlined.
+
+The narration beats are CASE-AWARE (written per regime/background in `_captions()` with each
+case's own lifetime and end-of-life conversion percentage), in an editorial-scientific voice.
+House rules for all page text: no em-dashes, American spelling, plain noun panel titles.
+Byline and provenance live in the on-page footer.
 
 ### Controls
 - **Dropdowns** for dilution regime, background aerosol, and start location (state is kept across
@@ -101,7 +109,7 @@ and hard-fails if the file would exceed 1.6 MB.
   line, drawn only when it sits usefully inside the plot);
 - dilution factor V(t)/V₀ and each case's background-relaxation endpoint;
 - day/night for the **chemistry** (from the run's photolysis rates), shown as the chart night bands
-  and the "daylight/night (model)" readout.
+  and the "daylight/night" clock readout (provenance stated in the footer).
 
 **Illustrative, not model output** — a climatological sketch to give the box model a place on Earth:
 - **Drift**: the plume centroid is advected by a hand-specified June ~50 hPa easterly climatology
@@ -119,7 +127,11 @@ and hard-fails if the file would exceed 1.6 MB.
   photolysis was computed at the *fixed* injection point (0°E), so late in a run the drifting
   plume's local solar time differs from the globe terminator. The legend states this.
 
-These caveats are surfaced in the on-screen legend, not buried here.
+These caveats are surfaced in the on-screen legend and footer, not buried here. The Blue
+Marble texture is NASA imagery (public domain, via Wikimedia Commons), desaturated at build
+time so it reads as an illustration; cached in `cache/marble_1024.jpg` and embedded as a data
+URI outside the bake markers (re-bakes never touch it). Same for the two Source Serif 4
+subsets (`cache/SourceSerif4-*.woff2`, OFL).
 
 ## How it's built (for the next editor)
 
@@ -130,7 +142,10 @@ one IIFE. The IIFE is sectioned:
 - **§B** geo/solar math (orthographic projection, subsolar point)
 - **§C** wind/plume (centroid path + shear filament — the illustrative layer)
 - **§D** time-warp + interpolation helpers
-- **§E** globe renderer (Canvas 2D: disc, graticule, coastlines, terminator, plume ribbon)
+- **§E0** Blue Marble layer (WebGL fragment shader: inverse orthographic + in-shader
+  terminator; falls back to the §E vector globe when WebGL is unavailable)
+- **§E** globe renderer (Canvas 2D overlay: graticule, injection marker, plume ribbon, rim;
+  plus disc/coastlines/terminator in the no-WebGL fallback)
 - **§F** altitude side-view inset
 - **§G** microphysics charts (size distribution, sulfur budget, particle count; axes are FIXED
   across cases so dropdown switches never rescale)
@@ -149,4 +164,3 @@ Verify headlessly with Chrome/Playwright: screenshot at `#t=…&paused=1&case=�
   model; would blur the honest/illustrative line.
 - Real ERA5 monthly-mean winds baked in (spatially varying, path curves with the anticyclone).
 - Side-by-side regime "race" (same layout, two cases in sync).
-- A photoreal (three.js / Blue Marble) globe.
