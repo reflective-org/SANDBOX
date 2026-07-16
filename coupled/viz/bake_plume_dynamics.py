@@ -74,11 +74,12 @@ SITES = [
 BACKGROUNDS = [   # key, dropdown label, background SO2 [pptv] (run_ensemble/run_geo_ensemble)
     # "aergeo" is the AER-2D geoengineered distribution; per Ali the AER-2D name stays out of
     # everything user-facing, so the label frames it as the deployed-SAI stratosphere.
-    # SABRE = the NOAA CSL Stratospheric Aerosol processes, Budget and Radiative Effects
-    # campaign (csl.noaa.gov/projects/sabre), whose measurements anchor these backgrounds
-    dict(key="sabr220", label="Aged air (SABRE-220)", so2_bg_ppt=20.0,
+    # Anchored in NOAA SABRE campaign measurements (csl.noaa.gov/projects/sabre; Science
+    # doi:10.1126/science.adw8939) -- provenance surfaced via the page's info tooltip, not
+    # the labels (SABRE-220/-330 read as jargon in the dropdown, per Ali)
+    dict(key="sabr220", label="Aged air", so2_bg_ppt=20.0,
          phrase="clean aged-air background"),
-    dict(key="sabr330", label="Young air (SABRE-330)", so2_bg_ppt=20.0,
+    dict(key="sabr330", label="Young air", so2_bg_ppt=20.0,
          phrase="younger, particle-richer background"),
     dict(key="aergeo",  label="SAI deployed", so2_bg_ppt=100.0,
          phrase="background of a stratosphere where SAI is already deployed"),
