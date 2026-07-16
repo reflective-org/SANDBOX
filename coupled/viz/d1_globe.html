@@ -90,8 +90,10 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   .grid{display:grid;grid-template-columns:1.32fr 1fr;gap:16px;align-items:stretch}
   .card{background:var(--panel);
     border:1px solid var(--panel-edge);border-radius:10px;position:relative;overflow:hidden}
+  /* the globe card stays dark in BOTH themes: around the Earth is space, and space is dark.
+     Its overlays therefore use fixed dark-theme colors, not the theme variables. */
   .globe-card{min-height:620px;padding:0;border-radius:14px;
-    background:linear-gradient(180deg,var(--panel) 0%,var(--bg2) 100%)}
+    background:linear-gradient(180deg,#0c1322 0%,#05080f 100%);border-color:#1a2540}
   #globe,#globegl{position:absolute;inset:0;width:100%;height:100%;display:block}
   #globegl{z-index:0}
   #globe{z-index:1}
@@ -111,16 +113,16 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
 
   /* globe overlays */
   .legend{position:absolute;left:14px;bottom:12px;font-family:var(--mono);font-size:11px;
-    color:var(--muted);max-width:60%;pointer-events:none;line-height:1.5;z-index:2}
-  .legend .clock{color:var(--ink);font-size:15px;letter-spacing:.02em}
-  .legend .dil{color:var(--gas-glow)}
-  .legend .note{color:var(--faint);font-size:10px;margin-top:4px;max-width:340px}
+    color:#9aa8c2;max-width:60%;pointer-events:none;line-height:1.5;z-index:2}
+  .legend .clock{color:#eef2fb;font-size:15px;letter-spacing:.02em}
+  .legend .dil{color:#ffce5e}
+  .legend .note{color:#8290a8;font-size:10px;margin-top:4px;max-width:340px}
   .altbox{position:absolute;right:12px;bottom:12px;width:236px;height:172px;
-    background:var(--altbox-bg);border:1px solid var(--panel-edge);border-radius:10px;
+    background:rgba(6,11,22,.62);border:1px solid #1a2540;border-radius:10px;
     backdrop-filter:blur(2px);z-index:2}
   .altbox canvas{width:100%;height:100%;display:block}
   .altbox .cap{position:absolute;top:6px;left:9px;font-family:var(--mono);font-size:10px;
-    letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+    letter-spacing:.06em;color:#9aa8c2;text-transform:uppercase}
 
   .caption{margin-top:16px;min-height:52px;display:flex;align-items:baseline;gap:14px;
     border-left:2px solid var(--gas);padding:10px 18px 10px 16px}
@@ -347,7 +349,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       gratTex:"rgba(220,232,250,0.13)",
       night:"rgba(3,6,15,0.60)", twilight:"rgba(3,6,15,0.34)",
       rim:"rgba(150,180,225,0.28)", glow:"95,156,238",
-      plume:"255,196,74", plumeOver:false,
+      plume:"255,196,74",
       inj:"rgba(255,236,170,0.9)", injText:"rgba(230,238,250,0.72)",
       altAir:[[40,58,90],[30,40,50],0.25,0.35],
       altText:"rgba(150,165,195,0.7)", altGrid:"rgba(120,140,180,0.12)",
@@ -364,17 +366,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       bgCurve:"rgba(95,100,115,0.5)", bgLabel:"rgba(95,100,115,0.8)",
       refLine:"rgba(40,45,60,0.45)", refText:"rgba(40,45,60,0.65)",
       banBg:"#e9e6db", readout:"rgba(35,40,55,0.9)",
-      ocean:["#c9dcee","#b4cbe2","#9fb9d4"],
-      coast:"rgba(70,100,140,0.7)", grat:"rgba(85,105,140,0.28)",
-      gratTex:"rgba(240,246,255,0.20)",
-      night:"rgba(20,26,48,0.42)", twilight:"rgba(20,26,48,0.24)",
-      rim:"rgba(80,110,160,0.4)", glow:"90,130,200",
-      plume:"210,110,0", plumeOver:true,
-      inj:"rgba(140,85,0,0.95)", injText:"rgba(60,50,25,0.85)",
-      altAir:[[205,216,232],[-45,-40,-30],0.5,0.3],
-      altText:"rgba(75,82,100,0.85)", altGrid:"rgba(70,80,105,0.15)",
-      altTrop:"rgba(90,120,170,0.13)", altInj:"rgba(180,115,0,0.7)",
-      altPlume:"200,110,10", altLabel:"rgba(45,40,25,0.9)",
+      // no globe/alt keys: the globe card renders with the dark palette in both themes
     },
   };
   let themePref="auto";
@@ -382,6 +374,8 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   const mqLight=window.matchMedia?window.matchMedia("(prefers-color-scheme: light)"):null;
   function activeTheme(){ return themePref!=="auto"?themePref:(mqLight&&mqLight.matches?"light":"dark"); }
   let PAL=PALETTES[activeTheme()];
+  // the globe card is dark in both themes (space is dark): its renderers use this fixed palette
+  const PALG=PALETTES.dark;
   function syncThemeButtons(){
     document.querySelectorAll(".themes button").forEach(b=>b.classList.toggle("on",b.dataset.t===themePref));
   }
@@ -656,7 +650,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
                      -Math.sin(CLAT*DEG)*Math.cos(camLon*DEG)]);            // up (north) basis
       const c=dot(s,v);
       const scr=p=>[cx+R*dot(p,e), cy-R*dot(p,nb)];
-      const nightCol=PAL.night;
+      const nightCol=PALG.night;
 
       if(c>0.9999) return;                              // fully lit
       ctx.save(); ctx.beginPath(); ctx.arc(cx,cy,R,0,2*Math.PI); ctx.clip();
@@ -696,7 +690,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       // soft twilight: restroke the terminator arc, wide & faint
       ctx.beginPath(); sp=scr(run[0]); ctx.moveTo(sp[0],sp[1]);
       for(let i=1;i<run.length;i++){ sp=scr(run[i]); ctx.lineTo(sp[0],sp[1]); }
-      ctx.strokeStyle=PAL.twilight; ctx.lineWidth=R*0.10; ctx.lineCap="round"; ctx.stroke();
+      ctx.strokeStyle=PALG.twilight; ctx.lineWidth=R*0.10; ctx.lineCap="round"; ctx.stroke();
       ctx.restore();
     }
 
@@ -730,11 +724,8 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       }
       const injMarkVisible = P.some(p=>p.vis);
       if(!injMarkVisible) return;
-      // additive glow over the marble or the dark vector globe; plain alpha over a light one
-      const over = !marble && PAL.plumeOver;
-      const rgb = marble ? "255,196,74" : PAL.plume;
       ctx.save();
-      ctx.globalCompositeOperation = over ? "source-over" : "lighter";
+      ctx.globalCompositeOperation="lighter";                    // additive gold on a dark globe
       const passes=[[3.2,0.07],[1.8,0.15],[1.0,0.5]];
       for(const [wm,am] of passes){
         for(let i=0;i<P.length-1;i++){
@@ -747,7 +738,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
           ctx.lineTo(P[i+1].x-nx[i+1]*w1, P[i+1].y-ny[i+1]*w1);
           ctx.lineTo(P[i].x-nx[i]*w0,   P[i].y-ny[i]*w0);
           ctx.closePath();
-          ctx.fillStyle="rgba("+rgb+","+(am*b).toFixed(3)+")";
+          ctx.fillStyle="rgba("+PALG.plume+","+(am*b).toFixed(3)+")";
           ctx.fill();
         }
       }
@@ -757,12 +748,17 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     function drawInjection(){
       const p=project(META.lat0, META.lon0);
       if(!p.vis) return;
+      // dark halo under the ring + label so the marker reads over bright daytime terrain
       ctx.beginPath(); ctx.arc(p.x,p.y,5,0,2*Math.PI);
-      ctx.strokeStyle=PAL.inj; ctx.lineWidth=1.4; ctx.stroke();
-      ctx.beginPath(); ctx.arc(p.x,p.y,1.6,0,2*Math.PI);
-      ctx.fillStyle=PAL.inj; ctx.fill();
-      ctx.font="10px ui-monospace,Menlo,monospace"; ctx.fillStyle=PAL.injText;
-      ctx.textAlign="left"; ctx.fillText("injection", p.x+9, p.y+3);
+      ctx.strokeStyle="rgba(8,12,24,0.8)"; ctx.lineWidth=3.6; ctx.stroke();
+      ctx.strokeStyle=PALG.inj; ctx.lineWidth=1.6; ctx.stroke();
+      ctx.beginPath(); ctx.arc(p.x,p.y,1.7,0,2*Math.PI);
+      ctx.fillStyle=PALG.inj; ctx.fill();
+      ctx.font="10px ui-monospace,Menlo,monospace"; ctx.textAlign="left";
+      ctx.lineWidth=3; ctx.strokeStyle="rgba(8,12,24,0.75)"; ctx.lineJoin="round";
+      ctx.strokeText("injection", p.x+9, p.y+3);
+      ctx.fillStyle="rgba(238,242,251,0.92)";
+      ctx.fillText("injection", p.x+9, p.y+3);
     }
 
     function render(state){
@@ -776,12 +772,12 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       const marble=Marble.render(cx,cy,R,dpr,camLat(),camLon,day);
       if(!marble){
         const g=ctx.createRadialGradient(cx-R*0.25,cy-R*0.3,R*0.15, cx,cy,R);
-        g.addColorStop(0,PAL.ocean[0]); g.addColorStop(.65,PAL.ocean[1]); g.addColorStop(1,PAL.ocean[2]);
+        g.addColorStop(0,PALG.ocean[0]); g.addColorStop(.65,PALG.ocean[1]); g.addColorStop(1,PALG.ocean[2]);
         ctx.beginPath(); ctx.arc(cx,cy,R,0,2*Math.PI); ctx.fillStyle=g; ctx.fill();
       }
       ctx.save(); ctx.beginPath(); ctx.arc(cx,cy,R,0,2*Math.PI); ctx.clip();
-      drawLines(GRAT, camLon, sf0,cf0,sl0,cl0, marble?PAL.gratTex:PAL.grat, 1);
-      if(!marble) drawLines(COAST, camLon, sf0,cf0,sl0,cl0, PAL.coast, 1);
+      drawLines(GRAT, camLon, sf0,cf0,sl0,cl0, marble?PALG.gratTex:PALG.grat, 1);
+      if(!marble) drawLines(COAST, camLon, sf0,cf0,sl0,cl0, PALG.coast, 1);
       ctx.restore();
       // night terminator (in-shader when the marble is up)
       if(!marble) drawNight(day, camLon);
@@ -790,9 +786,9 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       drawPlume(state.filament, marble);
       // rim + thin atmosphere glow
       ctx.beginPath(); ctx.arc(cx,cy,R,0,2*Math.PI);
-      ctx.strokeStyle=PAL.rim; ctx.lineWidth=1.2; ctx.stroke();
+      ctx.strokeStyle=PALG.rim; ctx.lineWidth=1.2; ctx.stroke();
       const h=ctx.createRadialGradient(cx,cy,R*0.98, cx,cy,R*1.08);
-      h.addColorStop(0,"rgba("+PAL.glow+",0.16)"); h.addColorStop(1,"rgba("+PAL.glow+",0)");
+      h.addColorStop(0,"rgba("+PALG.glow+",0.16)"); h.addColorStop(1,"rgba("+PALG.glow+",0)");
       ctx.beginPath(); ctx.arc(cx,cy,R*1.08,0,2*Math.PI); ctx.fillStyle=h; ctx.fill();
     }
     return { resize, render, get R(){return R;}, get exaggeration(){return plumeExaggeration();} };
@@ -813,7 +809,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     const zY=z=>padT+(1-z/ZMAX)*(H-padT-padB);
     function buildBg(){
       const u=D.ussa, lo=Math.min(...u.log10_n), hi=Math.max(...u.log10_n.slice(0,ZMAX+1));
-      const [base,range,a0,a1]=PAL.altAir;
+      const [base,range,a0,a1]=PALG.altAir;
       bg=ctx.createLinearGradient(0,zY(ZMAX),0,zY(0));
       for(let z=0;z<=ZMAX;z++){
         const f=(u.log10_n[z]-lo)/(hi-lo);
@@ -827,14 +823,14 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       const x0=padL, x1=W-padR, xc=(x0+x1)/2;
       ctx.fillStyle=bg; ctx.fillRect(x0,padT,x1-x0,H-padT-padB);
       // tropopause band ~11–16 km
-      ctx.fillStyle=PAL.altTrop; ctx.fillRect(x0,zY(16),x1-x0,zY(11)-zY(16));
-      ctx.font="9px ui-monospace,Menlo,monospace"; ctx.fillStyle=PAL.altText;
+      ctx.fillStyle=PALG.altTrop; ctx.fillRect(x0,zY(16),x1-x0,zY(11)-zY(16));
+      ctx.font="9px ui-monospace,Menlo,monospace"; ctx.fillStyle=PALG.altText;
       ctx.textAlign="right"; ctx.textBaseline="middle";
       for(const z of [0,10,20]){ ctx.fillText(z+(z===20?" km":""), x0-4, zY(z));
-        ctx.strokeStyle=PAL.altGrid; ctx.beginPath(); ctx.moveTo(x0,zY(z)); ctx.lineTo(x1,zY(z)); ctx.stroke(); }
+        ctx.strokeStyle=PALG.altGrid; ctx.beginPath(); ctx.moveTo(x0,zY(z)); ctx.lineTo(x1,zY(z)); ctx.stroke(); }
       // injection level (per case)
       const zi=META.alt_km;
-      ctx.strokeStyle=PAL.altInj; ctx.setLineDash([4,3]);
+      ctx.strokeStyle=PALG.altInj; ctx.setLineDash([4,3]);
       ctx.beginPath(); ctx.moveTo(x0,zY(zi)); ctx.lineTo(x1,zY(zi)); ctx.stroke(); ctx.setLineDash([]);
       const fil=state.filament; if(fil){
         const halfW=(x1-x0)*0.42;
@@ -849,11 +845,11 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
         ctx.lineTo(xc-Ldisp+tilt, yc+hpx/2);
         ctx.closePath();
         const grad=ctx.createLinearGradient(xc-Ldisp,0,xc+Ldisp,0);
-        grad.addColorStop(0,"rgba("+PAL.altPlume+",0.12)");
-        grad.addColorStop(.5,"rgba("+PAL.altPlume+",0.5)");
-        grad.addColorStop(1,"rgba("+PAL.altPlume+",0.12)");
+        grad.addColorStop(0,"rgba("+PALG.altPlume+",0.12)");
+        grad.addColorStop(.5,"rgba("+PALG.altPlume+",0.5)");
+        grad.addColorStop(1,"rgba("+PALG.altPlume+",0.12)");
         ctx.fillStyle=grad; ctx.fill();
-        ctx.fillStyle=PAL.altLabel; ctx.textAlign="center"; ctx.font="9.5px ui-monospace,Menlo,monospace";
+        ctx.fillStyle=PALG.altLabel; ctx.textAlign="center"; ctx.font="9.5px ui-monospace,Menlo,monospace";
         const lenkm=2*fil.Lkm;
         ctx.fillText(`${lenkm>=1000?(lenkm/1000).toFixed(1)+"k":Math.round(lenkm)} km long · ${(fil.hkm*1000|0)} m deep`,
                      xc, H-4);
