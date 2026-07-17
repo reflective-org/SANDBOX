@@ -194,8 +194,10 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   footer .logo-img{margin:0 auto}
   footer p{margin:0 0 6px}
 
+  .abstract .claim{color:var(--ink);cursor:pointer;text-decoration:none;
+    border-bottom:2px solid rgba(240,168,30,.55);background:rgba(240,168,30,.08)}
+  .abstract .claim:hover{border-bottom-color:var(--gas);background:rgba(240,168,30,.18)}
   .tabpane[hidden]{display:none}
-  .hero[hidden]{display:none}
   @media (max-width:900px){
     #app{padding:0 12px 32px}
     .topnav{height:48px;gap:10px;margin-bottom:16px}
@@ -218,20 +220,52 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     </div>
   </nav>
 
-  <header class="hero">
-    <h1>How a Tonne of SO₂ Becomes Sunlight Reflected</h1>
-    <span class="sub">Stratospheric aerosol injection would release SO₂ gas from aircraft
-      and let the stratosphere turn it into a haze of sunlight-reflecting droplets. Seven
-      processes decide how well that works, and some of them are far from settled. This
-      page walks through what we know, what we do not, and why it matters.</span>
-    <span class="srcline">an interactive companion to Linz, Akherati, et al.,
-      "Process Uncertainties for SO₂-to-Aerosol Transformation in Stratospheric Aerosol
-      Injection" · built from the paper's own model runs</span>
-  </header>
-
   <div id="loading">Loading model runs…</div>
 
   <main id="stage" hidden>
+
+  <!-- =============================== TAB: ABSTRACT ============================= -->
+  <section class="tabpane" id="pane-abstract" role="tabpanel">
+    <div class="hero" style="margin-bottom:20px">
+      <h1>How a Tonne of SO₂ Becomes Sunlight Reflected</h1>
+      <span class="srcline">an interactive companion to Linz, Akherati, et al., "Process
+        Uncertainties for SO₂-to-Aerosol Transformation in Stratospheric Aerosol
+        Injection" · built from the paper's own model runs</span>
+    </div>
+    <div class="panel" style="max-width:900px;margin:0 auto 16px"><h3>The abstract,
+        annotated</h3>
+      <p class="csub">the paper's own words · every highlighted claim opens its chapter</p>
+      <div class="prose abstract" style="max-width:none">
+        <p>Stratospheric aerosol injection (SAI) is a proposed tool for reducing climate
+        risks by reflecting sunlight to cool the Earth's surface, but significant new
+        research is needed to support informed societal decisions about its use. The most
+        commonly assumed SAI approach uses aircraft to loft SO₂ to the stratosphere, where
+        the SO₂ gas would oxidize and form sulfate aerosols. However, modern climate
+        models, from which SAI impact assessments are made,
+        <a class="claim" data-tab="gap">do not capture the details of the small-scale
+        processes involved in aerosol formation</a>. Observations after large volcanic
+        eruptions can help constrain models for SAI studies, but
+        <a class="claim" data-tab="gap">injection from stratospheric aircraft has
+        significant differences from an eruption</a>. We discuss
+        <a class="claim" data-tab="processes">how SO₂ released behind an airplane mixes,
+        oxidizes, and forms aerosols</a>, identify uncertainties of each process, and
+        <a class="claim" data-tab="plume">propagate them through a plume aerosol
+        microphysical model for up to 10 days</a>, concluding that there is considerable
+        uncertainty in the aerosol size distribution that would result from
+        aircraft-released SO₂. The largest uncertainties arise from
+        <a class="claim" data-tab="dilution">mixing</a> and
+        <a class="claim" data-tab="sensitivity">new particle formation</a>, but
+        <a class="claim" data-tab="sensitivity">even the comparatively modest uncertainty
+        in coagulation has a larger effect on the resulting size distribution than a
+        three-order-of-magnitude-larger uncertainty in nucleation</a>. We discuss why key
+        uncertainties cannot be addressed solely via indoor experiments or modeling, and
+        thus why
+        <a class="claim" data-tab="experiment">substantively reducing uncertainty related
+        to aerosol microphysics would require small-scale field experimentation</a> to
+        better understand the relevant processes and their interactions.</p>
+      </div>
+    </div>
+  </section>
 
   <!-- ============================== TAB: THE GAP =============================== -->
   <section class="tabpane" id="pane-gap" role="tabpanel">
@@ -567,6 +601,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
 
   // ================= tabs ======================================================
   const TABS=[
+    {key:"abstract",label:"Abstract"},
     {key:"gap",label:"The Gap"},
     {key:"processes",label:"Seven Processes"},
     {key:"dilution",label:"Dilution"},
@@ -575,16 +610,15 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     {key:"experiment",label:"The Experiment"},
   ];
   const inited={};
-  let current="gap";
+  let current="abstract";
   function showTab(key,push){
-    if(!TABS.some(t=>t.key===key)) key="gap";
+    if(!TABS.some(t=>t.key===key)) key="abstract";
     current=key;
     TABS.forEach(t=>{
       document.getElementById("pane-"+t.key).hidden=(t.key!==key);
     });
     document.querySelectorAll("#tabbar button").forEach(b=>
       b.classList.toggle("on",b.dataset.k===key));
-    const hero=document.querySelector(".hero"); if(hero) hero.hidden=(key!=="gap");
     if(!inited[key]){ inited[key]=true; INIT[key](); }
     renderActive();
     if(push!==false){ try{history.replaceState(null,"","#tab="+key);}catch(e){} }
@@ -601,6 +635,15 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     });
   }
   const INIT={}, RENDER={};
+
+  // ================= TAB 0: the annotated abstract =============================
+  INIT.abstract=function(){
+    document.getElementById("pane-abstract").addEventListener("click",e=>{
+      const a=e.target.closest(".claim"); if(!a) return;
+      showTab(a.dataset.tab);
+    });
+  };
+  RENDER.abstract=function(){};
 
   // ================= TAB 1: the gap ===========================================
   INIT.gap=function(){
@@ -1114,7 +1157,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   api.tabs=TABS.map(t=>t.key);
   window.addEventListener("hashchange",()=>{ const h=parseHash();
     if(h.tab&&h.tab!==current) showTab(h.tab,false); });
-  showTab(parseHash().tab||"gap",false);
+  showTab(parseHash().tab||"abstract",false);
 })();
 </script>
 </body>
