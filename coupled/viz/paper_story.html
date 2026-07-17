@@ -840,8 +840,13 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     });
     procCard();
     parts=[];
-    for(let i=0;i<650;i++) parts.push({x:Math.random(),y:Math.random()*2-1,
-      v:0.0012+Math.random()*0.0018,ph:Math.random()*6.28,dead:false});
+    while(parts.length<650){
+      const x=Math.random();
+      // fewer particles survive past the coagulation station (they have merged)
+      if(x>0.62 && Math.random()<(x-0.62)/0.38*0.72) continue;
+      parts.push({x, y:Math.random()*2-1, ph:Math.random()*6.28,
+        ph2:Math.random()*6.28, w:0.6+Math.random()*0.9});
+    }
     window.addEventListener("resize",()=>{ if(current==="processes"){o.fit();} });
     tickProc();
   };
@@ -864,27 +869,39 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     if(current!=="processes"){ procRAF=null; return; }
     const o=procO, ctx=o.ctx;
     ctx.clearRect(0,0,o.W,o.H);
-    const midY=o.H*0.46, amp=o.H*0.27;
+    const midY=o.H*0.47, amp=o.H*0.25;
+    // axis: what left-to-right MEANS (position in the sulfur's life, not motion)
+    ctx.font=MONO; ctx.fillStyle=PAL.ax; ctx.textBaseline="top";
+    ctx.textAlign="left";  ctx.fillText("SO₂ released",8,8);
+    ctx.textAlign="right"; ctx.fillText("sunlight-reflecting droplets",o.W-8,8);
+    {
+      const y=13, x0=92, x1=o.W-186;
+      if(x1-x0>60){
+        ctx.strokeStyle=PAL.grid; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(x0,y); ctx.lineTo(x1,y); ctx.stroke();
+        ctx.fillStyle=PAL.faint; ctx.beginPath();
+        ctx.moveTo(x1,y); ctx.lineTo(x1-6,y-3); ctx.lineTo(x1-6,y+3);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    // the particles wiggle in place; x encodes the stage, not motion
     for(const p of parts){
-      p.x+=p.v; p.ph+=0.02;
-      if(p.x>1){ p.x=0; p.y=Math.random()*2-1; p.dead=false; }
-      // coagulation zone: some particles die, survivors get bigger
-      if(p.x>0.62&&!p.dead&&Math.random()<0.004) p.dead=true;
-      if(p.dead) continue;
+      p.ph+=0.028*p.w; p.ph2+=0.019*p.w;
       const spread=0.35+0.65*Math.min(1,p.x*2.2);
-      const y=midY+p.y*amp*spread+Math.sin(p.ph)*2.5;
+      const x=p.x*o.W+Math.sin(p.ph2)*2.2;
+      const y=midY+p.y*amp*spread+Math.sin(p.ph)*2.6;
       const r=0.9+(p.x<0.33?0.3:p.x<0.62?1.1*(p.x-0.33)/0.29+0.3:1.4+2.6*(p.x-0.62)/0.38);
       const c=colAt(p.x);
       ctx.fillStyle=`rgba(${c[0]},${c[1]},${c[2]},0.8)`;
-      ctx.beginPath(); ctx.arc(p.x*o.W,y,r,0,6.283); ctx.fill();
+      ctx.beginPath(); ctx.arc(x,y,r,0,6.283); ctx.fill();
     }
     // station markers
-    ctx.font=MONO; ctx.textAlign="center";
+    ctx.font=MONO; ctx.textAlign="center"; ctx.textBaseline="alphabetic";
     const xs=[0.05,0.16,0.30,0.46,0.55,0.72,0.92];
     xs.forEach((x,i)=>{
       ctx.strokeStyle=i===procSel?PAL.accent:PAL.grid;
       ctx.setLineDash(i===procSel?[]:[3,4]); ctx.lineWidth=i===procSel?1.6:1;
-      ctx.beginPath(); ctx.moveTo(x*o.W,14); ctx.lineTo(x*o.W,o.H-22); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x*o.W,26); ctx.lineTo(x*o.W,o.H-22); ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle=i===procSel?PAL.accent:PAL.faint;
       ctx.fillText(String(i+1),x*o.W,o.H-8);
