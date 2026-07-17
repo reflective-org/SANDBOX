@@ -195,6 +195,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   footer p{margin:0 0 6px}
 
   .tabpane[hidden]{display:none}
+  .hero[hidden]{display:none}
   @media (max-width:900px){
     #app{padding:0 12px 32px}
     .topnav{height:48px;gap:10px;margin-bottom:16px}
@@ -583,6 +584,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     });
     document.querySelectorAll("#tabbar button").forEach(b=>
       b.classList.toggle("on",b.dataset.k===key));
+    const hero=document.querySelector(".hero"); if(hero) hero.hidden=(key!=="gap");
     if(!inited[key]){ inited[key]=true; INIT[key](); }
     renderActive();
     if(push!==false){ try{history.replaceState(null,"","#tab="+key);}catch(e){} }
