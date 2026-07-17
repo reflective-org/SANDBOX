@@ -101,20 +101,30 @@ def _patch(html, pattern, payloads, what):
     return out
 
 
-def inject(day, night, fonts, logos):
+def _patch_optional(html, pattern, payloads, what):
+    """Patch every slot the page has; pages without this asset group are skipped."""
+    n = len(re.findall(pattern, html))
+    if n == 0:
+        print(f"  ({what}: no slots in this page, skipped)")
+        return html
+    assert n == len(payloads), f"{what}: page has {n} slots, expected {len(payloads)}"
+    return _patch(html, pattern, payloads, what)
+
+
+def inject(html_path, day, night, fonts, logos):
     b64 = lambda p: base64.b64encode(open(p, "rb").read()).decode()
-    html = open(_HTML).read()
-    html = _patch(html, r'(url\(data:font/woff2;base64,)[A-Za-z0-9+/=_]+',
-                  [b64(f) for f in fonts], "@font-face")
-    html = _patch(html, r'(MARBLE_URI="data:image/jpeg;base64,)[A-Za-z0-9+/=_]+',
-                  [b64(day)], "MARBLE_URI")
-    html = _patch(html, r'(NIGHT_URI="data:image/jpeg;base64,)[A-Za-z0-9+/=_]+',
-                  [b64(night)], "NIGHT_URI")
+    html = open(html_path).read()
+    html = _patch_optional(html, r'(url\(data:font/woff2;base64,)[A-Za-z0-9+/=_]+',
+                           [b64(f) for f in fonts], "@font-face")
+    html = _patch_optional(html, r'(MARBLE_URI="data:image/jpeg;base64,)[A-Za-z0-9+/=_]+',
+                           [b64(day)], "MARBLE_URI")
+    html = _patch_optional(html, r'(NIGHT_URI="data:image/jpeg;base64,)[A-Za-z0-9+/=_]+',
+                           [b64(night)], "NIGHT_URI")
     if logos:
-        html = _patch(html, r'(--logo:url\(data:image/png;base64,)[A-Za-z0-9+/=_]+',
-                      [b64(logos[0]), b64(logos[1]), b64(logos[1])], "--logo")
-    open(_HTML, "w").write(html)
-    print(f"embedded -> {_HTML}   file = {os.path.getsize(_HTML)/1024:.1f} KB")
+        html = _patch_optional(html, r'(--logo:url\(data:image/png;base64,)[A-Za-z0-9+/=_]+',
+                               [b64(logos[0]), b64(logos[1]), b64(logos[1])], "--logo")
+    open(html_path, "w").write(html)
+    print(f"embedded -> {html_path}   file = {os.path.getsize(html_path)/1024:.1f} KB")
 
 
 if __name__ == "__main__":
@@ -122,8 +132,11 @@ if __name__ == "__main__":
     eps = None
     if "--logo-eps" in sys.argv:
         eps = sys.argv[sys.argv.index("--logo-eps") + 1]
+    html_path = _HTML
+    if "--html" in sys.argv:
+        html_path = sys.argv[sys.argv.index("--html") + 1]
     y, i = (build_logos(eps) if eps else
             (os.path.join(_CACHE, "logo_yellow.png"), os.path.join(_CACHE, "logo_ink.png")))
     logos = (y, i) if os.path.exists(y) and os.path.exists(i) else None
     day, night = build_textures()
-    inject(day, night, build_fonts(), logos)
+    inject(html_path, day, night, build_fonts(), logos)

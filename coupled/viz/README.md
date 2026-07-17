@@ -170,3 +170,26 @@ Verify headlessly with Chrome/Playwright: screenshot at `#t=…&paused=1&case=�
   model; would blur the honest/illustrative line.
 - Real ERA5 monthly-mean winds baked in (spatially varying, path curves with the anticyclone).
 - Side-by-side regime "race" (same layout, two cases in sync).
+
+## paper_story.html — the tabbed paper companion
+
+`paper_story.html` is a second self-contained page (same design system, themes, fonts and
+logo) that tells the story of the paper "Process Uncertainties for SO₂-to-Aerosol
+Transformation in SAI" for a policy/media/public audience, in six standalone tabs:
+
+1. **The Gap** — zoom from a 100 km climate-model grid cell to the 10 m plume; why the
+   volcanic analog is not enough.
+2. **Seven Processes** — the paper's Fig. 1 as a live particle stream with clickable
+   stations (status, open question, what would help).
+3. **Dilution** — the paper's new V(t)/V₀ scaling with live K_z / L_x / shear sliders
+   against the five model regimes, plus the along-vs-across-shear prism.
+4. **Ten Days in a Plume** — OH heartbeat, sulfur partition and banana per case (full
+   30-case blob, now including an `oh` series); links out to plume_dynamics.html.
+5. **What Matters Most** — the microphysics sensitivity face-off (nucleation x10,000 vs
+   coagulation x4) from the paper-ensemble runs (`sens` blob section).
+6. **The Experiment** — Table 5 as a status board + the small-release experiment concept.
+
+Bake: `python coupled/viz/bake_paper_story.py` (reuses bake_plume_dynamics; adds the
+sensitivity extracts from `paper_ensemble/runs/`). Assets:
+`python coupled/viz/embed_assets.py --html coupled/viz/paper_story.html` (fonts + logo;
+texture slots are skipped automatically). Hash-routable tabs: `#tab=dilution`.

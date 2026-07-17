@@ -307,6 +307,7 @@ def assemble_case(npz_path, site, bgd, regime, ctrl_path):
         total_n=_sig(total_n[keep]),
         sa=_sig(sa[:i_end + 1][keep]),
         reff_um=_sig(np.asarray(r["radius_cm"], float)[:i_end + 1][keep] * 1e4),
+        oh=_sig(np.asarray(r["x"], float)[:i_end + 1, species.index("OH")][keep], 3),
     )
     is_day, nights = _day_night(np.asarray(r["J"]), np.asarray(r["J_tmid"], float), dk)
     series["is_day"] = is_day
