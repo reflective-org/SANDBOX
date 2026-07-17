@@ -128,8 +128,8 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     cursor:pointer;flex:none}
   .dive:hover{border-color:var(--accent);color:var(--ink)}
   .dive:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  .gapcap{font-family:var(--serif);font-size:14.5px;color:var(--ink);min-height:44px;
-    margin:6px 2px 0;line-height:1.5}
+  .gapcap{font-family:var(--serif);font-size:14.5px;color:var(--ink);min-height:88px;
+    margin:8px 2px 0;line-height:1.55;max-width:74ch}
   .gapscale{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin:3px 2px 0;
     min-height:16px}
   .gaplegend{display:flex;flex-wrap:wrap;gap:4px 18px;justify-content:center;
@@ -678,25 +678,25 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   const zOf=Wm=>(L10(GAP_W0)-L10(Wm))/(L10(GAP_W0)-L10(GAP_W1));
   const GAP_LEVELS=[
     {wm:3e5, name:"the model's world",
-     cap:"This is the model's world: one number per hundred-kilometer cell. A release is mixed into the whole box the instant it happens.",
+     cap:"Climate models divide the atmosphere into cells roughly one hundred kilometers on a side and track one number per cell. When they simulate a release, the SO₂ is mixed through the entire cell the instant it happens. Everything in this paper takes place below that resolution: to the model, the layers you are about to dive through do not exist.",
      nyc:"for scale: one grid cell would swallow all five boroughs of New York City, with room to spare toward Philadelphia",
      legend:[["var(--faint)","climate-model grid · 100 km cells"],
              ["var(--accent)","Manhattan · 21 km (for scale)"],
              ["var(--gas)","the plume · 10 m, to scale"]]},
     {wm:1.5e4, name:"the filaments",
-     cap:"Wind shear stretches the plume into filaments: long, thin sheets of plume air that stay coherent for days. Far too thin for any grid cell to express.",
+     cap:"A filament is what the plume becomes after a day or two. Stratospheric winds change with height, so they smear the plume into long, thin sheets about a kilometer thick and hundreds of kilometers long, and the sheets stay intact for days. Concentration controls all of the chemistry, so this thinness is not a detail; it decides how the sulfur evolves.",
      nyc:"for scale: a filament is about one kilometer thick, a bit more than Central Park is wide (the park is 4 km long, 800 m wide)",
      legend:[["var(--part)","filament · the plume stretched thin, about 1 km thick"],
              ["var(--accent)","Central Park · 4 km × 800 m (for scale)"],
              ["var(--gas)","the plume · 10 m"]]},
     {wm:2200, name:"the wake",
-     cap:"Minutes after release, the aircraft's wake has churned the plume to its first size: a pocket a few hundred meters deep. Still invisible to the model.",
+     cap:"Before the winds take over, the aircraft sets the plume's first size. Its wingtip vortices drag the released gas a few hundred meters downward within minutes, fixing the depth of the plume. That starting depth controls how fast shear can stretch it later, which is why the wake, gone in minutes, echoes for days.",
      nyc:"for scale: the wake is about one Empire State Building deep",
      legend:[["var(--accent)","the wake (dashed) · about 400 m deep"],
              ["var(--muted)","Empire State Building · 443 m (for scale)"],
              ["var(--gas)","the plume · 10 m"]]},
     {wm:140, name:"the plume",
-     cap:"Ten meters wide. All of the chemistry in this paper begins in a gold ribbon the model literally cannot see.",
+     cap:"At release the plume is a ribbon about ten meters wide trailing the aircraft. Inside it, SO₂ is millions of times more concentrated than the surrounding air, which throttles the chemistry until dilution lets it breathe. All of it unfolds in a space ten thousand times smaller than the grid cell where this dive began.",
      nyc:"for scale: the plume is as wide as a Manhattan side street",
      legend:[["var(--gas)","the plume · 10 m wide"],
              ["var(--accent)","side-street width · 10 m (for scale)"]]},
