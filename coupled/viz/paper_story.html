@@ -128,8 +128,12 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     cursor:pointer;flex:none}
   .dive:hover{border-color:var(--accent);color:var(--ink)}
   .dive:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  .gapcap{font-family:var(--serif);font-size:14.5px;color:var(--muted);min-height:44px;
-    margin:4px 2px 0;line-height:1.5}
+  .gapcap{font-family:var(--serif);font-size:14.5px;color:var(--ink);min-height:44px;
+    margin:6px 2px 0;line-height:1.5}
+  .gapscale{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin:3px 2px 0;
+    min-height:16px}
+  .lvl{font-family:var(--mono);font-size:11.5px;color:var(--muted);min-width:190px;
+    text-align:center}
   input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:4px;
     background:var(--panel-edge);outline:none;cursor:pointer;margin:0}
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;
@@ -282,12 +286,17 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     <div class="cols">
       <div class="panel"><h3>From the grid cell to the plume</h3>
         <canvas id="cv-gap" height="380"></canvas>
-        <div class="sliderrow">
-          <button id="btn-dive" class="dive" aria-label="Animate the zoom">dive</button>
+        <div class="sliderrow" style="justify-content:center">
+          <button id="btn-up" class="dive" aria-label="Surface one layer">▲ back up</button>
+          <span class="lvl" id="gap-level"></span>
+          <button id="btn-down" class="dive" aria-label="Dive one layer deeper">dive deeper ▼</button>
+        </div>
+        <div class="sliderrow"><label for="sl-zoom">fine zoom</label>
           <input type="range" id="sl-zoom" min="0" max="1000" value="0"
             aria-label="Zoom from 300 km down to 120 m">
           <output id="out-zoom">300 km view</output></div>
         <p class="gapcap" id="gap-cap"></p>
+        <p class="gapscale" id="gap-scale"></p>
       </div>
       <div>
         <div class="panel plain"><h3>Why volcanoes are not enough</h3>
@@ -655,41 +664,78 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   RENDER.abstract=function(){};
 
   // ================= TAB 1: the gap ===========================================
-  // a continuous powers-of-ten dive: 300 km viewport down to 120 m. Each scale actor
-  // fades with its apparent size, so nothing pops; a log ladder on the right shows depth.
+  // a layered descent: four named layers, each with a New York object drawn AT TRUE
+  // SCALE in the scene, so every stop is tangible. Step buttons pace the dive; the
+  // slider remains for free scrubbing.
   let gapO=null, gapZ=0, diveRAF=null;
   const GAP_W0=3e5, GAP_W1=120;                                  // viewport width [m]
+  const zOf=Wm=>(L10(GAP_W0)-L10(Wm))/(L10(GAP_W0)-L10(GAP_W1));
+  const GAP_LEVELS=[
+    {wm:3e5, name:"the model's world",
+     cap:"This is the model's world: one number per hundred-kilometer cell. A release is mixed into the whole box the instant it happens.",
+     nyc:"for scale: one grid cell would swallow all five boroughs of New York City, with room to spare toward Philadelphia"},
+    {wm:1.5e4, name:"the filaments",
+     cap:"Wind shear stretches real plumes into filaments like this one. They stay thin and coherent for days, far below what any grid cell can express.",
+     nyc:"for scale: each filament is about as thick as Central Park is wide"},
+    {wm:2200, name:"the wake",
+     cap:"Minutes after release, the aircraft's wake has set the plume's first size: a few hundred meters deep, and already invisible to the model.",
+     nyc:"for scale: the wake is about one Empire State Building deep"},
+    {wm:140, name:"the plume",
+     cap:"Ten meters wide. All of the chemistry in this paper begins in a ribbon the model literally cannot see.",
+     nyc:"for scale: the plume is as wide as a Manhattan side street"},
+  ];
+  GAP_LEVELS.forEach(l=>l.z=zOf(l.wm));
   const fmtKm=m=>m>=1000?(m/1000>=10?Math.round(m/1000)+" km":(m/1000).toFixed(1)+" km")
                        :Math.round(m)+" m";
+  function gapLevelIndex(){                                       // nearest layer to gapZ
+    let bi=0,bd=1e9;
+    GAP_LEVELS.forEach((l,i)=>{ const d=Math.abs(l.z-gapZ); if(d<bd){bd=d;bi=i;} });
+    return bi;
+  }
+  function gapGoto(i){
+    i=Math.max(0,Math.min(GAP_LEVELS.length-1,i));
+    stopDive();
+    const from=gapZ, to=GAP_LEVELS[i].z;
+    const reduce=window.matchMedia&&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if(reduce||Math.abs(to-from)<0.002){ gapZ=to; gapSync(); RENDER.gap(); return; }
+    const T=2600; let t0=null;
+    const step=ts=>{ if(t0==null) t0=ts;
+      const u=Math.min(1,(ts-t0)/T), e=u<0.5?2*u*u:1-Math.pow(-2*u+2,2)/2;
+      gapZ=from+(to-from)*e; gapSync(); RENDER.gap();
+      diveRAF=u<1?requestAnimationFrame(step):null; };
+    diveRAF=requestAnimationFrame(step);
+  }
+  function gapSync(){ const sl=document.getElementById("sl-zoom");
+    if(sl) sl.value=Math.round(gapZ*1000); }
+  function stopDive(){ if(diveRAF){ cancelAnimationFrame(diveRAF); diveRAF=null; } }
   INIT.gap=function(){
     const o=canvas("cv-gap"); o.fit(); gapO=o;
     const sl=document.getElementById("sl-zoom");
     sl.addEventListener("input",()=>{ stopDive(); gapZ=sl.value/1000; RENDER.gap(); });
-    document.getElementById("btn-dive").addEventListener("click",()=>{
-      if(diveRAF){ stopDive(); return; }
-      const reduce=window.matchMedia&&
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if(reduce){ gapZ=gapZ<0.5?1:0; sl.value=gapZ*1000; RENDER.gap(); return; }
-      const from=gapZ, to=gapZ<0.5?1:0, T=6000; let t0=null;
-      const step=ts=>{ if(t0==null) t0=ts;
-        const u=Math.min(1,(ts-t0)/T), e=u<0.5?2*u*u:1-Math.pow(-2*u+2,2)/2;
-        gapZ=from+(to-from)*e; sl.value=Math.round(gapZ*1000); RENDER.gap();
-        diveRAF=u<1?requestAnimationFrame(step):null; };
-      diveRAF=requestAnimationFrame(step);
-    });
+    document.getElementById("btn-down").addEventListener("click",()=>
+      gapGoto(gapLevelIndex()+(gapZ>=GAP_LEVELS[gapLevelIndex()].z-0.02?1:0)));
+    document.getElementById("btn-up").addEventListener("click",()=>
+      gapGoto(gapLevelIndex()-(gapZ<=GAP_LEVELS[gapLevelIndex()].z+0.02?1:0)));
     window.addEventListener("resize",()=>{ if(current==="gap"){o.fit();RENDER.gap();} });
   };
-  function stopDive(){ if(diveRAF){ cancelAnimationFrame(diveRAF); diveRAF=null; } }
-  // alpha ramps: in as the actor grows past a few px, out as it swallows the frame
   const smooth=(x,a,b)=>{ const t=Math.max(0,Math.min(1,(x-a)/(b-a))); return t*t*(3-2*t); };
   function gapAlpha(pxSize,W){ return smooth(pxSize,4,26)*(1-smooth(pxSize,W*2.4,W*7)); }
+  const lvlAlpha=z=>1-Math.min(1,Math.abs(gapZ-z)/0.17);          // analog visibility window
   function drawAircraft(ctx,x,y,s,alpha){
     ctx.save(); ctx.globalAlpha=alpha; ctx.translate(x,y); ctx.scale(s,s);
     ctx.strokeStyle=PAL.ink; ctx.lineWidth=1.6/s; ctx.lineCap="round"; ctx.lineJoin="round";
-    ctx.beginPath(); ctx.moveTo(-11,0); ctx.lineTo(11,0);                 // fuselage
-    ctx.moveTo(-1,0); ctx.lineTo(-7,-7); ctx.moveTo(-1,0); ctx.lineTo(-7,7);   // wings
-    ctx.moveTo(9,0); ctx.lineTo(6,-3.4); ctx.moveTo(9,0); ctx.lineTo(6,3.4);   // tail
+    ctx.beginPath(); ctx.moveTo(-11,0); ctx.lineTo(11,0);
+    ctx.moveTo(-1,0); ctx.lineTo(-7,-7); ctx.moveTo(-1,0); ctx.lineTo(-7,7);
+    ctx.moveTo(9,0); ctx.lineTo(6,-3.4); ctx.moveTo(9,0); ctx.lineTo(6,3.4);
     ctx.stroke(); ctx.restore();
+  }
+  // Manhattan, simplified sliver (length 21 km, width ~3.7 km), for the grid-cell layer
+  const MANH=[[0,.30],[.08,.15],[.2,.05],[.35,0],[.5,.05],[.62,.02],[.75,.1],[.88,.30],
+    [.97,.55],[1,.75],[.93,.85],[.8,.72],[.62,.60],[.45,.50],[.3,.48],[.15,.52],[.05,.45]];
+  function scaleLabel(ctx,txt,x,y,align){
+    ctx.font=MONO; ctx.fillStyle=PAL.muted; ctx.textAlign=align||"left";
+    ctx.textBaseline="bottom"; ctx.fillText(txt,x,y);
   }
   RENDER.gap=function(){
     const o=gapO; if(!o) return;
@@ -697,29 +743,45 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     const Wm=Math.pow(10, L10(GAP_W0)+(L10(GAP_W1)-L10(GAP_W0))*gapZ);
     const mPx=Wm/W, cy=H*0.52, cxp=W*0.5;
 
-    // climate-model grid: repeating 100 km lines while they are resolvable
+    // climate-model grid lattice
     {
       const sp=1e5/mPx, a=smooth(sp,10,60)*(1-smooth(sp,W*1.6,W*6));
       if(a>0.004){
         ctx.strokeStyle=PAL.grid; ctx.lineWidth=1; ctx.globalAlpha=a;
-        const off=(cxp)%sp;
-        for(let x=off;x<W;x+=sp){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
-        for(let y=(cy)%sp;y<H;y+=sp){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+        for(let x=cxp%sp;x<W;x+=sp){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+        for(let y=cy%sp;y<H;y+=sp){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
         ctx.globalAlpha=1;
-        if(sp>70&&sp<W*1.4){ ctx.font=MONO; ctx.fillStyle=PAL.faint;
-          ctx.globalAlpha=a; ctx.textAlign="left"; ctx.textBaseline="top";
+        if(sp>70&&sp<W*1.4){ ctx.font=MONO; ctx.fillStyle=PAL.faint; ctx.globalAlpha=a;
+          ctx.textAlign="left"; ctx.textBaseline="top";
           ctx.fillText("climate-model grid · 100 km cells",8,8); ctx.globalAlpha=1; }
       }
     }
-
-    // sheared filament: an S-curved band, ~1 km thick, ~200 km long
+    // NYC layer 1: Manhattan sliver at true scale
+    {
+      const a=lvlAlpha(GAP_LEVELS[0].z);
+      if(a>0.01){
+        const Lp=2.1e4/mPx, Wp=3.7e3/mPx, mx=cxp-W*0.27, my=cy+H*0.18;
+        ctx.save(); ctx.globalAlpha=a*0.9; ctx.translate(mx,my); ctx.rotate(-0.45);
+        ctx.beginPath();
+        MANH.forEach(([u,v],i)=>{ const x=(u-0.5)*Lp, y=(v-0.45)*Wp;
+          i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+        ctx.closePath();
+        ctx.fillStyle="rgba(87,208,192,0.18)"; ctx.fill();
+        ctx.strokeStyle=PAL.accent; ctx.lineWidth=1; ctx.stroke();
+        ctx.restore();
+        ctx.globalAlpha=a;
+        scaleLabel(ctx,"Manhattan · 21 km",mx,my-Wp*0.8-6,"center");
+        ctx.globalAlpha=1;
+      }
+    }
+    // sheared filament
     {
       const th=1000/mPx, a=gapAlpha(th,W)*0.85;
       if(a>0.004){
         const Lp=Math.min(W*2.6,2e5/mPx), amp=Math.min(H*0.16,Lp*0.05);
         ctx.save(); ctx.globalAlpha=a;
-        ctx.strokeStyle=PAL.part; ctx.lineWidth=Math.max(1.4,th);
-        ctx.lineCap="round";
+        ctx.strokeStyle=PAL.part; ctx.lineCap="round";
+        ctx.lineWidth=Math.max(1.4,th);
         ctx.beginPath();
         ctx.moveTo(cxp-Lp/2, cy+amp);
         ctx.bezierCurveTo(cxp-Lp/6, cy-amp, cxp+Lp/6, cy+amp, cxp+Lp/2, cy-amp);
@@ -731,8 +793,22 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
           ctx.fillText("sheared filament · about 1 km thick",8,H-30); ctx.globalAlpha=1; }
       }
     }
-
-    // aircraft wake envelope: a soft oval, ~400 m deep x 600 m across
+    // NYC layer 2: Central Park rectangle (4 km x 800 m)
+    {
+      const a=lvlAlpha(GAP_LEVELS[1].z);
+      if(a>0.01){
+        const Lp=4000/mPx, Wp=800/mPx, px=cxp-W*0.22, py=cy+H*0.22;
+        ctx.save(); ctx.globalAlpha=a*0.9;
+        ctx.strokeStyle=PAL.accent; ctx.lineWidth=1;
+        ctx.strokeRect(px-Lp/2,py-Wp/2,Lp,Wp);
+        ctx.fillStyle="rgba(87,208,192,0.14)"; ctx.fillRect(px-Lp/2,py-Wp/2,Lp,Wp);
+        ctx.restore();
+        ctx.globalAlpha=a;
+        scaleLabel(ctx,"Central Park · 800 m wide",px,py-Wp/2-6,"center");
+        ctx.globalAlpha=1;
+      }
+    }
+    // wake envelope
     {
       const h=400/mPx, a=gapAlpha(h,W)*0.8;
       if(a>0.004){
@@ -745,8 +821,22 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
           ctx.fillText("wake · a few hundred meters",cxp,cy-h/2-6); ctx.globalAlpha=1; }
       }
     }
-
-    // the plume itself: gold ribbon, 10 m wide, 25 km long, dark spine underneath
+    // NYC layer 3: Empire State Building silhouette (443 m), stood beside the wake
+    {
+      const a=lvlAlpha(GAP_LEVELS[2].z);
+      if(a>0.01){
+        const hM=443/mPx, bx=cxp+W*0.30, base=cy+hM/2;
+        const tier=(w,h0,h1)=>{ const wp=w/mPx;
+          ctx.fillRect(bx-wp/2,base-h1/mPx,wp,(h1-h0)/mPx); };
+        ctx.save(); ctx.globalAlpha=a*0.85; ctx.fillStyle=PAL.muted;
+        tier(60,0,100); tier(36,100,320); tier(24,320,381); tier(5,381,443);
+        ctx.restore();
+        ctx.globalAlpha=a;
+        scaleLabel(ctx,"Empire State Building · 443 m",bx,base-hM-8,"center");
+        ctx.globalAlpha=1;
+      }
+    }
+    // the plume ribbon + aircraft
     {
       const th=Math.max(1.1,10/mPx), Lp=Math.min(W*2.6,2.5e4/mPx);
       ctx.fillStyle="rgba(8,12,24,0.35)";
@@ -755,26 +845,41 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       ctx.fillRect(cxp-Lp/2,cy-th/2,Lp,th);
       if(10/mPx>3){ ctx.font=MONO; ctx.fillStyle=PAL.gas; ctx.textAlign="center";
         ctx.textBaseline="top"; ctx.fillText("the plume · 10 m wide",cxp,cy+th/2+8); }
-      const aAir=smooth(2e4,Wm*0.06,Wm*0.5);   // aircraft appears as we near its world
+      const aAir=smooth(2e4,Wm*0.06,Wm*0.5);
       if(aAir>0.01) drawAircraft(ctx,Math.min(cxp+Lp/2+18,W-24),cy,1.15,aAir);
     }
+    // NYC layer 4: side-street width bracket against the ribbon
+    {
+      const a=lvlAlpha(GAP_LEVELS[3].z);
+      if(a>0.01&&10/mPx>14){
+        const bx=cxp-W*0.3, half=5/mPx;
+        ctx.save(); ctx.globalAlpha=a; ctx.strokeStyle=PAL.accent; ctx.lineWidth=1.2;
+        ctx.beginPath();
+        ctx.moveTo(bx-8,cy-half); ctx.lineTo(bx,cy-half); ctx.lineTo(bx,cy+half);
+        ctx.lineTo(bx-8,cy+half); ctx.stroke();
+        ctx.restore();
+        ctx.globalAlpha=a;
+        scaleLabel(ctx,"a side street · 10 m",bx-4,cy-half-6,"center");
+        ctx.globalAlpha=1;
+      }
+    }
 
-    // depth ladder (right edge): where you are between 100 km and 100 m
+    // depth ladder with the four named layers
     {
       const lx=W-16, y0=16, y1=H-40;
       ctx.strokeStyle=PAL.grid; ctx.beginPath(); ctx.moveTo(lx,y0); ctx.lineTo(lx,y1); ctx.stroke();
-      ctx.font=MONO; ctx.fillStyle=PAL.faint; ctx.textAlign="right"; ctx.textBaseline="middle";
-      for(const m of [1e5,1e4,1e3,1e2]){
-        const f=(L10(GAP_W0)-L10(m))/(L10(GAP_W0)-L10(GAP_W1));
-        const y=y0+f*(y1-y0);
+      ctx.font=MONO; ctx.textAlign="right"; ctx.textBaseline="middle";
+      GAP_LEVELS.forEach((l,i)=>{
+        const y=y0+l.z*(y1-y0), on=i===gapLevelIndex();
+        ctx.strokeStyle=PAL.grid;
         ctx.beginPath(); ctx.moveTo(lx-4,y); ctx.lineTo(lx,y); ctx.stroke();
-        ctx.fillText(fmtKm(m),lx-8,y);
-      }
+        ctx.fillStyle=on?PAL.gas:PAL.faint;
+        ctx.fillText(fmtKm(l.wm),lx-8,y);
+      });
       const yz=y0+gapZ*(y1-y0);
       ctx.fillStyle=PAL.gas; ctx.beginPath(); ctx.arc(lx,yz,3.4,0,6.283); ctx.fill();
     }
-
-    // scale bar (bottom left)
+    // scale bar
     {
       const target=Wm/4, pow=Math.pow(10,Math.floor(L10(target)));
       const nice=[1,2,5].reduce((a,c)=>Math.abs(c*pow-target)<Math.abs(a-target)?c*pow:a,pow);
@@ -786,12 +891,12 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       ctx.fillText(fmtKm(nice),bx,by-6);
     }
 
+    const li=gapLevelIndex(), lv=GAP_LEVELS[li];
     document.getElementById("out-zoom").textContent=fmtKm(Wm)+" view";
-    document.getElementById("gap-cap").textContent=
-      Wm>1.1e5 ? "This is the model's world: one number per hundred-kilometer cell. A release is mixed into the whole box the instant it happens."
-      : Wm>2e4 ? "Wind shear stretches real plumes into filaments like this one. They stay thin and coherent for days, far below what any grid cell can express."
-      : Wm>2.5e3 ? "Minutes after release, the aircraft's wake has set the plume's first size: a few hundred meters deep, and already invisible to the model."
-      : "Ten meters wide. All of the chemistry in this paper begins in a ribbon the model literally cannot see.";
+    document.getElementById("gap-level").textContent=
+      `layer ${li+1} of ${GAP_LEVELS.length} · ${lv.name}`;
+    document.getElementById("gap-cap").textContent=lv.cap;
+    document.getElementById("gap-scale").textContent=lv.nyc;
   };
 
   // ================= TAB 2: seven processes ===================================
