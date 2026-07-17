@@ -132,6 +132,11 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     margin:6px 2px 0;line-height:1.5}
   .gapscale{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin:3px 2px 0;
     min-height:16px}
+  .gaplegend{display:flex;flex-wrap:wrap;gap:4px 18px;justify-content:center;
+    margin:8px 0 2px;font-family:var(--mono);font-size:11px;color:var(--muted);
+    min-height:18px}
+  .gaplegend span{display:inline-flex;align-items:center;gap:6px}
+  .gaplegend i{width:9px;height:9px;border-radius:2px;flex:none}
   .lvl{font-family:var(--mono);font-size:11.5px;color:var(--muted);min-width:190px;
     text-align:center}
   input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:4px;
@@ -286,6 +291,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     <div class="cols">
       <div class="panel"><h3>From the grid cell to the plume</h3>
         <canvas id="cv-gap" height="380"></canvas>
+        <div class="gaplegend" id="gap-legend"></div>
         <div class="sliderrow" style="justify-content:center">
           <button id="btn-up" class="dive" aria-label="Surface one layer">▲ back up</button>
           <span class="lvl" id="gap-level"></span>
@@ -673,16 +679,27 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   const GAP_LEVELS=[
     {wm:3e5, name:"the model's world",
      cap:"This is the model's world: one number per hundred-kilometer cell. A release is mixed into the whole box the instant it happens.",
-     nyc:"for scale: one grid cell would swallow all five boroughs of New York City, with room to spare toward Philadelphia"},
+     nyc:"for scale: one grid cell would swallow all five boroughs of New York City, with room to spare toward Philadelphia",
+     legend:[["var(--faint)","climate-model grid · 100 km cells"],
+             ["var(--accent)","Manhattan · 21 km (for scale)"],
+             ["var(--gas)","the plume · 10 m, to scale"]]},
     {wm:1.5e4, name:"the filaments",
      cap:"Wind shear stretches the plume into filaments: long, thin sheets of plume air that stay coherent for days. Far too thin for any grid cell to express.",
-     nyc:"for scale: a filament is about one kilometer thick, a bit more than Central Park is wide (the park is 4 km long, 800 m wide)"},
+     nyc:"for scale: a filament is about one kilometer thick, a bit more than Central Park is wide (the park is 4 km long, 800 m wide)",
+     legend:[["var(--part)","filament · the plume stretched thin, about 1 km thick"],
+             ["var(--accent)","Central Park · 4 km × 800 m (for scale)"],
+             ["var(--gas)","the plume · 10 m"]]},
     {wm:2200, name:"the wake",
      cap:"Minutes after release, the aircraft's wake has churned the plume to its first size: a pocket a few hundred meters deep. Still invisible to the model.",
-     nyc:"for scale: the wake is about one Empire State Building deep"},
+     nyc:"for scale: the wake is about one Empire State Building deep",
+     legend:[["var(--accent)","the wake (dashed) · about 400 m deep"],
+             ["var(--muted)","Empire State Building · 443 m (for scale)"],
+             ["var(--gas)","the plume · 10 m"]]},
     {wm:140, name:"the plume",
      cap:"Ten meters wide. All of the chemistry in this paper begins in a gold ribbon the model literally cannot see.",
-     nyc:"for scale: the plume is as wide as a Manhattan side street"},
+     nyc:"for scale: the plume is as wide as a Manhattan side street",
+     legend:[["var(--gas)","the plume · 10 m wide"],
+             ["var(--accent)","side-street width · 10 m (for scale)"]]},
   ];
   GAP_LEVELS.forEach(l=>l.z=zOf(l.wm));
   const fmtKm=m=>m>=1000?(m/1000>=10?Math.round(m/1000)+" km":(m/1000).toFixed(1)+" km")
@@ -732,24 +749,6 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   }
   const MANH=[[0,.30],[.08,.15],[.2,.05],[.35,0],[.5,.05],[.62,.02],[.75,.1],[.88,.30],
     [.97,.55],[1,.75],[.93,.85],[.8,.72],[.62,.60],[.45,.50],[.3,.48],[.15,.52],[.05,.45]];
-  // a labeled leader line: no object on screen goes unnamed
-  function leader(ctx,x,y,tx,ty,text,color,align){
-    ctx.strokeStyle=color; ctx.lineWidth=1; ctx.globalAlpha*=0.8;
-    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(tx,ty); ctx.stroke();
-    ctx.globalAlpha/=0.8;
-    ctx.font=MONO; ctx.fillStyle=color; ctx.textAlign=align||"left";
-    ctx.textBaseline="middle"; ctx.fillText(text,tx+(align==="right"?-4:4),ty);
-  }
-  // a vertical double-headed dimension arrow with a side label
-  function dimV(ctx,x,y0,y1,text,color){
-    ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y1); ctx.stroke();
-    for(const [y,s] of [[y0,1],[y1,-1]]){
-      ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x-3,y+5*s); ctx.lineTo(x+3,y+5*s);
-      ctx.closePath(); ctx.fill(); }
-    ctx.font=MONO; ctx.textAlign="left"; ctx.textBaseline="middle";
-    ctx.fillText(text,x+7,(y0+y1)/2);
-  }
   RENDER.gap=function(){
     const o=gapO; if(!o) return;
     const ctx=o.ctx, W=o.W, H=o.H; ctx.clearRect(0,0,W,H);
@@ -764,9 +763,6 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
         ctx.strokeStyle=PAL.grid; ctx.lineWidth=1; ctx.globalAlpha=a;
         for(let x=cxp%sp;x<W;x+=sp){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
         for(let y=cy%sp;y<H;y+=sp){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
-        ctx.globalAlpha=a; ctx.font=MONO; ctx.fillStyle=PAL.faint;
-        ctx.textAlign="left"; ctx.textBaseline="top";
-        ctx.fillText("climate-model grid · each cell 100 km",8,8);
         ctx.globalAlpha=1;
       }
     }
@@ -783,10 +779,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
         ctx.fillStyle="rgba(87,208,192,0.18)"; ctx.fill();
         ctx.strokeStyle=PAL.accent; ctx.lineWidth=1; ctx.stroke();
         ctx.restore();
-        ctx.globalAlpha=a;
-        leader(ctx,mx+Lp*0.18,my-Wp*0.35,mx+Lp*0.34,my-Wp*0.35-26,
-               "Manhattan · 21 km long (for scale)",PAL.accent);
-        ctx.globalAlpha=1;
+
       }
     }
     // filament (layer 2): the plume stretched into a thin sheet
@@ -806,11 +799,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
         ctx.stroke();
         ctx.globalAlpha=a; ctx.lineWidth=Math.max(1,filTh*0.5); ctx.stroke();
         ctx.restore();
-        ctx.globalAlpha=a;
-        leader(ctx,cxp-W*0.30,cy+amp*0.8,cxp-W*0.30+22,cy-H*0.34,
-               "a filament: the plume, stretched thin by the wind (blue)",PAL.part);
-        if(filTh>26) dimV(ctx,cxp+W*0.18,cy-filTh/2,cy+filTh/2,"about 1 km thick",PAL.part);
-        ctx.globalAlpha=1;
+
       }
     }
     // Central Park (layer 2), width aligned with the filament's thickness
@@ -823,11 +812,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
         ctx.strokeRect(px-Lp/2,py-Wp/2,Lp,Wp);
         ctx.fillStyle="rgba(87,208,192,0.14)"; ctx.fillRect(px-Lp/2,py-Wp/2,Lp,Wp);
         ctx.restore();
-        ctx.globalAlpha=a;
-        ctx.font=MONO; ctx.fillStyle=PAL.accent; ctx.textAlign="center"; ctx.textBaseline="top";
-        ctx.fillText("Central Park · 4 km long (for scale)",px,py+Wp/2+5);
-        if(Wp>18) dimV(ctx,px+Lp/2+8,py-Wp/2,py+Wp/2,"800 m wide",PAL.accent);
-        ctx.globalAlpha=1;
+
       }
     }
     // wake (layer 3)
@@ -838,9 +823,6 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
         ctx.strokeStyle=PAL.accent; ctx.lineWidth=1.2; ctx.setLineDash([5,4]);
         ctx.beginPath(); ctx.ellipse(cxp,cy,300/mPx,h/2,0,0,6.283); ctx.stroke();
         ctx.setLineDash([]);
-        leader(ctx,cxp-210/mPx,cy-h*0.33,cxp-W*0.36,cy-H*0.32,
-               "the wake: air churned by the aircraft (dashed)",PAL.accent);
-        if(h>40) dimV(ctx,cxp+300/mPx+10,cy-h/2,cy+h/2,"about 400 m deep",PAL.accent);
         ctx.restore();
       }
     }
@@ -854,10 +836,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
         ctx.save(); ctx.globalAlpha=a*0.85; ctx.fillStyle=PAL.muted;
         tier(60,0,100); tier(36,100,320); tier(24,320,381); tier(5,381,443);
         ctx.restore();
-        ctx.globalAlpha=a;
-        ctx.font=MONO; ctx.fillStyle=PAL.muted; ctx.textAlign="center"; ctx.textBaseline="bottom";
-        ctx.fillText("Empire State Building · 443 m (for scale)",bx,base-hM-8);
-        ctx.globalAlpha=1;
+
       }
     }
     // the plume itself: always present, ALWAYS named
@@ -867,25 +846,20 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       ctx.fillRect(cxp-Lp/2,cy-th*1.4,Lp,th*2.8);
       ctx.fillStyle="rgba(240,168,30,0.85)";
       ctx.fillRect(cxp-Lp/2,cy-th/2,Lp,th);
-      ctx.font=MONO; ctx.fillStyle=PAL.gas;
-      if(10/mPx>3){
-        ctx.textAlign="center"; ctx.textBaseline="top";
-        ctx.fillText("the plume (gold) · 10 m wide",cxp,cy+th/2+8);
-      } else {
-        leader(ctx,cxp+W*0.24,cy,cxp+W*0.24+18,cy-H*0.2,
-               "the plume (gold) · 10 m wide, to scale",PAL.gas);
-      }
       const aAir=smooth(2e4,Wm*0.06,Wm*0.5);
       if(aAir>0.01) drawAircraft(ctx,Math.min(cxp+Lp/2+18,W-24),cy,1.15,aAir);
     }
-    // side street (layer 4)
+    // side street (layer 4): a teal box exactly 10 m tall beside the ribbon
     {
       const a=lvlAlpha(L4.z,0.2);
       if(a>0.01&&10/mPx>14){
-        const bx=cxp-W*0.3, half=5/mPx;
-        ctx.globalAlpha=a;
-        dimV(ctx,bx,cy-half,cy+half,"a side street · 10 m (for scale)",PAL.accent);
-        ctx.globalAlpha=1;
+        const bw=30/mPx, bx=cxp-W*0.3, half=5/mPx;
+        ctx.save(); ctx.globalAlpha=a;
+        ctx.strokeStyle=PAL.accent; ctx.lineWidth=1;
+        ctx.strokeRect(bx-bw/2,cy-half,bw,half*2);
+        ctx.fillStyle="rgba(87,208,192,0.12)";
+        ctx.fillRect(bx-bw/2,cy-half,bw,half*2);
+        ctx.restore();
       }
     }
     // depth ladder
@@ -917,6 +891,8 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
 
     const li=gapLevelIndex(), lv=GAP_LEVELS[li];
     document.getElementById("out-zoom").textContent=fmtKm(Wm)+" view";
+    document.getElementById("gap-legend").innerHTML=lv.legend.map(([c,t])=>
+      `<span><i style="background:${c}"></i>${t}</span>`).join("");
     document.getElementById("gap-level").textContent=
       `layer ${li+1} of ${GAP_LEVELS.length} · ${lv.name}`;
     document.getElementById("gap-cap").textContent=lv.cap;
