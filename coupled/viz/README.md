@@ -96,7 +96,7 @@ regenerate them with the runners named below if absent), reading:
 
 On first run it downloads Natural Earth 110 m coastlines into `cache/` (gitignored); pass
 `--no-net` to require the cache. The bake prints per-case lifetimes and a per-section byte report,
-and hard-fails if the file would exceed 1.6 MB.
+and hard-fails if the file would exceed 2.0 MB.
 
 ## What is real, and what is illustrative
 
