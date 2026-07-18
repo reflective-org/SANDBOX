@@ -1206,17 +1206,20 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
         const c=im.getContext("2d");
         c.fillStyle=PAL.banBg; c.fillRect(0,0,im.width,im.height);
         // every column is an ACTUAL model step (dense uniform dist grid, no interpolation)
+        // integer-snapped edges: fractional fillRect edges leave antialiased seams
         const q=distQ(plumeKey), dd=C.dist.days, n=dd.length, rowH=im.height/NBIN;
         const E0=-1,E1=7;
+        const E=new Array(n+1); E[0]=0; E[n]=im.width;
+        for(let i=1;i<n;i++) E[i]=Math.round(0.5*(dd[i-1]+dd[i])/T*im.width);
+        const Y=new Array(NBIN+1);
+        for(let b=0;b<=NBIN;b++) Y[b]=Math.round(im.height-b*rowH);
         for(let i=0;i<n;i++){
-          const d0=i?0.5*(dd[i-1]+dd[i]):0;
-          const d1=(i<n-1)?0.5*(dd[i]+dd[i+1]):T;
-          const x0=d0/T*im.width, w=Math.max(0.5,(d1-d0)/T*im.width);
+          const x=E[i], w=Math.max(1,E[i+1]-E[i]);
           for(let b=0;b<NBIN;b++){
             const qv=q[i*NBIN+b]; if(qv===-128) continue;
             const t=(qv/QS-E0)/(E1-E0); if(t<=0) continue;
             c.fillStyle=rampCSS(t);
-            c.fillRect(x0,im.height-(b+1)*rowH,w,rowH+0.4);
+            c.fillRect(x,Y[b+1],w,Y[b]-Y[b+1]);
           }
         }
         banCache[key]=im;
