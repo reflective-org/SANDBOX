@@ -164,6 +164,35 @@ def _day_night(J, jt, days):
     return is_day.astype(int).tolist(), nights
 
 
+def _dist_png(dN, t):
+    """Full-resolution size-distribution raster as a grayscale PNG (base64).
+
+    Columns are ACTUAL model steps (uniform integer stride, capped at ~2200 columns so the
+    deflate stream stays small); rows are the 80 bins, top = largest. Gray value 0 = below
+    the display floor; 1..255 map log10(dN/dlogDp) linearly over [-1, 7] (the page's fixed
+    banana color scale). PNG deflate compresses the smooth field far better than base64
+    int8 arrays, so this is both smaller and denser than any subsampled grid.
+    """
+    import base64
+    import io
+
+    from PIL import Image
+
+    n = len(dN)
+    stride = max(1, int(np.ceil(n / 2200)))
+    d = np.asarray(dN, float)[::stride]
+    with np.errstate(divide="ignore"):
+        lg = np.log10(np.maximum(d, 1e-30))
+    v = np.clip((lg - (-1.0)) / 8.0 * 254 + 1, 1, 255)
+    v[lg < -1.0] = 0
+    img = Image.fromarray(v.astype(np.uint8).T[::-1], "L")
+    buf = io.BytesIO()
+    img.save(buf, "PNG", optimize=True)
+    dt_day = float(t[stride] - t[0]) / 86400.0 if n > stride else 600.0 / 86400.0
+    return dict(png_b64=base64.b64encode(buf.getvalue()).decode(),
+                n=int(d.shape[0]), dt_day=float(f"{dt_day:.8g}"))
+
+
 def _sig(arr, n=4):
     """Round to n significant figures; plain list of floats for compact JSON."""
     a = np.asarray(arr, dtype=float)
@@ -330,13 +359,8 @@ def assemble_case(npz_path, site, bgd, regime, ctrl_path):
         wind_note="Plume drift, shear and shape are an illustrative climatological sketch, NOT "
                   "model output. Chemistry and aerosol microphysics ARE model output.",
     )
-    # size distribution on its OWN uniform grid of actual model steps (~360 frames), dense
-    # enough that every banana pixel column is a real 600 s output, never an interpolation
-    kd = np.unique(np.round(np.linspace(0, len(days) - 1,
-                                        min(len(days), 360))).astype(int))
     return dict(meta=meta, days=_sig(dk, 5), series=series,
-                dist=dict(q_b64=_quantize_dist(np.asarray(r["dNdlogDp"])[:i_end + 1][kd]),
-                          days=_sig(days[kd], 5)),
+                dist=_dist_png(np.asarray(r["dNdlogDp"])[:i_end + 1], t),
                 nights=nights,
                 captions=_captions(site, regime["key"], bgd["phrase"], tend, t_burst, conv_pct)), r
 
