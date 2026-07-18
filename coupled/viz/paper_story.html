@@ -1205,17 +1205,22 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
         im.width=Math.max(1,Math.round(f.w)); im.height=Math.max(1,Math.round(f.h));
         const c=im.getContext("2d");
         c.fillStyle=PAL.banBg; c.fillRect(0,0,im.width,im.height);
+        // interpolate between kept frames per pixel column (the bake keeps late frames
+        // sparsely; block-rendering them looks artificially coarse on short runs)
         const q=distQ(plumeKey), n=days.length, rowH=im.height/NBIN;
         const E0=-1,E1=7;
-        for(let i=0;i<n;i++){
-          const d0=i?0.5*(days[i-1]+days[i]):0;
-          const d1=(i<n-1)?0.5*(days[i]+days[i+1]):T;
-          const x0=d0/T*im.width, w=Math.max(0.5,(d1-d0)/T*im.width);
+        let i=1;
+        for(let px=0;px<im.width;px++){
+          const d=(px+0.5)/im.width*T;
+          while(i<n-1&&days[i]<d) i++;
+          const f=Math.max(0,Math.min(1,(d-days[i-1])/((days[i]-days[i-1])||1))), g=1-f;
           for(let b=0;b<NBIN;b++){
-            const qv=q[i*NBIN+b]; if(qv===-128) continue;
-            const t=(qv/QS-E0)/(E1-E0); if(t<=0) continue;
+            const q0=q[(i-1)*NBIN+b], q1=q[i*NBIN+b];
+            if(q0===-128&&q1===-128) continue;
+            const e0=q0===-128?-30*QS:q0, e1=q1===-128?-30*QS:q1;
+            const t=((g*e0+f*e1)/QS-E0)/(E1-E0); if(t<=0) continue;
             c.fillStyle=rampCSS(t);
-            c.fillRect(x0,im.height-(b+1)*rowH,w,rowH+0.4);
+            c.fillRect(px,im.height-(b+1)*rowH,1,rowH+0.4);
           }
         }
         banCache[key]=im;
