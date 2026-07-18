@@ -54,9 +54,10 @@ _COAST_URL = ("https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ma
 
 _MARK_A = "/*__D1_DATA_BEGIN__*/"
 _MARK_B = "/*__D1_DATA_END__*/"
-# 30-case grid + embedded day/night Earth textures (2048x1024, per Ali 2026-07-16) + fonts +
-# logo; still loads fast as a local file or static page
-_SIZE_LIMIT = 2_000_000
+# 30-case grid + embedded day/night Earth textures (2048x1024) + fonts + logo + the dense
+# banana frame grid (per Ali 2026-07-17: the banana must show ACTUAL model steps at pixel
+# resolution, no interpolation); still loads fast as a local file or static page
+_SIZE_LIMIT = 2_500_000
 
 _AVOG = 6.02214076e23
 _V0_CM3 = 1.5e12                     # 10 m x 10 m x 15 km (run_ensemble.py)
@@ -329,8 +330,13 @@ def assemble_case(npz_path, site, bgd, regime, ctrl_path):
         wind_note="Plume drift, shear and shape are an illustrative climatological sketch, NOT "
                   "model output. Chemistry and aerosol microphysics ARE model output.",
     )
+    # size distribution on its OWN uniform grid of actual model steps (~360 frames), dense
+    # enough that every banana pixel column is a real 600 s output, never an interpolation
+    kd = np.unique(np.round(np.linspace(0, len(days) - 1,
+                                        min(len(days), 360))).astype(int))
     return dict(meta=meta, days=_sig(dk, 5), series=series,
-                dist=dict(q_b64=_quantize_dist(np.asarray(r["dNdlogDp"])[:i_end + 1][keep])),
+                dist=dict(q_b64=_quantize_dist(np.asarray(r["dNdlogDp"])[:i_end + 1][kd]),
+                          days=_sig(days[kd], 5)),
                 nights=nights,
                 captions=_captions(site, regime["key"], bgd["phrase"], tend, t_burst, conv_pct)), r
 
