@@ -959,9 +959,17 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   function distAt(day){
     const out=new Float64Array(NBIN);
     const v=DISTR&&DISTR.vals; if(!v) return out;
-    const i=Math.max(0,Math.min(DN-1,Math.round(day/DDT)));   // nearest actual step
-    for(let b=0;b<NBIN;b++){ const g=v[i*NBIN+b];
-      out[b]=g? Math.pow(10,-1+(g-1)/254*8) : 0; }
+    // continuous-time readout: log-space blend between the two BRACKETING actual steps
+    // (10-30 min apart), exactly like every other animated series on the page. The
+    // banana itself renders raw frames with no blending.
+    const x=Math.max(0,Math.min(DN-1,day/DDT));
+    const i0=Math.floor(x), i1=Math.min(DN-1,i0+1), f=x-i0, g=1-f;
+    for(let b=0;b<NBIN;b++){
+      const g0=v[i0*NBIN+b], g1=v[i1*NBIN+b];
+      if(!g0&&!g1){ out[b]=0; continue; }
+      const e0=g0?(-1+(g0-1)/254*8):-30, e1=g1?(-1+(g1-1)/254*8):-30;
+      out[b]=Math.pow(10,g*e0+f*e1);
+    }
     return out;
   }
 
