@@ -54,8 +54,8 @@ git push origin gh-pages
 ```
 
 It also works as a hosted page (GitHub Pages, any static host) and as a Claude Artifact. The whole
-thing stays under the 2.0 MB bake limit with all thirty cases, textures, coastlines, and code
-inlined.
+thing stays under the 2.5 MB bake limit (`_SIZE_LIMIT`) with all thirty cases, textures,
+coastlines, and code inlined.
 
 The narration beats are CASE-AWARE (written per regime/background in `_captions()` with each
 case's own lifetime and end-of-life conversion percentage), in an editorial-scientific voice.
@@ -96,14 +96,15 @@ regenerate them with the runners named below if absent), reading:
 
 On first run it downloads Natural Earth 110 m coastlines into `cache/` (gitignored); pass
 `--no-net` to require the cache. The bake prints per-case lifetimes and a per-section byte report,
-and hard-fails if the file would exceed 2.0 MB.
+and hard-fails if the file would exceed `_SIZE_LIMIT` (2.5 MB).
 
 ## What is real, and what is illustrative
 
 **Real model output** (from the coupled gas-chemistry + TUV-x photolysis + TOMAS aerosol runs):
 - the size distribution dN/dlogDₚ (current-curve panel AND the full-width banana plot — time ×
-  log-diameter, colour = log dN/dlogDₚ on a fixed 10⁻¹…10⁷ scale, rendered once per case from the
-  baked int8 raster), total particle number, effective radius;
+  log-diameter, colour = log dN/dlogDₚ on a fixed 10⁻¹…10⁷ scale, rendered once per case at
+  native resolution from the baked grayscale-PNG raster), total particle number, effective
+  radius;
 - the sulfur panel, one normalized 0–100% stack with two toggleable denominators:
   **"of the injected tonne"** (default) is the dilution-corrected budget against a PAIRED
   no-injection control run — same site, background and dilution regime, so the dilution terms
@@ -193,3 +194,87 @@ Bake: `python coupled/viz/bake_paper_story.py` (reuses bake_plume_dynamics; adds
 sensitivity extracts from `paper_ensemble/runs/`). Assets:
 `python coupled/viz/embed_assets.py --html coupled/viz/paper_story.html` (fonts + logo;
 texture slots are skipped automatically). Hash-routable tabs: `#tab=dilution`.
+
+## inverse_lab.html — the sampling lab (for inverse-modeling homework)
+
+`inverse_lab.html` is a third self-contained page (same design system, themes, fonts, logo)
+built for a different job: not telling a story but **reading off numbers**. It is a virtual
+aircraft sampling the same 30 cases, so a student can be handed a time and asked what an
+instrument would measure there, then asked to invert it.
+
+Same three dropdowns as plume_dynamics. No globe, no narration, no player: time advances in
+**30-minute steps** (◀ ▶ buttons, a snapped slider, typed `day` + `HH:MM` UTC, ←/→ = ±30 min
+and Shift = ±6 h, Home/End, drag on any chart). Every step updates one prominent **value
+table** — observed (diluted) beside dilution-corrected — plus eight charts and the banana:
+
+| Quantity | Observed (diluted) | Dilution-corrected / reference |
+|---|---|---|
+| dilution V(t)/V₀, plume width | the known mixing model, never noised | — |
+| passive tracer C/C₀ | 1/V (see below) | obs × V, which is 1 for a perfect instrument |
+| SO₂ | auto-unit mixing ratio (% → ppm → ppb → ppt) and molec/cm³ | (obs − background) × V in tonnes, **and** the paired-control model budget |
+| OH, H₂SO₄ vapor | molec/cm³ (H₂SO₄ also as a mixing ratio) | — |
+| sulfate aerosol | molec/cm³ and µg/m³ | excess × V in tonnes SO₂-equivalent, and the model budget |
+| particle number, mean wet radius, wet surface area | per cm³ / µm / µm² cm⁻³ | — |
+
+**The passive tracer is exact even though the model does not carry one.** Dilution in these
+runs is an analytic schedule (`coupled/dilution.py`, Schumann-type V(t)/V₀), and the driver
+applies it as a relaxation whose per-interval rate is defined as the mean d ln V/dt, so
+compounding it telescopes: an inert tracer is exactly `C/C₀ = V₀/V(t)` (verified against the
+compounded model dilution to ~2e-15). The page's corrected column then scatters around 1 by
+exactly the measurement noise, which is the point of the exercise.
+
+The naive `(obs − background) × V` correction and the paired-control model budget agree early
+and diverge late, once the plume SO₂ has blended into the background — deliberately shown side
+by side, since diagnosing that failure is the interesting part of the homework.
+
+### Measurement noise
+Off by default. When on: multiplicative lognormal, `obs = truth · exp(σz)`, σ ∈ {5, 10, 20}%,
+with an independent draw per (seed, case, quantity, 30-minute bin, size bin) from a hashed
+`xmur3`/`mulberry32` PRNG. So values are reproducible from the seed and **independent of the
+order you visit times and cases in**, and the same numbers appear in the table, the chart
+overlay dots and the CSV. The dilution factor is the *known* mixing model and is never noised;
+every corrected value is recomputed from the noisy observation.
+
+### CSV export
+Two buttons. **Full 30-min record**: a `#`-commented header (case, seed, σ, background SO₂,
+air density, V₀, units, provenance) then one row per 30 minutes for the case's whole lifetime
+(≤1750 rows), 22 columns. **Size distribution now**: 80 rows of `dp_um, dlog10Dp, dNdlogDp,
+N_bin` at the selected time, with the exact aggregates (total number, surface area, radius) in
+the header.
+
+**Instructor mode** `#key=1` appends a `_clean` column for every noised quantity and prints the
+clean value under each table entry — for building an answer key. It is a URL flag, not a
+secret; anyone reading the page source can find it.
+
+### Hash
+`#case=<site>|<background>|<regime>&t=<day>&noise=1&sig=0.1&seed=<text>[&key=1]`, rewritten as
+you interact, so any state is a shareable link (e.g. one seed per student).
+
+### Bake
+```
+python coupled/viz/bake_inverse_lab.py [--runs-root ...] [--html inverse_lab.html]
+```
+Reads the same runs as bake_plume_dynamics and reuses its case grid, t\* truncation, day/night
+intervals and meta. What it does differently, because this page is an instrument and not a
+story:
+
+- **A uniform 30-minute sampling grid** (`grid`, base64 float32 per series) sampled straight
+  from the model's ~600 s output; the page indexes it and never interpolates a series. The
+  visualization keep grid cannot serve this: it coarsens to 4 h late in a run, which aliases
+  the morning nucleation spikes in particle number by up to 8×, and resolves the first hour of
+  the burst only every 20 min. The bake asserts every sample lies between its bracketing model
+  steps.
+- **The size-distribution raster is rebuilt on the same clock**, so column j is exactly day
+  j/(48·sub) — an exact lookup. (The shared raster assumes a uniform 600 s model step where the
+  real mean is ~592 s, because outer intervals snap to the terminator; that drifts its time axis
+  1.4%, i.e. 0.5 d at day 36. Invisible in a story, not acceptable here.)
+- **The raster range is 10⁻¹…10⁸, not 10⁻¹…10⁷**: the shared range clips the nucleation peak
+  (measured max 3.3e7), which cost up to 25% on peak bins. Per-bin values are therefore
+  quantized to ±4.2% (half of one 8-bit step) and the CSV header says so; the scalar aggregates
+  are exact, so nothing a student computes from the table is quantized.
+
+Verified against the source `state.npz`: every reported value matches to ~3e-8 (float32
+round-off) and lies between its bracketing model steps. Debug API for headless checks:
+`window.__d1` = { ready, caseKey, k, GPD, daysTotal, meta, values, setCase(), listCases(),
+setK(), setNoise(on, σ, seed), clean(name, k), obs(name, k), snapshot(k), distAt(k),
+distObs(k), csvText("table"|"dist") }.

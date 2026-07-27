@@ -57,6 +57,9 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     }
   }
   *{box-sizing:border-box}
+  /* several rules below set an explicit display, which would otherwise beat the UA's
+     [hidden]{display:none} and leave hidden elements (e.g. the empty noise badge) visible */
+  [hidden]{display:none!important}
   html,body{margin:0;min-height:100%}
   body{background:var(--bg);
     color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;
@@ -344,10 +347,10 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
         <p class="csub">tonnes · (obs − background)·V vs paired-control budget</p>
         <canvas id="cv-so2t"></canvas></div>
       <div class="card chartcard"><h3>OH</h3>
-        <p class="csub">per cm³ of plume air · hourly</p>
+        <p class="csub">10⁶ per cm³ of plume air</p>
         <canvas id="cv-oh"></canvas></div>
       <div class="card chartcard"><h3>H₂SO₄ vapor</h3>
-        <p class="csub">per cm³ of plume air · hourly</p>
+        <p class="csub">per cm³ of plume air</p>
         <canvas id="cv-h2so4"></canvas></div>
       <div class="card chartcard"><h3>Particle count</h3>
         <p class="csub">total per cm³ of plume air</p>
@@ -834,7 +837,7 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
       dots:()=>[{f:kk=>snapshot(kk).so2_ex_t,color:()=>PAL.dot}],
       readout:k=>fmtVal(snapshot(k).so2_ex_t)+" t" });
     P.oh=panel("cv-oh",{ log:false, bands:true,
-      linFmt:v=>v===0?"0":(v/1e6).toPrecision(2)+"e6",
+      linFmt:v=>v===0?"0":(v/1e6).toFixed(2),          // axis in units of 1e6, per the subtitle
       lines:()=>[{xs:GX,ys:G.oh,color:()=>PAL.line,w:1.4}],
       dots:()=>[{f:kk=>obs("oh",kk),color:()=>PAL.dot}],
       readout:k=>fmtVal(obs("oh",k))+" /cm³" });
