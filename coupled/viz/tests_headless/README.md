@@ -16,6 +16,9 @@ python coupled/viz/tests_headless/check_page.py /tmp/probe.json
 
 # 3. instructor mode, URL hash, controls, CSV shapes
 node coupled/viz/tests_headless/harness2.js coupled/viz/inverse_lab.html
+
+# 4. the "t =" time entry: parsing, snapping, clamping, write-back
+node coupled/viz/tests_headless/harness3.js coupled/viz/inverse_lab.html
 ```
 
 `check_page.py` needs the run outputs (`coupled/paper_ensemble/runs_bgstop*/`) on disk, same as the

@@ -203,9 +203,21 @@ aircraft sampling the same 30 cases, so a student can be handed a time and asked
 instrument would measure there, then asked to invert it.
 
 Same three dropdowns as plume_dynamics. No globe, no narration, no player: time advances in
-**30-minute steps** (◀ ▶ buttons, a snapped slider, typed `day` + `HH:MM` UTC, ←/→ = ±30 min
-and Shift = ±6 h, Home/End, drag on any chart). Every step updates one prominent **value
-table** — observed (diluted) beside dilution-corrected — plus eight charts and the banana:
+**30-minute steps** — ◀ ▶ buttons, a snapped slider, ←/→ = ±30 min with Shift = ±6 h, Home/End,
+drag on any chart, and two ways to jump straight to a time:
+
+- **`t =` (days since release)** — type `4.5`. Also accepts `4.5d`, hours (`108h`), minutes
+  (`90m`), scientific notation (`1e1`), or a day plus a clock time (`4d 18:00`). A bare clock
+  time (`18:00`) keeps the current day.
+- **`day` + `HH:MM` UTC** — for "day 3 at 18:00" style questions.
+
+Anything typed lands on the nearest 30-minute sampling step and the field is rewritten with the
+snapped value, so it always states the time actually being shown; out-of-range values clamp to
+the case lifetime and unparseable text restores the current time. The value-table header spells
+the same instant three ways (`t = 4.5 d · 108.0 h · day 4 · 18:00 UTC · daylight`).
+
+Every step updates one prominent **value table** — observed (diluted) beside dilution-corrected
+— plus eight charts and the banana:
 
 | Quantity | Observed (diluted) | Dilution-corrected / reference |
 |---|---|---|

@@ -228,6 +228,8 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
   .timebox input{background:var(--bg2);color:var(--ink);border:1px solid var(--panel-edge);
     border-radius:8px;padding:6px 7px;font-family:var(--mono);font-size:12px}
   .timebox input[type="number"]{width:62px}
+  .timebox input[type="text"]{width:74px}
+  .timebox .tsep{color:var(--faint)}
   .timebox input:hover{border-color:var(--accent)}
   #clockbar{flex:none;color:var(--ink);font-family:var(--mono);font-size:12px;
     min-width:216px;text-align:right}
@@ -391,6 +393,10 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
         <div class="ticks" id="ticks"></div>
       </div>
       <div class="timebox">
+        <label>t <input type="text" id="in-t" value="0" inputmode="decimal" placeholder="4.5"
+                       aria-label="Time since release, in days"
+                       title="Days since release, e.g. 4.5. Append h for hours (108h) or a clock time (4d 18:00). Snaps to the nearest 30 minutes."> d</label>
+        <span class="tsep">or</span>
         <label>day <input type="number" id="in-day" min="0" value="0" step="1" aria-label="Day"></label>
         <input type="time" id="in-time" step="1800" value="06:00" aria-label="Time (UTC)">
       </div>
@@ -665,7 +671,8 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     ];
     $("vals").innerHTML=rows.map(r=>
       `<tr><td class="q">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join("");
-    $("when").textContent=`t = ${s.hours.toFixed(1)} h · ${fmtClock(s.day)}`;
+    $("when").textContent=`t = ${s.day.toFixed(4).replace(/0+$/,"").replace(/\.$/,"")} d `+
+      `· ${s.hours.toFixed(1)} h · ${fmtClock(s.day)}`;
     const nb=$("nz-note");
     nb.hidden=!noise.on;
     if(noise.on) nb.textContent=`±${Math.round(noise.sigma*100)}% noise · seed ${noise.seed}`;
@@ -1087,6 +1094,8 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     if(+sc.max!==NT) sc.max=NT;
     sc.value=state.k;
     sc.style.setProperty("--f",(100*state.k/NT).toFixed(2)+"%");
+    if(document.activeElement!==$("in-t"))
+      $("in-t").value=(day<10?day.toFixed(4):day.toFixed(3)).replace(/0+$/,"").replace(/\.$/,"");
     if(document.activeElement!==$("in-day")) $("in-day").value=Math.floor(day);
     if(document.activeElement!==$("in-time")){
       const u=(META.start_utc_hour+day*24)%24;
@@ -1097,6 +1106,24 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     api.k=state.k; api.simDay=day;
   }
   window.__setK=setK;
+
+  // "4.5" | "4.5d" | "108h" | "30m" | "4d 18:00" | "18:00" -> days since release (null if unparsed)
+  function parseT(raw){
+    const s=String(raw||"").trim().toLowerCase();
+    if(!s) return null;
+    const clock=s.match(/(?:(\d+(?:\.\d+)?)\s*d[a-z]*)?[\s,]*(\d{1,2}):(\d{2})/);
+    if(clock){
+      const d=clock[1]!==undefined?parseFloat(clock[1]):Math.floor(state.k/GPD);
+      const clockH=parseInt(clock[2],10)+parseInt(clock[3],10)/60;
+      return d+((((clockH-META.start_utc_hour)%24)+24)%24)/24;
+    }
+    const m=s.match(/^([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s*(d|day|days|h|hr|hrs|hour|hours|m|min|mins|minute|minutes)?$/);
+    if(!m) return null;
+    const v=parseFloat(m[1]), u=m[2]||"d";
+    if(u[0]==="h") return v/24;
+    if(u[0]==="m") return v/1440;
+    return v;
+  }
 
   function writeHash(){
     const parts=[`case=${caseKey}`,`t=${(state.k/GPD).toFixed(4)}`];
@@ -1203,6 +1230,16 @@ if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}}
     };
     $("in-day").addEventListener("change",fromInputs);
     $("in-time").addEventListener("change",fromInputs);
+    // "t = ..." accepts a decimal day (4.5), hours (108h / 108 h), minutes (30m), or a day plus a
+    // clock time (4d 18:00). Whatever is typed lands on the nearest 30-minute sampling step, and
+    // setK writes the snapped value back so the field always states the time actually shown.
+    const fromT=()=>{
+      const day=parseT($("in-t").value);
+      if(day===null){ setK(state.k); return; }              // unparseable: restore the current t
+      setK(Math.round(day*GPD));
+    };
+    $("in-t").addEventListener("change",fromT);
+    $("in-t").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); fromT(); } });
     $("nz-on").addEventListener("change",()=>{ noise.on=$("nz-on").checked; setK(state.k); });
     $("nz-sig").addEventListener("change",()=>{ noise.sigma=parseFloat($("nz-sig").value); setK(state.k); });
     $("nz-seed").addEventListener("change",()=>{ noise.seed=$("nz-seed").value||"2026"; setK(state.k); });
