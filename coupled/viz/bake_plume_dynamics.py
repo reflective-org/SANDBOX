@@ -338,6 +338,8 @@ def assemble_case(npz_path, site, bgd, regime, ctrl_path):
         sa=_sig(sa[:i_end + 1][keep]),
         reff_um=_sig(np.asarray(r["radius_cm"], float)[:i_end + 1][keep] * 1e4),
         oh=_sig(np.asarray(r["x"], float)[:i_end + 1, species.index("OH")][keep], 3),
+        h2so4=_sig(x_h2so4[keep], 3),
+        part_s=_sig(partS[keep], 3),
     )
     is_day, nights = _day_night(np.asarray(r["J"]), np.asarray(r["J_tmid"], float), dk)
     series["is_day"] = is_day
@@ -352,6 +354,7 @@ def assemble_case(npz_path, site, bgd, regime, ctrl_path):
         lat0=site["lat0"], lon0=site["lon0"], alt_km=site["alt_km"], p_hpa=site["p_hpa"],
         doy=172, start_utc_hour=6.0, side0_m=_SIDE0_M, track_km=_TRACK_KM,
         so2_bg_ppt=bgd["so2_bg_ppt"], so2_inj_t=_SO2_INJ_T,
+        M_cm3=float(f"{M:.4g}"),
         bg_so2_frac=float(f"{bg_so2_frac:.4g}"),
         days_total=tend, t_star_day=float(round(ts / 86400.0, 4)),
         sa_bg=float(f"{sa[np.isfinite(sa)][0]:.4g}"),
