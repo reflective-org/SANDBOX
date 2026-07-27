@@ -185,7 +185,8 @@ def _dist_png(dN, t):
         lg = np.log10(np.maximum(d, 1e-30))
     v = np.clip((lg - (-1.0)) / 8.0 * 254 + 1, 1, 255)
     v[lg < -1.0] = 0
-    img = Image.fromarray(v.astype(np.uint8).T[::-1], "L")
+    # rint, not a bare cast: truncating biases every cell one quantization level low
+    img = Image.fromarray(np.rint(v).astype(np.uint8).T[::-1], "L")
     buf = io.BytesIO()
     img.save(buf, "PNG", optimize=True)
     dt_day = float(t[stride] - t[0]) / 86400.0 if n > stride else 600.0 / 86400.0
@@ -338,8 +339,6 @@ def assemble_case(npz_path, site, bgd, regime, ctrl_path):
         sa=_sig(sa[:i_end + 1][keep]),
         reff_um=_sig(np.asarray(r["radius_cm"], float)[:i_end + 1][keep] * 1e4),
         oh=_sig(np.asarray(r["x"], float)[:i_end + 1, species.index("OH")][keep], 3),
-        h2so4=_sig(x_h2so4[keep], 3),
-        part_s=_sig(partS[keep], 3),
     )
     is_day, nights = _day_night(np.asarray(r["J"]), np.asarray(r["J_tmid"], float), dk)
     series["is_day"] = is_day
@@ -354,7 +353,9 @@ def assemble_case(npz_path, site, bgd, regime, ctrl_path):
         lat0=site["lat0"], lon0=site["lon0"], alt_km=site["alt_km"], p_hpa=site["p_hpa"],
         doy=172, start_utc_hour=6.0, side0_m=_SIDE0_M, track_km=_TRACK_KM,
         so2_bg_ppt=bgd["so2_bg_ppt"], so2_inj_t=_SO2_INJ_T,
-        M_cm3=float(f"{M:.4g}"),
+        # air number density, for ppt <-> molec/cm3. Full precision on purpose: the sampling-lab
+        # page converts units with it, and 4 sig figs would bias every conversion by ~1e-4.
+        M_cm3=float(M),
         bg_so2_frac=float(f"{bg_so2_frac:.4g}"),
         days_total=tend, t_star_day=float(round(ts / 86400.0, 4)),
         sa_bg=float(f"{sa[np.isfinite(sa)][0]:.4g}"),
