@@ -247,12 +247,44 @@ order you visit times and cases in**, and the same numbers appear in the table, 
 overlay dots and the CSV. The dilution factor is the *known* mixing model and is never noised;
 every corrected value is recomputed from the noisy observation.
 
+### The entrained background
+`coupled/dilution.py` relaxes the box toward its **initial** state
+(`C_new = C_bg + (C - C_bg)·exp(-k_dil·dt)`), so the air mixed into the plume keeps that
+aerosol for the whole run: the background is a fixed boundary condition, not a time series.
+It is asserted regime-independent in the bake, and it is never noised — like the dilution
+factor, it is given information.
+
+There are three background types. The two SABRE-anchored ones are specified per unit air mass,
+so their per-cm³ number scales exactly with air density (×2.1818 = 120/55 hPa at a common
+~210 K) between 20 km and 15 km, with the shape of the distribution unchanged; the SAI-deployed
+one is a fixed 120 cm⁻³ at both altitudes. Six site × background entries, five distinct:
+
+| background | 30°N / 20 km | 60°N / 15 km |
+|---|---|---|
+| Aged air (SABRE-220) | 3.460 cm⁻³, 0.347 µm² cm⁻³ | 7.548 cm⁻³, 0.757 µm² cm⁻³ |
+| Young air (SABRE-330) | 57.19 cm⁻³, 1.560 µm² cm⁻³ | 124.8 cm⁻³, 3.403 µm² cm⁻³ |
+| SAI deployed | 120.0 cm⁻³, 84.94 µm² cm⁻³ | 120.0 cm⁻³, 84.94 µm² cm⁻³ |
+
+**All concentrations everywhere on this page are per cm³ (or m³) of AMBIENT air, never
+STP-normalized** — the box sits at 55 hPa / 210 K (20 km) or 120 hPa / 210 K (15 km), giving
+M = 1.896e18 and 4.136e18 molec cm⁻³ against 2.687e19 at STP. Every CSV header states the
+ambient p, T and M so a reader never has to guess.
+
+**Mass concentration** is given two ways, which agree to ~5%: from particulate sulfur
+(`part_s × 98/N_A`, exact, no size discretization) and per-bin from the distribution assuming
+pure-H₂SO₄ spheres of the **dry** midpoint diameter at ρ = 1.83 g cm⁻³ (`dp_mid_um`/`dNdlogDp`
+are dry; `SA` and `radius_cm` are wet). The residual is bin-midpoint discretization of a
+Dp³-weighted quantity.
+
 ### CSV export
-Two buttons. **Full 30-min record**: a `#`-commented header (case, seed, σ, background SO₂,
-air density, V₀, units, provenance) then one row per 30 minutes for the case's whole lifetime
-(≤1750 rows), 22 columns. **Size distribution now**: 80 rows of `dp_um, dlog10Dp, dNdlogDp,
-N_bin` at the selected time, with the exact aggregates (total number, surface area, radius) in
-the header.
+Three buttons. **Full 30-min record**: a `#`-commented header (case, seed, σ, ambient p/T/M,
+V₀, units, provenance) then one row per 30 minutes for the case's whole lifetime (≤1750 rows),
+28 columns — 22 plume/time columns plus six `bg_*` columns carrying the static entrained
+background (constant by design, so an excess is one column subtraction away). **Size
+distribution now**: 80 rows at the selected time with `dNdlogDp`, `N_bin`, `dMdlogDp_ug_m3`,
+`M_bin_ug_m3` and the matching `bg_*` bins, plus the exact aggregates in the header. **Background
+aerosol**: all six site × background combinations in one file (480 rows), number and mass per
+bin, with a per-background scalar summary and the ambient state in the header.
 
 **Instructor mode** `#key=1` appends a `_clean` column for every noised quantity and prints the
 clean value under each table entry — for building an answer key. It is a URL flag, not a

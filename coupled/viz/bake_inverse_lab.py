@@ -46,6 +46,17 @@ GRID_PER_DAY = 48                      # sampling clock: 48/day = every 30 minut
 _DIST_MAX_COLS = 2200                  # raster width cap (matches the story pages)
 _DIST_E0, _DIST_E1 = -1, 8             # log10 dN/dlogDp range of the 8-bit raster (no clipping)
 
+# Provenance for the user-facing background names. The dropdown labels stay plain-language (per
+# Ali: "SABRE-220/-330" reads as jargon in a dropdown), but exports and tooltips should name the
+# campaign properly -- SABRE, the NOAA CSL field campaign, not the "sabr" run-directory token.
+# The AER-2D name behind "SAI deployed" stays out of everything user-facing, so it has no entry.
+_PROVENANCE = {"sabr220": "SABRE-220", "sabr330": "SABRE-330"}
+
+
+def _bg_name(bgd):
+    p = _PROVENANCE.get(bgd["key"])
+    return f"{bgd['label']} ({p})" if p else bgd["label"]
+
 # quantities that span many decades and stay positive: interpolate in log space
 _LOG_SERIES = {"V", "so2_ppt", "h2so4", "part_s", "total_n", "sa", "reff_um"}
 
@@ -95,6 +106,56 @@ def _dist_png_uniform(dN, t, marks_s, sub):
     Image.fromarray(np.rint(v).astype(np.uint8).T[::-1], "L").save(buf, "PNG", optimize=True)
     return dict(png_b64=base64.b64encode(buf.getvalue()).decode(),
                 n=int(len(sub_s)), sub=int(sub), e0=_DIST_E0, e1=_DIST_E1), clipped
+
+
+def _bg_aerosol(runs_root):
+    """The STATIC aerosol of the entrained (background) air, per site x background type.
+
+    `coupled/dilution.py` relaxes the box toward the INITIAL state --
+    C_new = C_bg + (C - C_bg)*exp(-k_dil*dt) -- so the air mixed into the plume keeps the run's
+    initial aerosol for the whole run. That makes the background a fixed boundary condition, not
+    a time series: an inverse-modeling exercise subtracts these numbers.
+
+    There are three background types (aged air, young air, SAI deployed). The two SABRE-anchored
+    ones are specified per unit air mass, so their per-cm3 number scales exactly with air density
+    (x2.1818 from 20 km to 15 km) while the shape of the distribution is unchanged; the
+    SAI-deployed one is a fixed 120 cm-3 at both altitudes. Hence six entries, five distinct.
+    Asserted regime-independent, which is what "static initial state" implies.
+    """
+    out = {}
+    for site in bp.SITES:
+        for bgd in bp.BACKGROUNDS:
+            ref = None
+            for regime in bp.REGIMES:
+                z = np.load(bp._npz_path(runs_root, site["key"], bgd["key"], regime["key"]),
+                            allow_pickle=True)
+                got = (np.asarray(z["dNdlogDp"], float)[0], float(z["total_n"][0]),
+                       float(z["SA"][0]), float(z["radius_cm"][0]) * 1e4,
+                       float(z["particulate_S"][0]), float(z["M"]), float(np.asarray(z["T"])[0]))
+                if ref is None:
+                    ref = got
+                else:
+                    assert np.allclose(ref[0], got[0]) and np.allclose(ref[1:], got[1:]), \
+                        f"background aerosol differs by regime: {site['key']}|{bgd['key']}"
+            dN, n, sa, reff, partS, M, T = ref
+            # Everything is per cm3 of AMBIENT air, never STP-normalized. Proof in the data: the
+            # two SABRE-anchored backgrounds are fixed per unit air mass, so their per-cm3 number
+            # scales exactly with the local air density (x2.1818 = 120/55 hPa at a common ~210 K
+            # between the two sites); an STP-normalized number would instead be equal at both.
+            assert 1e18 < M < 1e19, f"air density {M:.3e} /cm3 is not an ambient LS value"
+            out[f"{site['key']}|{bgd['key']}"] = dict(
+                dNdlogDp=bp._sig(dN, 4), total_n=float(f"{n:.6g}"), sa=float(f"{sa:.6g}"),
+                reff_um=float(f"{reff:.6g}"), part_s=float(f"{partS:.6g}"),
+                # background SO2 is the scenario's ambient value; the run's own t=0 SO2 is the
+                # injected tonne, so it must NOT be read from the plume run here
+                so2_ppt=bgd["so2_bg_ppt"], M_cm3=M,
+                p_hpa=site["p_hpa"], T_K=float(f"{T:.5g}"), alt_km=site["alt_km"],
+                # mass concentration of the same sulfur, as H2SO4 [ug/m3]
+                ug_m3=float(f"{partS * 98.0 / bp._AVOG * 1e12:.6g}"),
+                site_label=site["label"], bg_label=_bg_name(bgd))
+            print(f"  background {site['key']:9s} {bgd['key']:8s} N={n:9.4f} /cm3  "
+                  f"SA={sa:8.4f} um2/cm3  reff={reff:.5f} um  SO2={bgd['so2_bg_ppt']:.0f} ppt")
+    return out
 
 
 def _grid(case, r, ctrl_path):
@@ -185,6 +246,12 @@ def assemble(runs_root):
         sites=bp.SITES, backgrounds=bp.BACKGROUNDS, regimes=bp.REGIMES,
         default=bp._DEFAULT_CASE,
         dist_dp_um=dp_um,
+        # dp_mid_um / dNdlogDp are DRY diameters (SA and radius_cm from the runs are wet), so a
+        # per-bin mass assuming pure-H2SO4 spheres uses this density. Checked against the mass
+        # implied by particulate sulfur (part_s * 98/NA): the two agree to within ~5% across a
+        # run, the residual being bin-midpoint discretization of a Dp^3-weighted quantity.
+        rho_h2so4=1.83,
+        bg_aerosol=_bg_aerosol(runs_root),
         cases=cases,
     )
 

@@ -35,8 +35,15 @@ const csv = api.csvText();
 const lines = csv.split("\n").filter(l => l.length && !l.startsWith("#"));
 const head = lines[0].split(",");
 const cleanCols = head.filter(h => h.endsWith("_clean"));
-ok(head.length === 22 + cleanCols.length, `columns: ${head.length} = 22 + ${cleanCols.length} clean`);
+const BASE = 28;   // 22 plume/time columns + 6 static entrained-background columns
+ok(head.length === BASE + cleanCols.length,
+   `columns: ${head.length} = ${BASE} + ${cleanCols.length} clean`);
 ok(cleanCols.length >= 10, `clean columns: ${cleanCols.join(" ")}`);
+for (const c of ["bg_so2_ppt","bg_n_percm3","bg_sa_um2_percm3","bg_reff_um",
+                 "bg_partso4_percm3","bg_partso4_ug_m3"])
+  ok(head.includes(c), `main CSV carries ${c}`);
+ok(!cleanCols.some(c => c.startsWith("bg_")),
+   "the static background is never noised, so it has no _clean twin");
 ok(csv.includes("instructor mode"), "header announces instructor mode");
 ok(csv.includes("sigma = 0.2") && csv.includes('seed = "hw1"'), "header records sigma and seed");
 
@@ -62,9 +69,24 @@ api.setNoise(true, 0.2, "hw1");
 const dcsv = api.csvText("dist");
 const dlines = dcsv.split("\n").filter(l => l.length && !l.startsWith("#"));
 ok(dlines.length === 81, `dist CSV: ${dlines.length - 1} bin rows + header`);
-ok(dlines[0] === "dp_um,dlog10Dp,dNdlogDp_percm3,N_bin_percm3,dNdlogDp_clean,N_bin_clean",
-   `dist columns: ${dlines[0]}`);
+for (const c of ["dp_um","dlog10Dp","dNdlogDp_percm3","N_bin_percm3","dMdlogDp_ug_m3",
+                 "M_bin_ug_m3","bg_dNdlogDp_percm3","bg_dMdlogDp_ug_m3","dNdlogDp_clean"])
+  ok(dlines[0].split(",").includes(c), `dist CSV carries ${c}`);
 ok(/total number = [0-9.e+-]+ \/cm3/.test(dcsv), "dist header carries the exact aggregates");
+ok(/rho = 1\.83 g\/cm3/.test(dcsv) && /DRY midpoint diameters/.test(dcsv),
+   "dist header states the mass assumption (pure H2SO4, dry diameters)");
+ok(/AMBIENT air/.test(dcsv), "dist header states concentrations are ambient, not STP");
+
+// the standalone background export
+const bcsv = api.csvText("bg");
+const blines = bcsv.split("\n").filter(l => l.length && !l.startsWith("#"));
+ok(blines.length === 1 + 6 * 80, `background CSV: ${blines.length - 1} rows = 6 site x bg x 80 bins`);
+ok(/STATIC for/.test(bcsv) && /x2\.1818/.test(bcsv),
+   "background header explains it is static and density-scaled between altitudes");
+ok(/AMBIENT air, NOT STP/.test(bcsv), "background header states ambient, not STP");
+ok(bcsv.includes("SABRE-220") && bcsv.includes("SABRE-330") && !/\bsabr-/i.test(bcsv),
+   "background labels name the SABRE campaign properly");
+ok(!bcsv.includes("AER-2D"), "the AER-2D name stays out of user-facing text");
 
 // controls
 const k0 = api.k;
