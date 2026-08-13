@@ -6,6 +6,9 @@ Subset: baseline 30N / 20 km / 210 K / 55 hPa, nucleation x1, condensation alpha
 background SABR-220 (the 220-230 ppbv N2O aged-air observation; bg SO2 = 20 ppt).
 
   OH_by_dilution.png      -- OH vs time for all five dilution regimes.
+  HO2_by_dilution.png     -- same for HO2.
+  H2O2_by_dilution.png    -- same for H2O2 (the HOx reservoir; diurnally accumulating, so
+                             plotted on its own 10^8 scale).
   sulfur_budget_D2med.png -- pure-sulfur budget of the D2 med run: absolute in-box S per
                              species (left; every species carries one S atom, so molec/cm^3
                              of the species IS its sulfur content) and fraction of total
@@ -26,8 +29,14 @@ from coupled.paper_ensemble.make_paper_candidate_plots import (
     _RUNS, REGIMES, REGIME_LABEL, REGIME_COLOR)
 
 _OUT = os.path.join(_RUNS, "plots", "oxidation")
-_OH, _SO2, _SO3, _H2SO4 = 18, 32, 34, 35
+_OH, _HO2, _H2O2, _SO2, _SO3, _H2SO4 = 18, 19, 33, 32, 34, 35
 CASE = "30N_20km__sabr220__{reg}__a1p0__nuc1__cg1"
+
+# (state-vector index, axis label, forced sci-notation exponent) per oxidant figure; the
+# exponent is pinned per species so the same figure is comparable across reruns
+OXIDANTS = [("OH", _OH, "OH", 6),
+            ("HO2", _HO2, "HO$_2$", 7),
+            ("H2O2", _H2O2, "H$_2$O$_2$", 8)]
 
 plt.rcParams.update({"font.family": "Helvetica", "font.size": 10, "axes.spines.top": False,
                      "axes.spines.right": False, "axes.grid": True, "grid.alpha": 0.35,
@@ -45,30 +54,31 @@ def load(reg):
     return np.load(os.path.join(_RUNS, CASE.format(reg=reg), "state.npz"))
 
 
-# OH figure uses the 5-slot categorical palette (validated fixed order) instead of the
-# ordinal blue dilution ramp used elsewhere
+# the oxidant figures use the 5-slot categorical palette (validated fixed order) instead of
+# the ordinal blue dilution ramp used elsewhere
 OH_COLOR = {"D1low": "#2a78d6", "D2med": "#1baf7a", "D3high": "#eda100",
             "D5vhigh": "#008300", "burst": "#4a3aa7"}
 
 
-def fig_oh():
+def fig_oxidant(name, idx, label, exponent):
+    """One species vs time, one line per dilution regime (one figure per oxidant)."""
     fig, ax = plt.subplots(figsize=(8.6, 4.6))
     for reg in REGIMES:
         z = load(reg)
-        ax.plot(z["t"] / 86400.0, z["x"][:, _OH], color=OH_COLOR[reg], lw=1.8,
+        ax.plot(z["t"] / 86400.0, z["x"][:, idx], color=OH_COLOR[reg], lw=1.8,
                 label=REGIME_LABEL[reg])
     ax.set_ylim(bottom=0)
-    ax.ticklabel_format(axis="y", style="sci", scilimits=(6, 6), useMathText=True)
+    ax.ticklabel_format(axis="y", style="sci", scilimits=(exponent, exponent), useMathText=True)
     ax.set_xlim(0, 10)
     ax.set_xlabel("day")
-    ax.set_ylabel("OH [molec cm$^{-3}$]")
+    ax.set_ylabel(f"{label} [molec cm$^{{-3}}$]")
     ax.legend(fontsize=8.5, title="dilution", title_fontsize=8.5, loc="upper left", ncols=2)
-    ax.set_title("OH — 30°N / 20 km / 210 K / 55 hPa, SABR-220 background, "
+    ax.set_title(f"{label} — 30°N / 20 km / 210 K / 55 hPa, SABR-220 background, "
                  "nucleation ×1, α ×1, coag ×1", fontsize=11)
     fig.tight_layout()
-    fig.savefig(os.path.join(_OUT, "OH_by_dilution.png"), bbox_inches="tight")
+    fig.savefig(os.path.join(_OUT, f"{name}_by_dilution.png"), bbox_inches="tight")
     plt.close(fig)
-    print("  OH_by_dilution.png")
+    print(f"  {name}_by_dilution.png")
 
 
 def fig_sulfur_budget():
@@ -130,7 +140,8 @@ def fig_sulfur_budget():
 
 def main():
     os.makedirs(_OUT, exist_ok=True)
-    fig_oh()
+    for name, idx, label, exponent in OXIDANTS:
+        fig_oxidant(name, idx, label, exponent)
     fig_sulfur_budget()
 
 
