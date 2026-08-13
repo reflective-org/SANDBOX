@@ -1,0 +1,89 @@
+# Plume Studio CI (task 0.1). Scoped to studio/ on purpose: the model's three suites (root
+# `pytest`, and one per submodule) predate this workflow and are not put under CI by it -- doing so
+# would need the private submodules checked out and is its own change.
+#
+# What runs here is exactly what studio/CLAUDE.md tells a developer to run locally:
+#   ruff check studio/ && black --check studio/
+#   mypy --strict studio/schema studio/science
+#   pytest studio/tests -m tier_a
+#
+# No YAML anchors anywhere in this file: GitHub Actions rejects them, so the two `paths:` lists are
+# duplicated deliberately and must be kept in step.
+name: studio-ci
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "studio/**"
+      - "docs/studio/**"
+      - "pyproject.toml"
+      - ".github/workflows/studio-ci.yml"
+  pull_request:
+    paths:
+      - "studio/**"
+      - "docs/studio/**"
+      - "pyproject.toml"
+      - ".github/workflows/studio-ci.yml"
+
+concurrency:
+  group: studio-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # No `submodules: recursive`. Tier A does not touch the model: the import-boundary test needs
+      # `jax` to be IMPORTABLE (so that not importing it is meaningful), and that comes from the
+      # lockfile, not from tuvx-jax/stratchem-jax/tomas-jax. When task 0.4 lands and Tier A gains a
+      # short real run, this must become a submodule checkout with a deploy key.
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # 3.12 is what this is developed against. The ruff/black/mypy targets stay at py311
+      # (pyproject.toml), so nothing here may rely on 3.12-only syntax.
+      - name: Install from the committed lockfile
+        run: |
+          uv venv --python 3.12
+          uv pip install -r studio/requirements.lock
+          uv pip install -e . --no-deps
+
+      # A lockfile that has drifted from pyproject.toml is worse than no lockfile: it pins an
+      # environment nobody actually installs. Regenerate in place and require zero diff.
+      - name: Lockfile is in sync with pyproject.toml
+        run: |
+          uv pip compile pyproject.toml \
+            --extra studio --extra studio-dev --extra dev --extra jax-chemistry \
+            --universal --python-version 3.12 --generate-hashes \
+            -o studio/requirements.lock --quiet
+          git diff --exit-code -- studio/requirements.lock || {
+            echo "::error::studio/requirements.lock is stale; regenerate with the command in its header."
+            exit 1
+          }
+
+      # `.venv/bin/...` rather than `uv run`, which would try to re-resolve the project environment.
+      - name: ruff
+        run: .venv/bin/ruff check studio/
+
+      - name: black
+        run: .venv/bin/black --check studio/
+
+      # --strict on the two packages that must stay pure; the pyproject baseline covers the rest.
+      - name: mypy
+        run: |
+          .venv/bin/mypy --strict studio/schema studio/science
+          .venv/bin/mypy
+
+      # Tier B (full-case golden reproduction against the archived ensemble) is NOT run here: the
+      # runs/ tree is gitignored and regenerable, so it does not exist on a fresh clone, and the
+      # cases take minutes each (ADR-009). It is nightly/manual on a machine that has them.
+      - name: pytest (tier A)
+        run: .venv/bin/pytest studio/tests -m tier_a -q
