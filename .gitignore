@@ -21,3 +21,8 @@ coupled/paper_ensemble/overnight_launch.log
 # archived MATLAB snapshots kept locally in the leftover gas_phase_chemistry/ dir
 # (the model itself moved to the stratchem-jax submodule)
 gas_phase_chemistry/
+
+# Plume Studio: secrets (studio/.env.example is the committed template) and the local runtime tree
+# -- SQLite database and run artefacts, both regenerable and both machine-specific
+.env
+var/
