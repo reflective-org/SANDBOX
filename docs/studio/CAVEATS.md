@@ -8,6 +8,15 @@ ones that arise from *configuring and comparing* runs.
 
 ---
 
+## The box has no temperature feedback, by decision
+
+Studio refuses `switches.heating_to_t` (schema 0.2.0). The model can enable a radiative heating term,
+but that term is **shortwave-only** — there is no longwave cooling in the radiative calculation
+(AD-5.4) — so switching it on produces a one-sided ~+1.2 K / 10 d warm drift that is an artefact of
+the missing cooling, not a physical response. Every run is therefore **isothermal at the configured
+temperature**, and a result must not be read as containing a plume-warming signal. Decision by Ali,
+2026-08-13; revisit when longwave cooling lands (SCIENCE-4, issue #56).
+
 ## Top-level caveats — shown on every results view
 
 ### The definition of t = 0 is unresolved, and it dominates particle number

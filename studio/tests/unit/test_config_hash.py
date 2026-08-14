@@ -27,8 +27,11 @@ from studio.schema import RunConfig, canonical_json, canonical_payload, config_h
 from studio.schema.hashing import CANONICAL_FORM_VERSION
 
 #: SHA-256 of the canonical JSON of ``RunConfig()`` -- the paper ensemble's golden case, which is
-#: also the schema's default configuration. Tied to SCHEMA_VERSION 0.1.0 and canonical form 1.
-GOLDEN_DEFAULT_HASH = "629fc801779ca43a4a7ae43d74c43f3221b213d78e36c1dfce1e94f17d46cbe3"
+#: also the schema's default configuration. Tied to SCHEMA_VERSION 0.2.0 and canonical form 1.
+#: Moved from ...46cbe3 when 0.2.0 refused the temperature feedback: the VALUE of heating_to_t did
+#: not change (False either way), but schema_version is part of the hashed payload, which is what
+#: makes "old configs are never silently reinterpreted under new semantics" true rather than stated.
+GOLDEN_DEFAULT_HASH = "e9d207b91d74d45076433cdd25b0f3b59f365dbefd4f8c1b47afe1fdc2373ab4"
 
 
 @pytest.mark.tier_a

@@ -105,7 +105,7 @@ def test_round_trip_survives_a_non_default_config() -> None:
             "microphysics": {"n_bins": 160, "condensation_alpha": 0.5, "ion_pair_rate": 0.0},
             "chemistry": {"photolysis": "sza", "so2_ho2_rate": 1e-16},
             "numerics": {"output_dt_s": 1200.0, "couple_dt_s": 300.0},
-            "switches": {"heating_to_t": True},
+            "switches": {"aerosol_to_j": True},  # heating_to_t is refused (schema 0.2.0)
             "termination": {"max_wall_time_s": 60.0, "max_sim_time_days": 5.0},
         }
     )
@@ -139,6 +139,32 @@ def test_background_evolves_accepts_only_false() -> None:
     payload["dilution"]["background_evolves"] = True
     with pytest.raises(ValueError, match="background_evolves"):
         RunConfig.model_validate(payload)
+
+
+@pytest.mark.tier_a
+def test_the_temperature_feedback_cannot_be_enabled() -> None:
+    """Decision (Ali, 2026-08-13): no temperature feedback while longwave radiation is missing.
+
+    The model's heating term is shortwave-only, so enabling it does not make the thermodynamics
+    more complete -- it makes them one-sided, and the resulting ~+1.2 K / 10 d drift is an artefact
+    of the absent cooling. Refused outright rather than defaulted off, so it cannot be turned on by
+    a form, a YAML file or a sweep axis without the schema changing first.
+    """
+    payload = RunConfig().model_dump()
+    payload["switches"]["heating_to_t"] = True
+    with pytest.raises(ValueError, match="heating_to_t"):
+        RunConfig.model_validate(payload)
+    assert RunConfig().switches.heating_to_t is False
+
+
+@pytest.mark.tier_a
+def test_a_sweep_cannot_enable_the_temperature_feedback_either() -> None:
+    """The axis path is the one that would slip past a UI-level guard."""
+    from studio.schema import Axis, RunSet
+
+    runset = RunSet(axes=(Axis.over("heating", "switches.heating_to_t", {"on": True}),))
+    with pytest.raises(ValueError, match="heating_to_t"):
+        runset.expand()
 
 
 @pytest.mark.tier_a
