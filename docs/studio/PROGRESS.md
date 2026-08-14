@@ -28,6 +28,28 @@ Nothing is built on top of `studio/schema` until 0.2 is reviewed and merged.
 
 ---
 
+### 2026-08-13 — Branching: `studio/dev` becomes the integration branch
+
+Not a task; a workflow decision taken after task 0.1 merged (#59).
+
+Studio tasks now branch off **`studio/dev`** and PR into it; `studio/dev` merges into `main` at
+phase boundaries. `main` therefore sees Studio in reviewed batches rather than one task at a time,
+while the model and viz work continues on `main` untouched. `studio-ci.yml` runs on pushes to both
+branches, so a merge is verified and not just the PR that preceded it.
+
+This amends the "trunk-based" line in `studio/CLAUDE.md` rather than leaving the documented workflow
+disagreeing with the actual one. Task 0.1 pre-dates the change and went straight into `main`.
+
+Two operational notes, both learned the hard way while landing #59:
+
+- `gh pr create` defaults to the repository's default branch. Studio PRs must pass
+  `--base studio/dev` explicitly.
+- **Merge `main` into `studio/dev` regularly.** A conflicted PR is not merely blocked, it is
+  silently *untested*: GitHub cannot build the merge ref, so no workflow runs at all and the PR
+  shows no checks rather than a failure.
+
+---
+
 ### 2026-08-13 — Task 0.1 (cont.): toolchain, CI and the lockfile
 
 Closes 0.1. Still no runnable app code — the point of this half is that the next task's code has
