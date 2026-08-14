@@ -22,7 +22,8 @@ from dataclasses import asdict, dataclass, field
 # by form validation and must stay cheap to import and to build (see coupled/backgrounds.py).
 # Absolute (not relative) because this module is also imported FLAT as ``coupled_scenario`` with
 # coupled/ on sys.path -- see coupled/conftest.py -- where a relative import has no package to resolve.
-from coupled.backgrounds import BACKGROUND_MODES, TABULATED_BACKGROUND
+from coupled.backgrounds import (BACKGROUND_MODES, MODE_BASES, TABULATED_BACKGROUND,
+                                 normalize_modes)
 
 #: Photolysis drivers understood by the model (validated -> no silent mis-gate of the sulfur chain).
 PHOTOLYSIS_MODES = ("reference", "sza", "tuvx")
@@ -125,10 +126,17 @@ class CoupledScenario:
     # both span dry Dp 1.7 nm - 17.5 um. Everything downstream (initial state, Mie table, optics)
     # follows the state's own xk grid.
     tomas_nbins: int = 40
-    # Background aerosol size distribution seeded into the initial TomasState. "redcircles" (Marianna,
-    # default) uses the tabulated loader; "sabr_330"/"sabr_220"/"cesm_g6" seed a (multi-)lognormal
-    # from coupled.backgrounds.BACKGROUND_MODES (digitized from SABR/CESM plots -- see paper_ensemble).
-    background_dist: str = TABULATED_BACKGROUND
+    # Background aerosol size distribution seeded into the initial TomasState. Either a NAME --
+    # "redcircles" (Marianna, default) uses the tabulated loader, "sabr_330"/"sabr_220"/"cesm_g6"/...
+    # seed a (multi-)lognormal from coupled.backgrounds.BACKGROUND_MODES (digitized from SABR/CESM
+    # plots -- see paper_ensemble) -- or a USER-SUPPLIED list of lognormal modes
+    # [(N [cm^-3], Dg [um], sigma_g), ...] on a DIAMETER basis, normalized to a tuple of tuples.
+    background_dist: str | tuple = TABULATED_BACKGROUND
+    # Number basis of a USER-SUPPLIED background_dist mode list: "stp" or "ambient". REQUIRED for a
+    # mode list and REJECTED for a name (the named sets carry their own basis via
+    # backgrounds.AMBIENT_BACKGROUNDS). Not defaulted: the STP->ambient factor is ~0.09 at
+    # 68 mbar/210 K, so a wrong basis is an order-of-magnitude error in N (see backgrounds.py).
+    background_modes_basis: str = ""
     # Rate constant [cm^3/molec/s] for SO2 + HO2 -> SO3 + OH (JPL 19-5 I34). JPL gives only an UPPER
     # LIMIT (~1e-18) and recommends NO products, so this is a deliberate sensitivity knob: 0.0
     # eliminates the channel; 1e-18/1e-17/1e-16 scan the plausible range. Only active in the sulfur
@@ -199,9 +207,26 @@ class CoupledScenario:
             raise ValueError(f"condensation_alpha must be in (0, 1], got {self.condensation_alpha}")
         if self.coag_kernel_scale < 0.0:   # now wired (AD-7.2): free multiplier on the coag kernel
             raise ValueError(f"coag_kernel_scale must be >= 0, got {self.coag_kernel_scale}")
-        if str(self.background_dist) not in (TABULATED_BACKGROUND, *BACKGROUND_MODES):
-            raise ValueError(f"background_dist must be {TABULATED_BACKGROUND!r} or one of "
-                             f"{sorted(BACKGROUND_MODES)}, got {self.background_dist!r}")
+        if isinstance(self.background_dist, str):
+            if self.background_dist not in (TABULATED_BACKGROUND, *BACKGROUND_MODES):
+                raise ValueError(f"background_dist must be {TABULATED_BACKGROUND!r}, one of "
+                                 f"{sorted(BACKGROUND_MODES)}, or a list of (N, Dg, sigma_g) "
+                                 f"lognormal modes, got {self.background_dist!r}")
+            if self.background_modes_basis:
+                raise ValueError(
+                    f"background_modes_basis={self.background_modes_basis!r} applies only to a "
+                    f"user-supplied background_dist mode list; the named distribution "
+                    f"{self.background_dist!r} carries its own basis (backgrounds."
+                    f"AMBIENT_BACKGROUNDS). Leave it empty.")
+        else:                                   # user-supplied lognormal modes
+            self.background_dist = normalize_modes(self.background_dist)
+            if self.background_modes_basis not in MODE_BASES:
+                raise ValueError(
+                    f"a user-supplied background_dist mode list needs an explicit "
+                    f"background_modes_basis, one of {list(MODE_BASES)}; got "
+                    f"{self.background_modes_basis!r}. It is not defaulted because the STP->ambient "
+                    f"factor is ~0.09 at 68 mbar/210 K -- guessing it is an order-of-magnitude "
+                    f"error in the background number concentration.")
         if self.dt_couple > self.DT:
             raise ValueError(f"dt_couple ({self.dt_couple}) must be <= output step DT ({self.DT})")
         # dt_couple drives sub-stepping within an output interval, so DT must be a whole multiple of it

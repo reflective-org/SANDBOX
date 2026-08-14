@@ -98,6 +98,59 @@ def test_bad_background_dist_raises():
         CoupledScenario(background_dist="sabr_999")   # not a known name
 
 
+# --- user-supplied lognormal background modes ------------------------------------------------
+_USER_MODES = [(50.0, 0.10, 1.6), (2.0, 0.5, 1.4)]
+
+
+def test_user_modes_are_accepted_and_canonicalized():
+    sc = CoupledScenario(background_dist=_USER_MODES, background_modes_basis="stp")
+    # lists (as YAML/JSON hand them back) canonicalize to a tuple of float 3-tuples
+    assert sc.background_dist == ((50.0, 0.10, 1.6), (2.0, 0.5, 1.4))
+    assert all(isinstance(v, float) for mode in sc.background_dist for v in mode)
+
+
+def test_user_modes_round_trip_through_yaml(tmp_path):
+    sc = CoupledScenario(background_dist=_USER_MODES, background_modes_basis="ambient")
+    p = tmp_path / "s.yaml"
+    sc.save(str(p))
+    assert CoupledScenario.load(str(p)).to_dict() == sc.to_dict()
+
+
+def test_user_modes_require_an_explicit_basis():
+    # The STP->ambient factor is ~0.09 at 68 mbar/210 K, so the basis is an order-of-magnitude
+    # decision and must never be defaulted.
+    with pytest.raises(ValueError, match="background_modes_basis"):
+        CoupledScenario(background_dist=_USER_MODES)
+    with pytest.raises(ValueError, match="background_modes_basis"):
+        CoupledScenario(background_dist=_USER_MODES, background_modes_basis="STP")   # not a member
+
+
+def test_named_background_rejects_a_basis():
+    # the named sets carry their own basis (backgrounds.AMBIENT_BACKGROUNDS); accepting a
+    # contradicting one here would let a config claim a conversion that never happens
+    with pytest.raises(ValueError, match="background_modes_basis"):
+        CoupledScenario(background_dist="sabr_220", background_modes_basis="ambient")
+
+
+@pytest.mark.parametrize("modes, why", [
+    ([], "empty"),
+    ([(0.0, 0.1, 1.6)], "N == 0"),
+    ([(-1.0, 0.1, 1.6)], "N < 0"),
+    ([(50.0, 0.0, 1.6)], "Dg == 0"),
+    ([(50.0, -0.1, 1.6)], "Dg < 0"),
+    ([(50.0, 0.1, 1.0)], "sigma_g == 1 -> log10(sigma_g) = 0, a divide by zero"),
+    ([(50.0, 0.1, 0.8)], "sigma_g < 1"),
+    ([(50.0, 0.1)], "not a 3-tuple"),
+    ([(50.0, 0.1, 1.6, 2.0)], "too long"),
+    ([50.0], "not a tuple at all"),
+    ([(50.0, 0.1, "wide")], "non-numeric"),
+    (42, "not a sequence"),
+])
+def test_degenerate_user_modes_raise(modes, why):
+    with pytest.raises(ValueError):
+        CoupledScenario(background_dist=modes, background_modes_basis="stp"), why
+
+
 # ---------------------------------------------------------------------------------------------
 # Constructing a scenario must not import JAX.
 #

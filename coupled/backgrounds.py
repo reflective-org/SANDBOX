@@ -10,6 +10,16 @@ to do it pulled in ``jax`` (which also sets ``jax_enable_x64``) -- ~1 s on the f
 **This module must stay free of numpy/jax/scipy and of any ``coupled`` sibling that imports them.**
 It is pure data + pure-Python validation; ``tomas_bridge`` re-exports the tables (so existing
 ``tomas_bridge.BACKGROUND_MODES`` references keep working) and does the actual seeding.
+
+A scenario's ``background_dist`` is either
+
+* a NAME -- :data:`TABULATED_BACKGROUND` or a key of :data:`BACKGROUND_MODES`. Each named mode set
+  carries its own number basis: it is ambient iff its name is in :data:`AMBIENT_BACKGROUNDS`.
+* a USER-SUPPLIED list of lognormal modes ``[(N, Dg, sigma_g), ...]``, validated by
+  :func:`normalize_modes`. These carry no basis of their own, so the scenario must state it
+  (``background_modes_basis``, one of :data:`MODE_BASES`). That is required, not defaulted: at
+  68 mbar / 210 K the STP->ambient factor is ~0.09, so picking the wrong basis is an
+  order-of-magnitude error in N, not a rounding difference.
 """
 
 from __future__ import annotations
@@ -17,6 +27,11 @@ from __future__ import annotations
 #: The tabulated (non-lognormal) background: Marianna's digitized "red circles" distribution,
 #: loaded by ``background_aerosol_distribution.get_initial_state`` in ``tomas_bridge``.
 TABULATED_BACKGROUND = "redcircles"
+
+#: Allowed ``CoupledScenario.background_modes_basis`` values for a user-supplied mode list.
+#: "stp" -- N is a standard-temperature-and-pressure number density, converted to ambient on
+#: seeding (as the digitized SABR/CESM sets are); "ambient" -- N is already at the box T, P.
+MODE_BASES = ("stp", "ambient")
 
 # --- background aerosol size distributions as (multi-)lognormal modes, DIAMETER basis. Each entry is
 # a list of (N [cm^-3, STP], Dg [um], sigma_g). DIGITIZED (approximate) from the SABR / CESM plots the
@@ -41,3 +56,47 @@ BACKGROUND_MODES = {
 }
 # mode sets specified at AMBIENT conditions (seeding skips the STP->ambient factor)
 AMBIENT_BACKGROUNDS = {"aer_geo", "cesm_g6_amb"}
+
+
+def normalize_modes(modes) -> tuple[tuple[float, float, float], ...]:
+    """Validate a user-supplied lognormal mode list; return it as a tuple of ``(N, Dg, sigma_g)``.
+
+    Units follow :data:`BACKGROUND_MODES`: ``N`` [cm^-3], ``Dg`` [um] on a DIAMETER basis,
+    ``sigma_g`` dimensionless.
+
+    ``N`` and ``Dg`` must be > 0 and ``sigma_g`` > 1. A non-positive N or Dg is not a distribution
+    at all; ``sigma_g <= 1`` collapses the lognormal to a delta function, and at exactly 1
+    ``log10(sigma_g) == 0`` divides by zero inside the dN/dlogDp evaluation. Seeding any of those
+    gives a silently degenerate background rather than an error, which is the whole point of
+    validating here.
+
+    Returned as a tuple of tuples so a mode list round-trips to a stable canonical form through
+    YAML/JSON (which hand back lists).
+    """
+    if isinstance(modes, (str, bytes)) or not isinstance(modes, (list, tuple)):
+        raise ValueError(
+            f"background_dist must be a name ({TABULATED_BACKGROUND!r} or one of "
+            f"{sorted(BACKGROUND_MODES)}) or a list of (N, Dg, sigma_g) lognormal modes, "
+            f"got {type(modes).__name__}")
+    if len(modes) == 0:
+        raise ValueError("background_dist mode list is empty; give at least one "
+                         "(N [cm^-3], Dg [um], sigma_g) mode")
+    out: list[tuple[float, float, float]] = []
+    for i, mode in enumerate(modes):
+        if isinstance(mode, (str, bytes)) or not isinstance(mode, (list, tuple)) or len(mode) != 3:
+            raise ValueError(f"background_dist mode {i} must be a 3-tuple "
+                             f"(N [cm^-3], Dg [um], sigma_g), got {mode!r}")
+        try:
+            N, Dg, sigma_g = (float(v) for v in mode)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"background_dist mode {i} has non-numeric entries: {mode!r}") from exc
+        if not N > 0.0:
+            raise ValueError(f"background_dist mode {i}: N must be > 0 cm^-3, got {N}")
+        if not Dg > 0.0:
+            raise ValueError(f"background_dist mode {i}: Dg must be > 0 um, got {Dg}")
+        if not sigma_g > 1.0:
+            raise ValueError(f"background_dist mode {i}: sigma_g must be > 1 (sigma_g <= 1 is a "
+                             f"degenerate lognormal; == 1 divides by log10(sigma_g) = 0), "
+                             f"got {sigma_g}")
+        out.append((N, Dg, sigma_g))
+    return tuple(out)

@@ -23,7 +23,7 @@ import sys
 # validation can reach them without importing this one. Re-exported here because the paper scripts and
 # docs refer to ``tomas_bridge.BACKGROUND_MODES``; this module remains where they are USED.
 from .backgrounds import (BACKGROUND_MODES, AMBIENT_BACKGROUNDS,  # noqa: F401  (re-export)
-                          TABULATED_BACKGROUND)
+                          MODE_BASES, TABULATED_BACKGROUND, normalize_modes)
 
 # gas model on path first (for the water-activity calc used to set RH) -- model_bridge does the insert.
 from . import model_bridge  # noqa: F401  (side effect: puts gas_phase_chemistry on sys.path)
@@ -115,7 +115,12 @@ def _seed_lognormal(xk_np, boxvol, modes, temp, pres, ambient=False):
 
 
 def initial_tomas_state(scenario) -> TomasState:
-    """Build the initial ``TomasState`` from the scenario using the Marianna 'redcircles' distribution.
+    """Build the initial ``TomasState`` from the scenario's background aerosol distribution.
+
+    ``scenario.background_dist`` is either a NAME -- ``"redcircles"`` (Marianna, the tabulated
+    loader) or a key of ``BACKGROUND_MODES`` -- or a USER-SUPPLIED list of ``(N, Dg, sigma_g)``
+    lognormal modes, in which case ``scenario.background_modes_basis`` ("stp" / "ambient") states
+    the number basis, since a bare mode list carries none (see coupled/backgrounds.py).
 
     Gc is all-zero: gaseous H2SO4 is handed in by the driver each outer step (the gas model owns it).
     Number/mass are per grid cell (``boxvol=BOXVOL_CM3``); T in K, P in Pa (scenario.P is mbar).
@@ -128,12 +133,22 @@ def initial_tomas_state(scenario) -> TomasState:
         raise ValueError(f"tomas_nbins must be 40, 80, or 160, got {nbins}")
     pres_pa = scenario.P * 100.0                       # mbar -> Pa (TOMAS uses Pa)
     xk = _grid_for(nbins)
-    bg = str(getattr(scenario, "background_dist", "redcircles"))
-    if bg in BACKGROUND_MODES:
+    bg = getattr(scenario, "background_dist", TABULATED_BACKGROUND)
+    if not isinstance(bg, str):
+        # user-supplied lognormal modes; the basis is explicit (CoupledScenario enforces it, and it
+        # is re-checked here because initial_tomas_state accepts any scenario-shaped object)
+        modes = normalize_modes(bg)
+        basis = str(getattr(scenario, "background_modes_basis", ""))
+        if basis not in MODE_BASES:
+            raise ValueError(f"a user-supplied background_dist mode list needs "
+                             f"background_modes_basis in {list(MODE_BASES)}, got {basis!r}")
+        Nk_np, Mk_np = _seed_lognormal(np.asarray(xk), BOXVOL_CM3, modes,
+                                       scenario.T, pres_pa, ambient=basis == "ambient")
+    elif bg in BACKGROUND_MODES:
         # seed a (multi-)lognormal background (SABR / CESM) on our grid
         Nk_np, Mk_np = _seed_lognormal(np.asarray(xk), BOXVOL_CM3, BACKGROUND_MODES[bg],
                                        scenario.T, pres_pa, ambient=bg in AMBIENT_BACKGROUNDS)
-    elif bg == "redcircles":
+    elif bg == TABULATED_BACKGROUND:
         if nbins in (40, 80):
             # validated paths: get_initial_state special-cases 80 (sqrt2); 40 uses ratio 2.0.
             Nk_np, Mk_np = _bad.get_initial_state(
@@ -146,8 +161,8 @@ def initial_tomas_state(scenario) -> TomasState:
             f = _bad.stp_to_ambient_factor(scenario.T, pres_pa)   # STP dN/dlogDp -> ambient
             Nk_np, Mk_np = Nk_np * f, Mk_np * f
     else:
-        raise ValueError(f"unknown background_dist {bg!r}; valid: 'redcircles' + "
-                         f"{sorted(BACKGROUND_MODES)}")
+        raise ValueError(f"unknown background_dist {bg!r}; valid: {TABULATED_BACKGROUND!r}, "
+                         f"{sorted(BACKGROUND_MODES)}, or a list of (N, Dg, sigma_g) modes")
     Nk = jnp.asarray(Nk_np, dtype=jnp.float64)
     Mk = jnp.asarray(Mk_np, dtype=jnp.float64)
     Gc = jnp.zeros(tcfg.N_GAS_SPECIES, dtype=jnp.float64)

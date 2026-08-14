@@ -137,7 +137,11 @@ other figure module:
 - **New background aerosol**: add a mode to `BACKGROUND_MODES` in `coupled/backgrounds.py`
   (number, median diameter, σg; add it to `AMBIENT_BACKGROUNDS` if the numbers are ambient
   rather than STP) and reference it via `CoupledScenario(background_dist=...)`. Re-exported as
-  `tomas_bridge.BACKGROUND_MODES`, which is where it is consumed.
+  `tomas_bridge.BACKGROUND_MODES`, which is where it is consumed. For a one-off, pass the modes
+  inline instead of naming them:
+  `CoupledScenario(background_dist=[(50.0, 0.10, 1.6)], background_modes_basis="stp")` —
+  `(N [cm⁻³], Dg [µm] diameter basis, σg)`, N > 0, Dg > 0, σg > 1, and the basis
+  (`"stp"`/`"ambient"`) is **required**, since the STP→ambient factor is ~0.09 at 68 mbar/210 K.
 - **Scenario knobs** (`coupled/coupled_scenario.py`): `nucleation_rate_scale` and
   `coag_kernel_scale` are pure multipliers; `condensation_alpha` is the absolute
   accommodation coefficient; plus `ion_pair_rate`, `so2_ho2_rate`, `dilution_regime`,
