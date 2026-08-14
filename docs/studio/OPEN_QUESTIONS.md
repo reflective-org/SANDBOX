@@ -204,6 +204,27 @@ required. Until then `background_evolves` is a schema field whose only accepted 
 
 ---
 
+### SCIENCE-6 — GCR ion-pair production rate has no derivation · **OPEN** · Phase 0/4 · [#63](https://github.com/reflective-org/SANDBOX/issues/63)
+*What is the ion-pair production rate as a function of altitude, latitude and solar-cycle phase?*
+
+Raised by task 0.5. The two values available in the repository are an **uncited constant** and a
+value that **switches off a physical process**: the paper ensemble uses a bare `30.0` cm⁻³ s⁻¹
+(`run_ensemble.py:102`, described in `TABLE_microphysics_parameters.md` as "galactic cosmic rays at
+~20 km"), and the model defaults to `0.0`, which disables ion-induced nucleation entirely
+(`coupled/coupled_scenario.py:117`).
+
+It feeds the ion-induced channels of Dunne et al. (2016) nucleation — the most sensitive part of this
+system. GCR ionisation varies by roughly a factor of two over the solar cycle and strongly with
+latitude and altitude, so one number is wrong nearly everywhere except where it was read off.
+
+`studio/science/gcr.py` therefore raises `NotImplementedError` rather than interpolating an uncited
+number, and exposes `PAPER_ENSEMBLE_ION_PAIR_RATE = 30.0` as a constant with its provenance attached.
+
+**Answered when** either a citable parameterisation is agreed and implemented with its reference, or
+the decision is recorded that the fixed value stands, with its sensitivity quantified.
+
+---
+
 ## Register of capabilities the spec assumes but the model does not have
 
 Not open questions — settled facts, listed here because the spec's stage descriptions imply

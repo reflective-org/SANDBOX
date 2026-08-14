@@ -83,16 +83,20 @@ construction. It is a data-model problem, not a UI problem.
 
 ---
 
-## 0.5 — `studio/science` derivations
+## 0.5 — `studio/science` derivations · *done* (issue #64)
 
 One cited, tested implementation of each derivation that currently exists several times over.
 
 **Consolidate:**
-- V₀ and mass → initial concentration — five copies today (`run_ensemble.py:41-46`,
-  `run_dilution_d1_clean.py:61`, `run_60day.py:37`, `viz/bake_plume_dynamics.py:63`, `run_boxsize.py`),
-  with two different V₀ values.
-- dN/dlogDp and bin edges — four copies, two mid-point expressions
-  (`run_ensemble.py:146-149` vs `run_dilution_d1_clean.py:588-590`).
+- V₀ and mass → initial concentration — **six** copies today, not five: `run_ensemble.py:41-46,95`,
+  `run_60day.py:37`, `make_rf_runs.py:44`, `viz/bake_plume_dynamics.py:62-63`,
+  `coupled/run_dilution_d1_clean.py:61,130` (note: at `coupled/`, not `coupled/paper_ensemble/`),
+  and `run_boxsize.py:43`. Two different V₀ values — a 15 km track and a 30 km one, a factor of two.
+- dN/dlogDp and bin edges — four copies, written two ways. **Corrected by 0.5:** the two
+  expressions (`run_ensemble.py:147-149` vs `coupled/run_dilution_d1_clean.py:587-589`) are
+  *algebraically identical*, not two conventions — `10**(0.5*(log a + log b)) == sqrt(a*b)` — and
+  measured agreement on an 80-bin grid is to a few ULP (≤ 7e-16 relative). The consolidation is
+  still worth doing; the divergence claim was not accurate.
 
 **Reuse, do not rewrite:** `coupled/dilution.py:62` `volume_ratio` and `:74` `kdil_from_regime` (both
 tested); `air_number_density` (`stratchem-jax/config.py:55`); `coupled/aerosol_props.py`;

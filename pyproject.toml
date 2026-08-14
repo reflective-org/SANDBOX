@@ -79,7 +79,10 @@ markers = [
 # ----------------------------------------------------------------------------------------------
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+# Studio's floor is 3.12, not the model's >=3.10: the lockfile is compiled for 3.12, CI runs 3.12,
+# and numpy's bundled type stubs use 3.12-only `type` statements, so mypy cannot check this package
+# against anything older. All three tools state the same floor deliberately.
+target-version = "py312"
 src = ["."]
 extend-exclude = ["studio/web"]
 
@@ -101,11 +104,11 @@ ignore = ["ANN401"]
 
 [tool.black]
 line-length = 100
-target-version = ["py311"]
+target-version = ["py312"]
 extend-exclude = "studio/web"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 # --strict is applied to studio/schema and studio/science on the command line and in CI; the settings
 # here are the baseline for everything else under studio/.
 files = ["studio"]
