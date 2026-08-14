@@ -315,3 +315,56 @@ def _wait_for_state(
             return
         time.sleep(0.02)
     raise AssertionError(f"job {job_id} never reached {state}")
+
+
+class TestMaxSimTimeStopCondition:
+    """The ``stop_condition`` this layer hands the model, and the shape it must have.
+
+    Pure-function tests: no model run, but they pin the coupling that PR #73 exposed. The model
+    dispatches on the callback's DECLARED ARITY and raises ``TypeError`` on ``*args`` -- correctly,
+    since a variadic callback matches both shapes and guessing would be a silent wrong answer. That
+    makes the arity part of this function's contract rather than an implementation detail, so it is
+    asserted here where a change is cheap to notice.
+    """
+
+    @pytest.mark.tier_a
+    def test_no_limit_means_no_stop_condition(self) -> None:
+        """``None`` is not a callback that never fires; it is no callback at all."""
+        from studio.modelio.execute import _max_sim_time_stop
+
+        assert _max_sim_time_stop(resolve(RunConfig())) is None
+
+    @pytest.mark.tier_a
+    def test_the_callback_takes_exactly_two_positional_arguments(self) -> None:
+        """Not ``*args``: PR #73 rejects a variadic callback as ambiguous.
+
+        If this assertion ever fails because the shape moved to the diagnostics dict, that is the
+        intended migration -- update it deliberately, in the commit that does the migration.
+        """
+        import inspect
+
+        from studio.modelio.execute import _max_sim_time_stop
+
+        stop = _max_sim_time_stop(_with_sim_limit(2.0))
+        assert stop is not None
+        parameters = list(inspect.signature(stop).parameters.values())
+        assert len(parameters) == 2
+        assert all(p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD for p in parameters)
+
+    @pytest.mark.tier_a
+    def test_it_fires_exactly_at_the_limit(self) -> None:
+        """Boundary included: at the limit the run has reached its cap, not almost reached it."""
+        from studio.modelio.execute import _max_sim_time_stop
+
+        stop = _max_sim_time_stop(_with_sim_limit(2.0))
+        assert stop is not None
+        two_days_s = 2.0 * 86400.0
+        assert stop(two_days_s - 1.0, 12.0) is False
+        assert stop(two_days_s, 12.0) is True
+        assert stop(two_days_s + 1.0, 12.0) is True
+
+
+def _with_sim_limit(days: float) -> ResolvedConfig:
+    payload = RunConfig().model_dump()
+    payload["termination"]["max_sim_time_days"] = days
+    return resolve(RunConfig.model_validate(payload))
