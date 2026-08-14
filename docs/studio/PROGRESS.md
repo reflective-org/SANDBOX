@@ -22,12 +22,61 @@ with full provenance, and the golden tests pass.
 | 0.6 `studio/runner` + job lifecycle | **done** (#72) |
 | 0.7 Golden-file harness (two tiers) | **done** (#70 measured, #79 asserted) |
 | 0.8 Four contained fixes in `coupled/` | not started |
-| 0.9 Vertical slice: CLI + API + minimal UI | not started |
+| 0.9 Vertical slice: CLI + API + minimal UI | **in progress** — 0.9a provenance (#80); 0.9b–e to come |
 
 Task order note: 0.5 was taken **before 0.3**, so the dependency-graph engine has real
 derivations to resolve rather than fixtures.
 
 ---
+
+### 2026-08-14 — Task 0.9a: provenance records (issue #80)
+
+**0.9 is not one PR.** The exit criteria need FastAPI + SQLAlchemy/Alembic on SQLite, a CLI,
+React/Vite with SSE, and a figure from `RunSummary`. Split into 0.9a (this), 0.9b persistence, 0.9c
+CLI, 0.9d API, 0.9e UI + figure. This is the piece nothing implemented and the exit criteria depend
+on: *"produces a stored result **with full provenance**"*.
+
+`studio/modelio/provenance.py`, written by the runner **at submit time**. 17 new Tier-A tests
+(213 total).
+
+**What a record pins**: `config_hash`, `studio.__version__`, the SANDBOX SHA, **all three submodule
+SHAs**, whether each checkout was dirty (with the offending paths), and the **resolved,
+post-derivation** parameter set — what the model actually received, not what the user typed. Plus any
+override with the value in force. `datasets` is present and empty rather than omitted, so its
+emptiness is never ambiguous.
+
+**This is the one place Studio shells out to git, and it is strict about it.** Not-a-checkout,
+git-not-installed, a repo with no commits, or a missing submodule all **raise**: an empty SHA in a
+provenance record is worse than no record, because it looks like an answer (ADR-005). Cleanliness
+comes from `status --porcelain`, not `diff --quiet`, so an **untracked** file counts — an untracked
+module that a run imported is exactly what makes a SHA a lie.
+
+**Written before execution, and proven so.** The test asserts against the record `submit()` returns,
+not after `wait()` — checking afterwards would pass even if it were written at completion. Verified
+end to end: at submit the work dir holds `input.json` + `provenance.json`; on completion, six
+artifacts including `state.npz` and `summary.json`.
+
+**Three times in this task the tests failed and the code was right.** Each was my expectation of git
+being wrong, and each is documented where it will be re-read:
+
+1. A *nested* repo is not a *registered* submodule — the parent reports the nested one as untracked
+   and so reads dirty. The fixture was lying about the shape of a real checkout; it now uses
+   `git submodule add`.
+2. A dirty submodule flags **both** it and the parent, because the parent's recorded pointer no
+   longer matches the working tree. That is git being helpful: an edited submodule cannot hide behind
+   a clean-looking SANDBOX.
+3. `protocol.file.allow=always` is needed for local-path submodules (CVE-2022-39253).
+
+The tests build **real git repositories** rather than mocking `subprocess`: the module is a thin
+shell over git's behaviour, so a mocked git would test the mock. ~1 s, worth it.
+
+**A fourth thing CI caught that local tests could not.** Making provenance mandatory at submit means
+the runner now needs a pinnable checkout — and CI checks out no submodules, so every runner submit
+test failed there while passing locally. The fix is a `repo_root` parameter on the runner (which
+checkout to record), pointed at the shared synthetic-checkout fixture in the tests. It does **not**
+weaken the guarantee: a run still cannot start unless the checkout it names can be pinned, and the
+production default is the real one. "Which checkout produced this?" is a question a runner genuinely
+has to answer — a worker executing code from elsewhere would answer it differently.
 
 ### 2026-08-14 — Task 0.7 (second half): the two-tier golden harness
 
