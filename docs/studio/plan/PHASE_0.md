@@ -112,7 +112,7 @@ Avogadro mismatch at the gas/TOMAS seam. Studio inherits it and does not silentl
 
 ---
 
-## 0.6 — `studio/runner` + job lifecycle
+## 0.6 — `studio/runner` + job lifecycle · *done* (issue #72)
 
 `JobRunner` Protocol; `LocalSubprocessRunner` launching `python -m studio.cli.run` with the
 thread-pinning environment from `launch_parallel.py:26-30`. Lifecycle
