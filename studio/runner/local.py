@@ -15,6 +15,8 @@ the process, that something is ``python -m studio.cli.run``, and its stdout is t
 What is on disk when a job ends, whatever the outcome:
 
 * ``input.json`` -- the RESOLVED config that was actually run
+* ``provenance.json`` -- what produced it: config hash, app version, SANDBOX and submodule SHAs,
+  and whether any checkout was dirty (ADR-006). Written BEFORE the process starts.
 * ``stdout.log`` / ``stderr.log`` -- captured in full
 * the exit code and every state transition, in the record
 
@@ -33,6 +35,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Final
 
+from studio.modelio.provenance import record_for
 from studio.resolve import ResolvedConfig
 from studio.runner.base import JobRecord, JobRegistry, JobState
 
@@ -65,6 +68,12 @@ class LocalSubprocessRunner:
         entry_module: The module launched with ``-m``. Overridable so the LIFECYCLE can be tested
             without a four-minute model run -- the default is the real path, and nothing in this
             class branches on the value. It is a parameter, not a test hook.
+        repo_root: Which checkout to record in each run's provenance. Defaults to the one this code
+            came from, which is what a local runner should record. It is a parameter because
+            "which checkout produced this?" is a real question a runner has to answer -- a worker
+            executing code from elsewhere would answer it differently -- and because CI has no
+            submodules, so the tests point it at a synthetic checkout. **It does not weaken the
+            guarantee**: a run still cannot start unless the checkout it names can be pinned.
         python_executable: Interpreter for the subprocess; defaults to the current one, so a job
             inherits the environment that submitted it rather than whatever is first on PATH.
     """
@@ -76,6 +85,7 @@ class LocalSubprocessRunner:
         max_workers: int = DEFAULT_MAX_WORKERS,
         entry_module: str = "studio.cli.run",
         python_executable: str | None = None,
+        repo_root: Path | None = None,
     ) -> None:
         if max_workers < 1:
             raise ValueError(f"max_workers must be >= 1, got {max_workers}")
@@ -84,6 +94,7 @@ class LocalSubprocessRunner:
         self.max_workers = max_workers
         self.entry_module = entry_module
         self.python_executable = python_executable or sys.executable
+        self.repo_root = repo_root
         self.registry = JobRegistry()
         self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="studio-run")
         self._processes: dict[str, subprocess.Popen[bytes]] = {}
@@ -107,12 +118,19 @@ class LocalSubprocessRunner:
         input_path = work_dir / "input.json"
         input_path.write_text(config.model_dump_json(indent=2), encoding="utf-8")
 
+        # Provenance BEFORE execution (ADR-006). Deliberately not in a try/except: if the model
+        # cannot be pinned, the run must not start. A result whose origin is unknown is worth less
+        # than no result, because it looks like the others.
+        provenance = record_for(config, repo_root=self.repo_root)
+        provenance_path = provenance.write(work_dir / "provenance.json")
+
         record = JobRecord(
             job_id=job_id,
             config_hash=config.config.config_hash(),
             label=label,
             work_dir=work_dir,
             input_path=input_path,
+            provenance_path=provenance_path,
             stdout_path=work_dir / "stdout.log",
             stderr_path=work_dir / "stderr.log",
         ).transition_to(JobState.QUEUED, detail=f"queued for {self.entry_module}")
