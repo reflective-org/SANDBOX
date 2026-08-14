@@ -48,7 +48,7 @@ for another**, even when the two are meant to agree.
 
 ---
 
-### 2026-08-13 — Schema 0.2.0: the temperature feedback is refused, not defaulted off
+### 2026-08-13 — Schema 0.2.0: heating and buoyancy are out of scope, not pending
 
 Ali's decision, and the reason is worth stating precisely: **longwave radiation is not in the
 radiative calculation**, so the model's heating term cannot represent the box's energy balance.
@@ -67,10 +67,23 @@ the hashed payload, which is exactly what makes "old configs are never silently 
 new semantics" true rather than merely stated. A config written yesterday no longer hashes to a
 0.2.0 identity, which is the intended behaviour.
 
-Recorded where a reader would actually look: `CAVEATS.md` gains a top-level entry (every run is
-isothermal at the configured temperature, and a result must not be read as containing a
-plume-warming signal), and SCIENCE-4 is marked **partly answered** — buoyant rise, sedimentation and
-the isobaric assumption remain open.
+**Buoyancy is closed for the same reason** (Ali, same day): a parcel rises in response to a heating
+rate this model cannot compute, so a rise velocity here would be a free parameter dressed as physics.
+Answering either question needs a **different model**, with longwave radiation and plume dynamics —
+so this is a scope boundary, not a gap for a later phase to fill. Consequently **no buoyancy or
+heating-rate fields are added to the schema at all**: a field for a capability the model lacks would
+advertise it, and the absence is the honest interface.
+
+SCIENCE-4 is therefore **answered for heating and buoyancy**. `numerics.box_thermodynamics.*` moves
+in the capability register from "see SCIENCE-4" to "not exposed, by decision".
+
+**Sedimentation stays open, deliberately.** It is a particle-loss process, not a thermodynamic
+response; "we decided not to model heating" is not an argument about gravitational settling, and
+sweeping it into this decision would have quietly closed a question nobody answered.
+
+`CAVEATS.md` says it where a reader of results would look: every run is isobaric and isothermal at
+the configured temperature, and a result must not be read as containing a plume-warming signal, a
+lofting signal, or an altitude change.
 
 Two tests that set `heating_to_t=True` as an innocuous example were updated to use
 `switches.aerosol_to_j` instead. They were not weakened; the value they used simply became illegal.
