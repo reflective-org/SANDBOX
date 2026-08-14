@@ -125,7 +125,7 @@ input file. `run_coupled` prints rather than logs, so stdout is captured as the 
 
 ---
 
-## 0.7 — Golden-file harness · *do this early*
+## 0.7 — Golden-file harness · *done* (measurement #70/#74, harness #79)
 
 **First task is a measurement, not an assertion.** Re-run two archived cases at today's submodule
 SHAs and record the observed per-quantity deviation in
