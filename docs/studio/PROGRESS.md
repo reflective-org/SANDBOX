@@ -20,7 +20,7 @@ with full provenance, and the golden tests pass.
 | 0.4 `studio/modelio` seam + `RunSummary` | **done** (#68) |
 | 0.5 `studio/science` derivations | **done** (#64) |
 | 0.6 `studio/runner` + job lifecycle | **done** (#72) |
-| 0.7 Golden-file harness (two tiers) | not started |
+| 0.7 Golden-file harness (two tiers) | **in progress** — reference deviation measured (#70); assertions not yet written |
 | 0.8 Four contained fixes in `coupled/` | not started |
 | 0.9 Vertical slice: CLI + API + minimal UI | not started |
 
@@ -106,6 +106,37 @@ That set is chosen for the case that actually hurts: a four-minute run that fail
 mock. The fixture module's behaviour arrives by environment variable, set before `submit()`, because
 a directive file written *after* submission races the subprocess start — the standard way process
 tests become flaky.
+
+### 2026-08-13 — Task 0.7 (first half): the reproduction tolerance, measured (issue #70)
+
+ASSUMPTION-2 is settled. Two archived cases re-run at today's SHAs and compared per quantity against
+the archived `state.npz`: the golden case `30N_20km__sabr220__D2med__a1p0__nuc1__cg1` (index 121) and
+a deliberate contrast, `30N_20km__sabr330__burst__a1p0__nuc1__cg1` (index 67) — `burst` dilution and
+the loaded background, the regime where a regime-dependent residual would show. Full record with the
+SHAs, the environment and the per-quantity table:
+[`studio/tests/golden/REFERENCE_TOLERANCES.md`](../../studio/tests/golden/REFERENCE_TOLERANCES.md).
+
+**Reproduction is close but not bit-for-bit.** Every headline quantity agrees to **≤ 2.1e-12**, the
+worst deviation anywhere in either run is **3.4e-12**, and the time axis, `V_ratio`, `T` and the dry
+bin edges are bit-identical. But only ~31 % of gas state-vector elements and ~1 % of aerosol samples
+reproduce exactly, so `atol=0` would have failed on arrival — exactly the outcome ADR-009 was written
+to catch.
+
+Two controls make the reading firm rather than hopeful: running the same case twice **today** is
+bit-identical across all 18 stored arrays (so the residual is environment drift, not run-to-run
+noise), and the worst deviations are scattered across days 1.3–9.8 rather than accumulating (the
+signature of round-off, not of a diverging integration). The `bd289e9` day-12 solver change is
+consistent with being invisible here: a 10-day run never reaches t = 2²⁰ s, so the retry branch is
+never taken.
+
+**The trap worth knowing before writing the assertions:** unguarded relative error over the raw gas
+state vector peaks at **4.2e+04**, entirely on night-time `O1D`/`O` at O(1e-35) molec cm⁻³ — values
+that oscillate about zero, including negative, on a species whose peak is ~3 molec cm⁻³. Golden tests
+must floor by series magnitude or they will fail by four orders of magnitude over an absolute
+difference of 1e-34.
+
+No assertions were written in this pass, by design. Wall clock: ~4.6 min per 10-day / 80-bin case,
+matching BLOCKING-4.
 
 ---
 
