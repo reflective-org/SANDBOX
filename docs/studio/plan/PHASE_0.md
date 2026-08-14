@@ -27,7 +27,7 @@ Delivered as above, with two things worth stating plainly rather than leaving im
 
 ---
 
-## 0.2 — `studio/schema` v0 · **review gate**
+## 0.2 — `studio/schema` v0 · **review gate** · *implemented, awaiting review* (issue #61)
 
 - `SciField(unit=…, range=…, provenance=…, cite=…, derived_from=[…])` over
   `Field(json_schema_extra=…)`.
@@ -44,6 +44,12 @@ Delivered as above, with two things worth stating plainly rather than leaving im
   `CoupledScenario` docstrings, which are unusually good help text already.
 
 **Request review explicitly before building on it.**
+
+Delivered as specified, with two divergences recorded in `PROGRESS.md` rather than absorbed
+silently: `max_sim_time` is optional (simulated time is already bounded by `schedule.duration_days`,
+and a required second bound would need an invented default), and `DilutionRegime.CONSTANT` is
+spelled `"constant"` where the model spells it `""` — the only enum value that is not the model's
+own string, and one the 0.4 equivalence test must cover explicitly.
 
 ---
 

@@ -15,7 +15,7 @@ with full provenance, and the golden tests pass.
 | Task | Status |
 |---|---|
 | 0.1 Repo, CI, docs skeleton | **done** |
-| 0.2 `studio/schema` v0 — **review gate** | not started |
+| 0.2 `studio/schema` v0 — **review gate** | **awaiting review** (#61) |
 | 0.3 Dependency-graph engine + override semantics | not started |
 | 0.4 `studio/modelio` seam + `RunSummary` | not started |
 | 0.5 `studio/science` derivations | not started |
@@ -25,6 +25,68 @@ with full provenance, and the golden tests pass.
 | 0.9 Vertical slice: CLI + API + minimal UI | not started |
 
 Nothing is built on top of `studio/schema` until 0.2 is reviewed and merged.
+
+---
+
+### 2026-08-13 — Task 0.2: `studio/schema` v0 · **awaiting review** (issue #61)
+
+The review gate. Nothing is built on top of this until it is reviewed and merged.
+
+**Added** — `studio/schema/`: `units.py` (closed canonical registry), `fields.py` (`SciField`,
+`Provenance`), `enums.py`, `config.py` (`RunConfig` and its ten groups), `runset.py` (`RunSet`,
+`Axis`, expansion), `hashing.py` (canonical JSON + SHA-256), `export.py` (JSON Schema + flat field
+catalogue). 41 leaf fields, every one carrying unit, description, range and provenance. Four test
+modules, 61 tests, all Tier A.
+
+**The load-bearing decisions**
+
+- **Provenance is required and its rules are enforced at import time.** `MODEL_DEFAULT` and
+  `PAPER_ENSEMBLE` must give a `source`; `LITERATURE` must give a `cite`; `DERIVED` must give
+  `derived_from` and must *not* give a value. A field whose default has no recorded origin cannot be
+  declared — which is the one failure mode `studio/CLAUDE.md` is most emphatic about, made
+  structural rather than aspirational.
+- **Defaults are the paper ensemble's, not the model's**, where they differ (ASSUMPTION-5). The
+  visible case is `ion_pair_rate`: the model defaults to 0.0, which disables ion-induced nucleation
+  entirely, while the ensemble uses 30 cm⁻³ s⁻¹. Both are recorded, with the divergence stated on
+  the field.
+- **`RunConfig()` with no arguments is the golden case.** That is not a convenience: it is the
+  form's opening state and the base of every RunSet.
+- **Identity contains only what changes the result.** No `label`, `notes` or `output_dir` field —
+  two runs differing only in a name are the same computation. Labels live on `ExpandedRun`.
+- **The hash is pinned by a test**, not merely asserted self-consistent, and checked across four
+  `PYTHONHASHSEED`s in fresh interpreters. Canonical form: sorted keys, no padding, `allow_nan=False`
+  (NaN raises rather than emitting a token no other parser reads back).
+- **`RunSet` reproduces the 810-run ensemble** — same count, same order, same case IDs, verified
+  against the golden case at index 121. This is the strongest available evidence that the axis model
+  is faithful to what this project actually does, and it is why `LIST` exists: the site axis covaries
+  latitude, T, p and H₂O, and its cross product is not physically meaningful.
+- **Model validation is mirrored where it is cheap** — the `DT`/`dt_couple` divisibility rule, the
+  40/80/160 bin grids, `background_evolves` accepting only `false` (SCIENCE-5). Each mirror cites the
+  model line it copies. ADR-002's third motivating problem was that a form cannot learn what is valid
+  without importing most of the model; this is the answer to it.
+
+**Divergences from the plan, stated rather than absorbed**
+
+- `max_sim_time` is **optional**, not required. Task 0.6 says both limits are required; but simulated
+  time is already bounded by `schedule.duration_days`, so a required second copy would be redundant,
+  and inventing a default ceiling would be a fabricated number. It is an optional *lower* ceiling.
+  `max_wall_time_s` is required and defaults to 3600 s (ASSUMPTION-4).
+- `DilutionRegime.CONSTANT` is spelled `"constant"`, while the model spells it `""`. An empty string
+  is not a usable dropdown key. This is the **only** enum value that is not the model's own string,
+  it is flagged at the point of deviation, and task 0.4's equivalence test must cover it explicitly.
+
+**Deliberately not done** — no physics: `plume_volume_cm3` and `so2_initial_pptv` are declared with
+`derived_from` and left unresolved (0.3 resolves, 0.5 derives). No species-name validation: the
+species list belongs to the model, so `studio/modelio` validates at the seam. No preset library: the
+paper ensemble's axes live in the test, and earn a home in `studio/` when 0.4 or 0.7 needs them.
+
+**Found while writing it:** `resolve_path` initially accepted a path naming a whole group. The test
+caught it. Groups are now rejected — they have no unit, no provenance and no node in the dependency
+graph 0.3 builds from leaf paths.
+
+**One interpreter-level assumption**, recorded in `hashing.py`: float formatting via `repr` has been
+the shortest round-tripping decimal since Python 3.1, so the canonical form is stable across the
+versions this project supports. The pinned-hash test is what would catch that changing.
 
 ---
 

@@ -15,9 +15,17 @@ uses, plus the repository-specific names that are otherwise unguessable.
 **RunSet** — the primary user-facing object: a base `RunConfig` plus zero or more **axes**. A single
 run is a RunSet with zero axes, so there is no separate code path for N = 1.
 
-**Axis** — a schema path marked as varying, either `{path, values: [...]}` or
-`{path, range: {start, stop, n, spacing}}`. Expanded by **GRID** (Cartesian product), **ZIP**
-(paired), or **LIST** (explicit configs).
+**Axis** — one dimension of a sweep: a name, a kind, and **points**. Each point is a short `label`
+plus the field `assignments` it stands for. Kinds: **GRID** (crossed with the other GRID/LIST axes),
+**ZIP** (advanced in lockstep with the other ZIP axes, the group then crossed with the rest), and
+**LIST** (crossed, but each point sets *several* fields at once — a covarying group, e.g. the paper
+ensemble's site axis, where latitude, T, p and H₂O move together). Expansion order is
+`itertools.product`: the last axis varies fastest, which is what reproduces the existing ensemble's
+case order. Assignments name **leaf** paths only; a whole group has no unit, provenance or DAG node.
+
+**Axis point label** — the short token that becomes part of the run label, e.g. `sabr220`, `a1p0`.
+Joined by `__` across axes to give the **case ID**, which is how the existing ensemble names its
+directories.
 
 **Derived field** — a value computed from other fields, declared via `derived_from` metadata. Each
 carries a state: **auto** (recomputed silently when an upstream field changes) or **user_override**
