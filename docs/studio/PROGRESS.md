@@ -19,7 +19,7 @@ with full provenance, and the golden tests pass.
 | 0.3 Dependency-graph engine + override semantics | **done** (#66) |
 | 0.4 `studio/modelio` seam + `RunSummary` | **done** (#68) |
 | 0.5 `studio/science` derivations | **done** (#64) |
-| 0.6 `studio/runner` + job lifecycle | not started |
+| 0.6 `studio/runner` + job lifecycle | **done** (#72) |
 | 0.7 Golden-file harness (two tiers) | **in progress** — reference deviation measured (#70); assertions not yet written |
 | 0.8 Four contained fixes in `coupled/` | not started |
 | 0.9 Vertical slice: CLI + API + minimal UI | not started |
@@ -28,6 +28,55 @@ Task order note: 0.5 was taken **before 0.3**, so the dependency-graph engine ha
 derivations to resolve rather than fixtures.
 
 ---
+
+### 2026-08-13 — Task 0.6: the runner and the job lifecycle (issue #72)
+
+`studio/runner/` (`base.py`, `local.py`), `studio/modelio/execute.py`, `studio/cli/run.py`. 20 new
+Tier-A tests (191 total).
+
+**The first end-to-end run.** `python -m studio.cli.run <input.json> <outdir>` runs the real model
+and writes `state.npz` plus `summary.json`. Verified on a 1-day, 40-bin case: **21 s wall**,
+SO₂ 3.309e9 → 1.72e6 pptv, peak H₂SO₄ 15.05 pptv, peak number 3.07e6 cm⁻³, the npz key set identical
+to the canonical one from `run_ensemble.py:150-156`, and `termination = completed` with a real
+`config_hash`. That last part matters: a Studio-created run has provenance, which is exactly what the
+archived ensemble lacks (ADR-006).
+
+**Lifecycle as data, transitions enforced.** `DRAFT → QUEUED → RUNNING → (SUCCEEDED | FAILED |
+CANCELLED | TERMINATED_ON_LIMIT)`, every transition timestamped and kept — "it failed" is not
+debuggable, "QUEUED 14:02:11, RUNNING 14:02:11, FAILED 14:06:48 exit 1" is. Illegal transitions
+raise: a job that appears to move backwards means the runner lost a process, and accepting it
+silently would turn the record from a log into a story.
+
+**`TERMINATED_ON_LIMIT` is not `FAILED`.** One means the model could not produce a result; the other
+means it was still going when we stopped it, and its partial output can look complete. Kept distinct
+all the way through, and the detail string says so.
+
+**A failed run is debuggable without re-running it.** The resolved input is written at *submit*, not
+at completion, so a job that dies immediately still has its input; stdout and stderr are captured in
+full (`run_coupled` prints rather than logs, so stdout IS the log stream); the exit code is recorded.
+That set is chosen for the case that actually hurts: a four-minute run that fails intermittently.
+
+**Decisions**
+
+- **`entry_module` is a parameter, not a test hook.** The runner launches a module by name; tests
+  point it at a fixture module so the lifecycle can be exercised in milliseconds instead of four
+  minutes. Nothing in the runner branches on the value, the default is the real entry point, and the
+  real one is exercised separately by the exit-code test.
+- **Exit codes mean something specific**: 0 ran, 2 the input was bad and nothing started, 1 the model
+  raised. The runner needs to tell "never started" from "broke", and `studio.cli.run` validates the
+  input *before* importing the model so a bad input fails in milliseconds rather than after a JAX
+  load.
+- **Slurm and cloud-batch raise** (ADR-008) rather than falling back to local execution. A job
+  running somewhere other than where it was sent is worse than an error.
+- **`max_sim_time` is enforced through a `*args` stop-condition**, which works either side of task
+  0.8's widening of that callback rather than depending on which has landed.
+- `studio/modelio/execute.py` reuses `coupled.dilution.volume_ratio` and `studio.science`'s
+  size-distribution reduction rather than inlining a fifth copy — which is what 0.5 was for.
+
+**Test-design note.** The runner tests launch **real subprocesses**; a mocked `Popen` would test the
+mock. The fixture module's behaviour arrives by environment variable, set before `submit()`, because
+a directive file written *after* submission races the subprocess start — the standard way process
+tests become flaky.
 
 ### 2026-08-13 — Task 0.7 (first half): the reproduction tolerance, measured (issue #70)
 
