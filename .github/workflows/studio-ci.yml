@@ -42,11 +42,14 @@ jobs:
       # `jax` to be IMPORTABLE (so that not importing it is meaningful), and that comes from the
       # lockfile, not from tuvx-jax/stratchem-jax/tomas-jax. When task 0.4 lands and Tier A gains a
       # short real run, this must become a submodule checkout with a deploy key.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          # Without this the cache key matches nothing (the default glob looks for uv.lock or
+          # requirements*.txt) and is therefore never invalidated.
+          cache-dependency-glob: "studio/requirements.lock"
 
       # 3.12 is what this is developed against. The ruff/black/mypy targets stay at py311
       # (pyproject.toml), so nothing here may rely on 3.12-only syntax.
