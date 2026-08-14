@@ -29,6 +29,25 @@ derivations to resolve rather than fixtures.
 
 ---
 
+### 2026-08-14 — Correction: `dp_mid_um` is not bit-identical for a Studio-produced run
+
+The tolerance record merged in #74 proposed asserting `dp_mid_um` **exact**. That holds only when the
+fresh run comes from `run_ensemble`. A run produced by Studio differs in **44 of 80 bins by up to
+8.1e-16**, because task 0.5 deliberately adopted `sqrt(a*b)` where `run_ensemble` writes
+`10**(0.5*(log10 a + log10 b))` — the two spellings 0.5 proved algebraically identical.
+
+Asserting exact equality there would have passed against the old pipeline and failed against every
+run Studio itself produces, presenting as a physics regression over a rounding difference. Corrected
+to `1e-15`; `t`, `V_ratio` and `T` stay exact. `dNdlogDp` inherits the difference at 3.2e-13, inside
+its own `1e-10`, so no other row moved.
+
+Found by re-running the golden case through `studio.cli.run` as an independent check — every other
+number reproduced to the digit, and both runs are now tabulated in the record. Narrow lesson worth
+keeping: **a reproduction tolerance measured through one pipeline is not automatically a tolerance
+for another**, even when the two are meant to agree.
+
+---
+
 ### 2026-08-13 — Schema 0.2.0: the temperature feedback is refused, not defaulted off
 
 Ali's decision, and the reason is worth stating precisely: **longwave radiation is not in the
