@@ -22,10 +22,61 @@ with full provenance, and the golden tests pass.
 | 0.6 `studio/runner` + job lifecycle | **done** (#72) |
 | 0.7 Golden-file harness (two tiers) | **done** (#70 measured, #79 asserted) |
 | 0.8 Four contained fixes in `coupled/` | not started |
-| 0.9 Vertical slice: CLI + API + minimal UI | **in progress** — 0.9a provenance (#80); 0.9b–e to come |
+| 0.9 Vertical slice: CLI + API + minimal UI | **in progress** — 0.9a provenance (#80), 0.9b persistence (#83); 0.9c–e to come |
 
 Task order note: 0.5 was taken **before 0.3**, so the dependency-graph engine has real
 derivations to resolve rather than fixtures.
+
+---
+
+### 2026-08-14 — Task 0.9b: persistence (issue #83)
+
+`studio/store/`: models, engine, artefact store, repository, and **Alembic from the first
+migration**. 15 new Tier-A tests (246 total).
+
+**Nine tables**: `run_set`, `run`, `run_config`, `job`, `job_transition`, `result_artifact`,
+`dataset_version`, `run_dataset`, `run_summary`. `dataset_version` is empty in Phase 0 and exists
+anyway — "which ERA5 product was this run built on?" is a question Phase 1 must be able to ask about
+runs made before it existed.
+
+**Immutability is structural, not conventional.** `run_config` is keyed by the config's own hash and
+`ensure_config` is get-or-create; there is no update path, and a test asserts the repository exposes
+no `update`/`delete`/`overwrite` helper at all. An edited config is a different row and a different
+run, linked by `derived_from_run_id`.
+
+**The database stores pointers, never arrays.** Artefacts go to `LocalDirectoryStore` behind an
+`ArtifactStore` protocol — a directory today, MinIO or S3 later without touching callers — and the
+row keeps a *relative* path, size, content type and **SHA-256 computed on write**. That checksum is
+what makes "still the file that was written" checkable: silent corruption and a helpfully tidied
+directory look identical from the database otherwise. A missing artefact **raises** rather than
+being recorded as an absence.
+
+**Two portability decisions, both because SQLite and Postgres would otherwise disagree silently:**
+
+1. **`UtcDateTime`, a `TypeDecorator`.** `DateTime(timezone=True)` is not enough — Postgres returns
+   an *aware* datetime and **SQLite returns a naive one**, so the same comparison is right on one
+   backend and wrong on the other. Caught by a test asserting `tzinfo is not None`, which failed on
+   the first run. Naive input now *raises*: a caller who does not know their own timezone cannot be
+   handed one by guessing.
+2. **`foreign_keys=ON` for SQLite.** Without it SQLite ignores foreign keys entirely, so the
+   constraints in `models.py` would be documentation on the Phase-0 backend and enforced in
+   production. A test inserts a job for a nonexistent run and requires an `IntegrityError`.
+
+**The drift test.** `test_the_models_and_the_migration_agree` runs Alembic's `compare_metadata`
+against a migrated database and requires an empty diff. Without it, a column added to `models.py`
+without a migration works everywhere the schema was built from the models and fails on the first
+real deployment. Related: **nothing uses `Base.metadata.create_all`, including the tests** — every
+test upgrades through the migrations, so the migrations are exercised continuously rather than for
+the first time on someone's database.
+
+Four headline scalars (`final_so2_pptv`, `peak_h2so4_pptv`, `peak_number_cm3`,
+`final_surface_area`) are promoted out of the summary JSON into columns, so "every run where peak
+number exceeded X" is a query rather than 810 deserialisations. They are read from the summary
+rather than recomputed, so column and JSON cannot disagree.
+
+`runs_for_config` deliberately returns *runs* rather than a cached-result verdict: an identical hash
+is necessary but not sufficient, because the caller must also compare the model version in each
+run's provenance (ADR-006).
 
 ---
 
