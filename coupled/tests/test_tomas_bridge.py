@@ -3,6 +3,7 @@
 """Phase 3.1: the TOMAS bridge -- initial state from the Marianna distribution + the SO2-off step."""
 
 import numpy as np
+import pytest
 
 from coupled import CoupledScenario
 from coupled import tomas_bridge as tb
@@ -95,6 +96,51 @@ def test_80bin_initial_state_matches_40bin_totals():
     h40, h80 = het_inputs(st40), het_inputs(st80)
     assert abs(h80["SA"] / h40["SA"] - 1.0) < 0.05
     assert abs(h80["radius_cm"] / h40["radius_cm"] - 1.0) < 0.05
+
+
+def test_user_modes_reproduce_the_equivalent_named_background_exactly():
+    """A user-supplied mode list is seeded by the same code path as a named set.
+
+    Passing the named set's own modes with its own basis must give a BIT-IDENTICAL initial state:
+    the only difference between the two branches is where the tuples came from, so anything less
+    than exact equality would mean the user path applies a different conversion.
+    """
+    import jax.numpy as jnp
+    from coupled.backgrounds import BACKGROUND_MODES, AMBIENT_BACKGROUNDS
+    for name in ("sabr_220", "cesm_g6", "aer_geo"):
+        basis = "ambient" if name in AMBIENT_BACKGROUNDS else "stp"
+        named = tb.initial_tomas_state(_scenario(background_dist=name))
+        user = tb.initial_tomas_state(_scenario(background_dist=BACKGROUND_MODES[name],
+                                                background_modes_basis=basis))
+        assert jnp.array_equal(named.Nk, user.Nk), name
+        assert jnp.array_equal(named.Mk, user.Mk), name
+
+
+def test_user_modes_basis_changes_the_seeded_number():
+    """stp vs ambient is not cosmetic: at 68 mbar / 210 K the conversion is ~0.09, so a scenario
+    that omitted the basis and got a default would be wrong by an order of magnitude."""
+    import jax.numpy as jnp
+    modes = [(50.0, 0.10, 1.6)]
+    n_stp = float(jnp.sum(tb.initial_tomas_state(
+        _scenario(background_dist=modes, background_modes_basis="stp")).Nk))
+    n_amb = float(jnp.sum(tb.initial_tomas_state(
+        _scenario(background_dist=modes, background_modes_basis="ambient")).Nk))
+    from background_aerosol_distribution import stp_to_ambient_factor
+    f = stp_to_ambient_factor(210.0, 6800.0)
+    assert f < 0.2                                    # ~0.09 at 68 mbar / 210 K
+    assert n_stp == pytest.approx(n_amb * f, rel=1e-12)
+
+
+def test_user_modes_multi_mode_number_is_physical():
+    # two well-separated modes: total seeded number ~= sum of the mode N's (x the STP->ambient
+    # factor), to a few percent -- the grid spans 1.7 nm - 17.5 um, so almost nothing falls outside.
+    import jax.numpy as jnp
+    from background_aerosol_distribution import stp_to_ambient_factor
+    modes = [(50.0, 0.05, 1.6), (3.0, 0.4, 1.5)]
+    st = tb.initial_tomas_state(_scenario(background_dist=modes, background_modes_basis="stp"))
+    expected = (50.0 + 3.0) * stp_to_ambient_factor(210.0, 6800.0) * tb.BOXVOL_CM3
+    assert float(jnp.sum(st.Nk)) == pytest.approx(expected, rel=0.02)
+    assert float(jnp.sum(st.Mk[:, tb.SRTSO4])) > 0.0
 
 
 def test_ion_pair_rate_scales_nucleation():

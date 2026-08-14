@@ -3,17 +3,18 @@
 """The package boundaries from ADR-001, enforced rather than documented.
 
 ``studio.schema`` and ``studio.science`` must be usable from a bare Python session: no ``coupled``,
-no JAX, no database, no web framework. This is not tidiness. Constructing a ``CoupledScenario``
-imports JAX transitively -- ``coupled_scenario.__post_init__`` validates ``background_dist`` against
-``coupled.tomas_bridge``, which sets ``jax_enable_x64`` at import -- and an API that validates a
-form on every keystroke cannot pay a JAX import.
+no JAX, no database, no web framework. This is not tidiness. ``coupled.tomas_bridge`` and
+``coupled.driver`` import JAX (and set ``jax_enable_x64``) at module scope, and an API that
+validates a form on every keystroke cannot pay a JAX import.
 
 Two complementary checks:
 
 * a RUNTIME one, importing each clean package in a fresh interpreter and inspecting ``sys.modules``;
 * a STATIC one, scanning the source tree, which catches an import added inside a function body where
-  the runtime check would not reach it. ``coupled_scenario.py:196`` is exactly that pattern, so it
-  is not a hypothetical.
+  the runtime check would not reach it. ``CoupledScenario.__post_init__`` used to hold exactly that
+  pattern -- a function-body ``from coupled.tomas_bridge import BACKGROUND_MODES`` that made merely
+  *constructing* a scenario cost ~1 s (fixed in task 0.8 by ``coupled/backgrounds.py``) -- so it is
+  not a hypothetical.
 
 The runtime check must run in a fresh interpreter. Inspecting ``sys.modules`` in-process would be
 meaningless: by then pytest and its plugins have imported plenty, and another test module importing
