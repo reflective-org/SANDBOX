@@ -35,6 +35,21 @@ The assertions, built on the tolerances #70 measured and #76 corrected. `studio/
 `tolerances.py`, `paper_cases.py`, `make_fixture.py`, and one test module per tier. 17 new Tier-A
 tests (214 total) plus 3 Tier-B tests.
 
+**Tier B's first real run found a bug in the harness, and it was mine.** Three exceedances —
+`D2med/H2SO4 3.377e-12`, `D3high/SO3 5.995e-12`, `D3high/OH 5.535e-12` — all against `1e-12`. Not a
+reproduction failure: `3.377e-12` is essentially the **3.38e-12 the measurement itself recorded** for
+H₂SO₄ max-over-time. The harness applied the *endpoint* tolerance to whole-*series* comparisons, which
+are two different rows of the record (`1e-12` for final/peak, `1e-10` for a series maximum).
+
+No tolerance was widened — that is what this harness's own failure messages forbid. The two numbers
+the record already specifies are now applied to the two things they describe, via a named
+`assert_headline_matches` so the call sites read like the record's rows. Tier A had the same
+conflation, invisible there because it compares against its own fixture where the deviation is ~0.
+
+Tier B also now reports **every** deviation rather than only the exceedances: 27 minutes of compute
+should produce a measurement, not a verdict. The D3high series maxima (~6e-12, inside `1e-10`) are
+new data the original two-case measurement did not have.
+
 **Tier A — 19 s, a real run against a committed fixture.** 1 day, 40 bins: the cheapest run that
 still exercises gas chemistry, TUV-x photolysis, all three microphysics processes and dilution. The
 fixture is a **uniform-stride** reduction (every 4th sample plus the last — 38 of 147, 40 kB) because

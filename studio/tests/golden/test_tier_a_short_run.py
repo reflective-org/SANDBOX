@@ -36,11 +36,11 @@ from studio.tests.golden.make_fixture import (
 from studio.tests.golden.tolerances import (
     EXACT_ARRAYS,
     RTOL_BIN_EDGES,
-    RTOL_HEADLINE,
     RTOL_PHOTOLYSIS,
     RTOL_SERIES,
     RTOL_SIZE_DISTRIBUTION,
     assert_exact,
+    assert_headline_matches,
     assert_series_matches,
 )
 
@@ -117,7 +117,12 @@ def test_gas_species_reproduce(
 ) -> None:
     names = [str(name) for name in reference["species"]]
     index = names.index(species)  # BY NAME, never by position
-    assert_series_matches(species, fresh["x"][:, index], reference["x"][:, index], RTOL_HEADLINE)
+    # Endpoints at the headline tolerance, the series at its own looser one -- two different rows of
+    # REFERENCE_TOLERANCES.md. Conflating them is what broke Tier B's first real run.
+    assert_headline_matches(species, fresh["x"][:, index], reference["x"][:, index])
+    assert_series_matches(
+        f"{species} (series)", fresh["x"][:, index], reference["x"][:, index], RTOL_SERIES
+    )
 
 
 @pytest.mark.tier_a

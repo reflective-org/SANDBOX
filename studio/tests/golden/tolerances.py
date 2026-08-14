@@ -108,6 +108,41 @@ def assert_series_matches(
         )
 
 
+def endpoint_deviations(fresh: npt.ArrayLike, reference: npt.ArrayLike) -> dict[str, float]:
+    """Relative deviation of the FINAL and PEAK values of a series.
+
+    Separate from :func:`worst_relative_deviation` because the record gives these two a tighter
+    tolerance than the series they come from -- ``1e-12`` against ``1e-10``. Conflating them is an
+    easy mistake with a misleading symptom: it looks like a reproduction failure when it is a test
+    reading the wrong row.
+    """
+    a = np.asarray(reference, dtype=np.float64)
+    b = np.asarray(fresh, dtype=np.float64)
+    if a.shape != b.shape:
+        raise ValueError(f"shape mismatch: reference {a.shape} vs fresh {b.shape}")
+    out: dict[str, float] = {}
+    for label, reference_value, fresh_value in (
+        ("final", float(a[-1]), float(b[-1])),
+        ("peak", float(np.nanmax(a)), float(np.nanmax(b))),
+    ):
+        if reference_value == 0.0:
+            continue  # a zero endpoint has no relative deviation; the series check still covers it
+        out[label] = abs(fresh_value - reference_value) / abs(reference_value)
+    return out
+
+
+def assert_headline_matches(name: str, fresh: npt.ArrayLike, reference: npt.ArrayLike) -> None:
+    """Final and peak at ``RTOL_HEADLINE``. What a result is actually read for."""
+    for label, deviation in endpoint_deviations(fresh, reference).items():
+        if deviation > RTOL_HEADLINE:
+            raise AssertionError(
+                f"{name} ({label}): relative deviation {deviation:.3e} exceeds "
+                f"{RTOL_HEADLINE:.0e}. This is the ENDPOINT tolerance; the series that produced it "
+                f"has its own, looser one ({RTOL_SERIES:.0e}). Both were measured -- see "
+                f"REFERENCE_TOLERANCES.md in this directory."
+            )
+
+
 def assert_exact(name: str, fresh: npt.ArrayLike, reference: npt.ArrayLike) -> None:
     """Bit-for-bit, for the analytic arrays. Any difference is a real bug."""
     a = np.asarray(reference)
@@ -131,6 +166,8 @@ __all__ = [
     "RTOL_SERIES",
     "RTOL_SIZE_DISTRIBUTION",
     "assert_exact",
+    "assert_headline_matches",
     "assert_series_matches",
+    "endpoint_deviations",
     "worst_relative_deviation",
 ]

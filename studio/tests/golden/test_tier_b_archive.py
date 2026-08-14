@@ -38,6 +38,7 @@ from studio.tests.golden.tolerances import (
     RTOL_SERIES,
     RTOL_SIZE_DISTRIBUTION,
     assert_exact,
+    endpoint_deviations,
     worst_relative_deviation,
 )
 
@@ -124,6 +125,9 @@ def test_every_case_reproduces(reproduced: dict[str, dict[str, Any]]) -> None:
     is systematic or specific to one regime, which is the first thing to want to know.
     """
     failures: list[str] = []
+    #: every deviation, not only the ones that exceed: 28 minutes of compute should produce a
+    #: measurement, not just a verdict. Printed below so a passing run still reports numbers.
+    observed: dict[str, tuple[float, float]] = {}
     for case_id, pair in sorted(reproduced.items()):
         fresh, archived = pair["fresh"], pair["archived"]
         species = [str(name) for name in archived["species"]]
@@ -134,20 +138,43 @@ def test_every_case_reproduces(reproduced: dict[str, dict[str, Any]]) -> None:
             except AssertionError as exc:
                 failures.append(str(exc))
 
+        # Two tolerances, from two different rows of the record: the endpoints a result is read
+        # for (1e-12) and the series they come from (1e-10). Applying the endpoint number to a
+        # whole series is the mistake this harness made on its first real run.
         for name in _GAS_KEYS:
             index = species.index(name)  # BY NAME
-            worst = worst_relative_deviation(fresh["x"][:, index], archived["x"][:, index])
-            if worst > RTOL_HEADLINE:
-                failures.append(f"{case_id}/{name}: {worst:.3e} > {RTOL_HEADLINE:.0e}")
+            series_fresh, series_archived = fresh["x"][:, index], archived["x"][:, index]
+            for label, deviation in endpoint_deviations(series_fresh, series_archived).items():
+                observed[f"{case_id}/{name} ({label})"] = (deviation, RTOL_HEADLINE)
+                if deviation > RTOL_HEADLINE:
+                    failures.append(
+                        f"{case_id}/{name} {label}: {deviation:.3e} > {RTOL_HEADLINE:.0e}"
+                    )
+            worst = worst_relative_deviation(series_fresh, series_archived)
+            observed[f"{case_id}/{name} (series)"] = (worst, RTOL_SERIES)
+            if worst > RTOL_SERIES:
+                failures.append(f"{case_id}/{name} series: {worst:.3e} > {RTOL_SERIES:.0e}")
 
         for key in _SERIES_KEYS:
+            for label, deviation in endpoint_deviations(fresh[key], archived[key]).items():
+                observed[f"{case_id}/{key} ({label})"] = (deviation, RTOL_HEADLINE)
+                if deviation > RTOL_HEADLINE:
+                    failures.append(
+                        f"{case_id}/{key} {label}: {deviation:.3e} > {RTOL_HEADLINE:.0e}"
+                    )
             worst = worst_relative_deviation(fresh[key], archived[key])
+            observed[f"{case_id}/{key} (series)"] = (worst, RTOL_SERIES)
             if worst > RTOL_SERIES:
-                failures.append(f"{case_id}/{key}: {worst:.3e} > {RTOL_SERIES:.0e}")
+                failures.append(f"{case_id}/{key} series: {worst:.3e} > {RTOL_SERIES:.0e}")
 
         worst = worst_relative_deviation(fresh["dNdlogDp"], archived["dNdlogDp"])
+        observed[f"{case_id}/dNdlogDp (per bin)"] = (worst, RTOL_SIZE_DISTRIBUTION)
         if worst > RTOL_SIZE_DISTRIBUTION:
             failures.append(f"{case_id}/dNdlogDp: {worst:.3e} > {RTOL_SIZE_DISTRIBUTION:.0e}")
+
+    print(f"\n{'quantity':52s} {'worst rel':>11s}  tolerance")
+    for label, (deviation, tolerance) in sorted(observed.items()):
+        print(f"{label:52s} {deviation:11.3e}  {tolerance:.0e}")
 
     assert not failures, (
         "Tier-B reproduction deviates beyond the MEASURED tolerances:\n  "
