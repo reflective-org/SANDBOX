@@ -16,7 +16,7 @@ with full provenance, and the golden tests pass.
 |---|---|
 | 0.1 Repo, CI, docs skeleton | **done** |
 | 0.2 `studio/schema` v0 — **review gate** | **done** (#62, reviewed) |
-| 0.3 Dependency-graph engine + override semantics | not started |
+| 0.3 Dependency-graph engine + override semantics | **done** (#66) |
 | 0.4 `studio/modelio` seam + `RunSummary` | not started |
 | 0.5 `studio/science` derivations | **done** (#64) |
 | 0.6 `studio/runner` + job lifecycle | not started |
@@ -26,6 +26,68 @@ with full provenance, and the golden tests pass.
 
 Task order note: 0.5 was taken **before 0.3**, so the dependency-graph engine has real
 derivations to resolve rather than fixtures.
+
+---
+
+### 2026-08-13 — Task 0.3: dependency graph and override semantics (issue #66)
+
+**New package: `studio/resolve/`** — `graph.py` (the DAG), `registry.py` (which function computes
+which field), `resolver.py` (resolution, overrides, staleness). 47 new Tier-A tests (148 total).
+
+**Why a fourth pure package rather than a module in `studio/schema`.** `studio/schema` is data and
+stays free of computation; `studio/science` is computation and stays free of the config model.
+Resolution is the composition of the two. Naming it keeps that layering visible — and keeps schema
+and science usable, and testable, without it. It joins schema and science in the import-boundary
+test and under `mypy --strict`, because the API resolves a config on every keystroke and a JAX
+import on that path would be unaffordable.
+
+**The semantics**
+
+- **auto** → recomputed silently whenever anything upstream changes.
+- **user_override** → never overwritten by a recomputation.
+- **user_override + stale** → an override whose inputs have moved since it was set.
+
+Staleness is defined against a **fingerprint**: setting an override records the upstream values at
+that moment. Stale means those recorded values differ from the current ones. That makes staleness a
+property of the config alone — no edit history, no ordering assumptions — and it is what lets the UI
+show the old value, the newly-derived value, *and what changed between them* rather than a bare
+warning. Two explicit ways out, both the user's call: `accept_derived` (drop the override) or
+`keep_override` (keep the value, re-anchor the fingerprint; it goes stale again on the next change
+rather than being permanently silenced).
+
+`ResolvedConfig.require_consistent()` raises on any stale field, and the stale list survives
+serialisation — a persisted config cannot lose the fact that it is inconsistent. The trap it guards:
+a stale config still *has* a hash, which would be a stable identity for numbers that do not follow
+from each other.
+
+**The load-bearing test** is `test_an_edit_changes_exactly_the_downstream_closure`: capture every
+field before and after an edit, assert the set that moved is **exactly** the edited field plus its
+closure. Both directions are silent failures — recomputing too little leaves a stale number that
+reaches the model, recomputing too much discards something the user chose. It runs over eight edits
+including three fields with no dependents, where the expected change set is the edited field alone.
+
+**Decisions**
+
+- **Editing a derived field IS an override.** A user typing into a computed box means "I want this
+  value", not "recompute me away on the next edit".
+- **The registry is checked against the schema, not trusted.** Every `DERIVED` field must have a
+  derivation, no derivation may exist for a field the schema does not derive, and each derivation's
+  declared inputs must equal the field's `derived_from` exactly. Without that, a field could declare
+  an input its derivation ignores (the UI reports a change that did not happen) or read one the
+  graph does not know about (the stale result reaches the model).
+- **Cycles raise at graph construction.** Not fixed-point iteration, not breaking an arbitrary edge:
+  both would produce numbers that depend on where the engine started. Tested on synthetic graphs,
+  since the real schema has no cycle to exhibit.
+- **Topological order, ties broken alphabetically** — deterministic because resolution order is
+  observable through which error surfaces first.
+- The graph tests run mostly on **hand-built graphs**: the schema has exactly one chain of length
+  two today, and an engine tested only against the shape it currently meets breaks the first time
+  the schema grows.
+
+**Corrected while writing the tests:** a test asserted that a zero plume dimension would fail inside
+the derivation. It fails earlier, at the schema's `gt=0` bound — which is the better layer, because
+the error names the field the user typed rather than a function they have never heard of. The
+derivation's own check stays as the guard for callers that do not come through the schema.
 
 ---
 

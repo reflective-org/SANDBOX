@@ -36,13 +36,13 @@ looks right, presented with the same confidence as a computed result, is worse t
 - **No shortcuts around the main code path.** Do not special-case tests, do not bypass validation, do
   not stub the model to make a UI demo work. If a demo needs fake data it is clearly labelled
   synthetic and lives in a fixture.
-- **Type hints everywhere.** `mypy --strict` on `studio/schema` and `studio/science`.
+- **Type hints everywhere.** `mypy --strict` on `studio/schema`, `studio/science` and `studio/resolve`.
 - **Known bugs are issues, not TODO comments.** If a TODO is unavoidable it references an issue number.
 
 ## Package boundaries — enforced by tests
 
-- `studio/schema` and `studio/science` import nothing from the API, the database, the web layer, or
-  `coupled`. They must be usable from a bare Python session. Importing `coupled` pulls in JAX.
+- `studio/schema`, `studio/science` and `studio/resolve` import nothing from the API, the database,
+  the web layer, or `coupled`. They must be usable from a bare Python session. Importing `coupled` pulls in JAX.
 - **`studio/modelio` is the only package permitted to import `coupled`.**
 - Enforced by `studio/tests/unit/test_import_boundaries.py`, both at runtime and statically.
 
@@ -73,7 +73,7 @@ cp studio/.env.example .env                                  # then edit; .env i
 ```bash
 pytest studio/tests -m tier_a      # fast; what CI runs
 pytest studio/tests -m tier_b      # full-case golden reproduction; nightly/manual
-mypy --strict studio/schema studio/science
+mypy --strict studio/schema studio/science studio/resolve
 ruff check studio/ && black --check studio/
 ```
 

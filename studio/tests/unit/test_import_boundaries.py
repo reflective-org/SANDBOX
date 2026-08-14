@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """The package boundaries from ADR-001, enforced rather than documented.
 
-``studio.schema`` and ``studio.science`` must be usable from a bare Python session: no ``coupled``,
-no JAX, no database, no web framework. This is not tidiness. Constructing a ``CoupledScenario``
-imports JAX transitively -- ``coupled_scenario.__post_init__`` validates ``background_dist`` against
-``coupled.tomas_bridge``, which sets ``jax_enable_x64`` at import -- and an API that validates a
-form on every keystroke cannot pay a JAX import.
+``studio.schema``, ``studio.science`` and ``studio.resolve`` must be usable from a bare Python
+session: no ``coupled``, no JAX, no database, no web framework. This is not tidiness. Constructing
+a ``CoupledScenario`` imports JAX transitively -- ``coupled_scenario.__post_init__`` validates
+``background_dist`` against ``coupled.tomas_bridge``, which sets ``jax_enable_x64`` at import --
+and an API that validates a form on every keystroke cannot pay a JAX import.
 
 Two complementary checks:
 
@@ -35,7 +35,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 STUDIO_ROOT = REPO_ROOT / "studio"
 
 #: Packages that must stay importable without the model. See ``studio/__init__.py``.
-CLEAN_PACKAGES = ["studio.schema", "studio.science"]
+#: ``studio.resolve`` is here because the API resolves a config on every keystroke.
+CLEAN_PACKAGES = ["studio.schema", "studio.science", "studio.resolve"]
 
 #: The single package permitted to import ``coupled`` (ADR-001). Adding to this set requires
 #: amending ADR-001 in the same change.
@@ -102,7 +103,7 @@ def test_clean_packages_do_not_import_the_model(package: str) -> None:
     leaked = _forbidden_imports_after(package)
     assert leaked == [], (
         f"{package} imported {leaked}, breaking the boundary in ADR-001. "
-        f"studio.schema and studio.science must be usable from a bare Python session; "
+        f"{CLEAN_PACKAGES} must be usable from a bare Python session; "
         f"only {sorted(MODEL_SEAM_PACKAGES)} may import `coupled`."
     )
 
