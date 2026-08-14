@@ -142,9 +142,13 @@ other figure module:
   `coag_kernel_scale` are pure multipliers; `condensation_alpha` is the absolute
   accommodation coefficient; plus `ion_pair_rate`, `so2_ho2_rate`, `dilution_regime`,
   `dilution_background`, `tomas_nbins`, `start_utc_hour`, `days`.
-- **Early stopping**: `run_coupled(..., stop_condition=f)` with `f(t1, wet_SA) -> bool` is
-  checked every coupling interval (see `run_60day.py` for the "within 10% of background SA
-  for 24 h" criterion).
+- **Early stopping**: `run_coupled(..., stop_condition=f)` with `f(diag) -> bool` is checked
+  every coupling interval on the end-of-interval state (see `run_60day.py` for the "within
+  10% of background SA for 24 h" criterion). `diag` carries `t` [s], `interval`, `T`, the wet
+  aerosol quantities `SA`/`radius_cm`/`h2so4wp`/`particulate_S`, `N_total` [#/cm³] and
+  `gas` — all 34 species by name in molec/cm³, so SO₂- or number-based criteria are
+  expressible. Aerosol entries are NaN (never 0) when TOMAS is inactive. The old two-argument
+  `f(t1, wet_SA)` still works, dispatched by arity, but is deprecated.
 - **Long runs**: >10-day integrations are routine (~30–40 min per 60-day run). The old
   day-12.14 stall was a float64 first-step pathology, fixed in `coupled/driver.py`
   (DECISIONS 2026-07-08); do not reintroduce a tiny `first_step`.

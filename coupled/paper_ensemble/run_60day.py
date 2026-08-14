@@ -66,7 +66,8 @@ def make_stop(sc):
     sa_bg = float(het_inputs(initial_tomas_state(sc))["SA"])
     state = {"run": 0}
 
-    def stop(t1, sa):
+    def stop(diag):                      # run_coupled's end-of-interval diagnostics dict
+        sa, t1 = diag["SA"], diag["t"]   # SA is the WET surface area; nan when TOMAS is inactive
         if not np.isfinite(sa):
             return False
         state["run"] = state["run"] + 1 if sa <= 1.10 * sa_bg else 0
