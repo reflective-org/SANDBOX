@@ -38,8 +38,8 @@ switches:
   heating_to_t:  false   # Phase 5 (radiative heating -> temperature)
   dilution:      false   # Phase 6 (dilution + background entrainment)
 
-# --- output ---
-output_dir: coupled_output
+# NOTE: no output path here. run_coupled() returns arrays and writes nothing; the caller decides
+# where to save the .npz (see coupled/paper_ensemble/run_*.py).
 
 # --- initial gas composition (pptv); species omitted start at 0 ---
 concentrations:

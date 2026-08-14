@@ -68,6 +68,14 @@ def test_unknown_key_rejected():
         CoupledScenario.from_dict({"not_a_field": 1})
 
 
+def test_output_dir_is_gone_and_says_why():
+    # Removed, not honoured: run_coupled returns arrays and writes nothing, so the caller owns the
+    # output path. An archived config carrying the key gets an explanation, not "unknown key".
+    assert "output_dir" not in CoupledScenario.__dataclass_fields__
+    with pytest.raises(ValueError, match="the CALLER chooses where to save"):
+        CoupledScenario.from_dict({"output_dir": "coupled_output"})
+
+
 def test_unknown_switch_key_raises_friendly_valueerror():
     # a typo'd switch name gives a clear ValueError, not a cryptic TypeError
     with pytest.raises(ValueError):

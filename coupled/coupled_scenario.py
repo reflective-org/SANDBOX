@@ -7,6 +7,9 @@ location/date, run schedule (including the operator-split coupling step ``dt_cou
 photolysis mode, the initial gas composition, and per-process **switches**. Later phases (TOMAS
 microphysics, aerosol->photolysis radiation, radiative heating, dilution) read their switch here.
 
+It describes the PHYSICS, not the bookkeeping: there is no output path, because ``run_coupled``
+returns arrays and writes nothing -- the caller owns where results land.
+
 Phase 2 scaffolding: only the gas chemistry + photolysis are wired. Switches for not-yet-implemented
 processes must stay OFF (enabling one raises, so a config can never silently claim a capability the
 model doesn't have yet -- the same "no silent assumptions" guard as the photolysis-mode validation).
@@ -32,6 +35,14 @@ PHOTOLYSIS_MODES = ("reference", "sza", "tuvx")
 #: aerosol_to_j; Phase 5 heating_to_t; Phase 6 dilution -- so all switches are now implemented.
 _IMPLEMENTED_SWITCHES = frozenset(
     {"sulfur", "nucleation", "condensation", "coagulation", "aerosol_to_j", "heating_to_t", "dilution"})
+
+#: Fields that used to exist. Loading an archived config that still carries one must say what
+#: happened, not just "unknown key" -- the config was valid when it was written.
+_REMOVED_FIELDS = {
+    "output_dir": ("removed -- the driver never read it. ``run_coupled`` returns arrays and writes "
+                   "nothing; the CALLER chooses where to save the .npz. Drop the key and pass the "
+                   "path to whatever writes the output."),
+}
 
 
 @dataclass
@@ -156,9 +167,9 @@ class CoupledScenario:
     aerosol_thickness_km: float = 1.0          # plume vertical extent (km), anchored on the box altitude
     aerosol_band_km: tuple | None = None       # optional ABSOLUTE (lo, hi) km override; None -> anchored
 
-    # --- switches & output ---
+    # --- switches ---
+    # (No output path here: ``run_coupled`` returns arrays and writes nothing -- see _REMOVED_FIELDS.)
     switches: Switches = field(default_factory=Switches)
-    output_dir: str = "coupled_output"
 
     # --- initial gas composition (pptv); species omitted start at 0 ---
     concentrations: dict = field(default_factory=dict)
@@ -240,6 +251,9 @@ class CoupledScenario:
         known = set(cls.__dataclass_fields__)
         unknown = set(d) - known
         if unknown:
+            removed = sorted(unknown & set(_REMOVED_FIELDS))
+            if removed:   # name what happened rather than "unknown key" on a config that once worked
+                raise ValueError("; ".join(f"{k}: {_REMOVED_FIELDS[k]}" for k in removed))
             raise ValueError(f"Unknown CoupledScenario keys: {sorted(unknown)}")
         return cls(**d)
 

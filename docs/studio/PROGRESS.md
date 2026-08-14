@@ -107,10 +107,14 @@ Scaffolding only; no runnable app code yet.
 **Still open:** BLOCKING-2 (tenancy/auth), SCIENCE-1 through SCIENCE-5.
 
 **Findings worth flagging beyond the docs** — each is a tracked issue, not a TODO comment:
-- Constructing a `CoupledScenario` imports JAX, via `from coupled.tomas_bridge import
+- ~~Constructing a `CoupledScenario` imports JAX, via `from coupled.tomas_bridge import
   BACKGROUND_MODES` at `coupled_scenario.py:196`. An API validating a form per keystroke cannot pay
-  that. → task 0.8.
-- `CoupledScenario.output_dir` is dead — the driver never reads it. → task 0.8.
+  that.~~ → fixed in task 0.8: the tables moved to the JAX-free `coupled/backgrounds.py`; the first
+  `CoupledScenario()` in a process went from ~1.0 s to ~0 s, and no longer loads JAX at all.
+- ~~`CoupledScenario.output_dir` is dead — the driver never reads it.~~ → task 0.8 **removed** it
+  (rather than honouring it): `run_coupled` returns arrays and writes nothing, so the caller owns
+  the output path; honouring the field would have given the driver a filesystem side effect and a
+  second, competing source of truth for where a run's results live.
 - `make_paper_candidate_plots.py:70` hardcodes species indices `_SO2, _SO3, _H2SO4 = 32, 34, 35`
   while the npz carries its own `species` list. Latent breakage; Studio indexes by name.
 - The figure caches have no version stamp and no input-hash key, and are invalidated by manual
