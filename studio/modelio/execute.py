@@ -20,6 +20,7 @@ than being inlined a fifth time -- that consolidation is exactly what task 0.5 w
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -105,32 +106,32 @@ def run_and_write(config: ResolvedConfig, out_dir: Path) -> dict[str, Path]:
 def _max_sim_time_stop(config: ResolvedConfig) -> Any:
     """A ``stop_condition`` enforcing ``termination.max_sim_time_days``, or ``None``.
 
-    **The two-argument shape is deliberate and load-bearing.** Task 0.8 (PR #73) widens the model's
-    callback to take a diagnostics dict and dispatches on the callback's DECLARED ARITY:
+    **Single-parameter, taking the model's diagnostics dict.** The model dispatches on the
+    callback's DECLARED ARITY (``coupled/driver.py``, ``_adapt_stop_condition``):
 
     ===========================  ==========================================
-    ``def stop(t1, wet_SA)``     accepted as legacy, with a DeprecationWarning
-    ``def stop(diag)``           accepted as the new dict shape
+    ``def stop(diag)``           the current shape
+    ``def stop(t1, wet_SA)``     legacy, accepted with a ``DeprecationWarning``
     ``def stop(*args)``          **TypeError** -- it matches both, so it is ambiguous
     ===========================  ==========================================
 
-    Raising on ``*args`` is the right call by the model: guessing which shape a variadic callback
-    wanted would be a silent wrong answer. But it means the obvious "works with either" spelling is
-    the one thing that does not, so this stays two-positional -- which works against the model both
-    before and after that change.
+    Raising on ``*args`` is right: guessing which shape a variadic callback wanted would be a
+    silent wrong answer. It does mean the obvious "works with either" spelling is the one that does
+    not, so the arity here is part of the contract rather than an implementation detail -- see the
+    tests that pin it.
 
-    Migrating to the dict shape is worth doing once #73 is in ``studio/dev``: it is what makes
-    termination criteria on SO2 or particle number possible, which is the reason the callback was
-    widened at all. Until then this only needs the simulated time, which is the first argument in
-    both shapes.
+    Only ``diag["t"]`` is read today. The dict also carries ``SA``, ``N_total`` and every gas
+    species by name (``diag["gas"]["SO2"]``), which is what makes SO2- or number-based termination
+    criteria possible when the schema grows them -- the spec's ``termination.criteria[]`` needed
+    exactly this.
     """
     limit_days = config.config.termination.max_sim_time_days
     if limit_days is None:
         return None
     limit_s = float(limit_days) * 86400.0
 
-    def stop(t1_seconds: float, wet_surface_area: float) -> bool:
-        return float(t1_seconds) >= limit_s
+    def stop(diag: Mapping[str, Any]) -> bool:
+        return float(diag["t"]) >= limit_s
 
     return stop
 
