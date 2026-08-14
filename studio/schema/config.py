@@ -43,7 +43,7 @@ from studio.schema.units import Unit
 #: The schema's own version. Bumped on any change to field names, semantics or defaults, because
 #: those change the config hash and therefore run identity (ADR-006). Old configs are never silently
 #: reinterpreted under new semantics.
-SCHEMA_VERSION = "0.1.0"
+SCHEMA_VERSION = "0.2.0"
 
 #: Stratospheric background gas composition [pptv] used by the 810-run ensemble
 #: (``run_ensemble.py:56-57``). Module-level so the default is one object with one source, and so a
@@ -111,8 +111,9 @@ class Site(SchemaModel):
         gt=0.0,
         label="Temperature",
         description=(
-            "Box temperature. Isobaric and isothermal unless the heating switch is on; see the "
-            "caveat on switches.heating_to_t and SCIENCE-4 (issue #56)."
+            "Box temperature. The box is isobaric and ISOTHERMAL: the temperature feedback is "
+            "refused while the radiative calculation has no longwave component, so this value "
+            "holds for the whole run. See switches.heating_to_t and SCIENCE-4 (issue #56)."
         ),
         provenance=Provenance.PAPER_ENSEMBLE,
         source="coupled/paper_ensemble/TABLE_microphysics_parameters.md (Site: 210 K, 55 hPa)",
@@ -601,17 +602,25 @@ class ProcessSwitches(SchemaModel):
             "validation status)."
         ),
     )
-    heating_to_t: bool = SciField(
+    heating_to_t: Literal[False] = SciField(
         default=False,
         unit=Unit.DIMENSIONLESS,
         label="Radiative heating -> T",
-        description="Let radiative heating change the box temperature.",
+        description=(
+            "Let radiative heating change the box temperature. FALSE IS THE ONLY ACCEPTED VALUE: "
+            "the radiative calculation has no longwave component, so there is no temperature "
+            "feedback to enable. True fails validation rather than being quietly ignored."
+        ),
         provenance=Provenance.PAPER_ENSEMBLE,
         source="coupled/paper_ensemble/run_ensemble.py:106 (heating_to_t=False)",
         caveat=(
-            "The heating term is SHORTWAVE-ONLY -- no longwave cooling (AD-5.4) -- so switching it "
-            "on gives a one-sided ~+1.2 K / 10 d warm drift, not an energy balance. Every science "
-            "script leaves it off. The UI must warn on enable rather than silently drifting."
+            "Decision (Ali, 2026-08-13): no temperature feedback while longwave radiation is "
+            "absent from the radiative calculation. The model's heating term is SHORTWAVE-ONLY "
+            "(AD-5.4), so enabling it does not make the box thermodynamics more complete -- it "
+            "makes them one-sided, giving a ~+1.2 K / 10 d warm drift that is an artefact of the "
+            "missing cooling rather than a physical result. The MODEL still defaults this on and "
+            "every science script turns it off; Studio refuses it outright. Revisit when longwave "
+            "cooling lands (SCIENCE-4, issue #56)."
         ),
     )
     dilution: bool = SciField(
@@ -681,7 +690,7 @@ class RunConfig(SchemaModel):
     physics, and two runs whose only difference is a name are the same computation.
     """
 
-    schema_version: Literal["0.1.0"] = SciField(
+    schema_version: Literal["0.2.0"] = SciField(
         default=SCHEMA_VERSION,
         unit=Unit.DIMENSIONLESS,
         label="Schema version",

@@ -29,6 +29,35 @@ derivations to resolve rather than fixtures.
 
 ---
 
+### 2026-08-13 — Schema 0.2.0: the temperature feedback is refused, not defaulted off
+
+Ali's decision, and the reason is worth stating precisely: **longwave radiation is not in the
+radiative calculation**, so the model's heating term cannot represent the box's energy balance.
+Enabling it does not make the thermodynamics more complete — it makes them *one-sided*, and the
+resulting ~+1.2 K / 10 d warm drift is an artefact of the missing cooling rather than a physical
+response.
+
+`switches.heating_to_t` is therefore `Literal[False]`, the same treatment `dilution.background_evolves`
+already had: `True` **fails validation** rather than being defaulted off, so it cannot be enabled by a
+form, a YAML file, or a sweep axis without the schema changing first. Two tests cover it — the direct
+one and the axis path, which is the one that would slip past a UI-level guard.
+
+**`SCHEMA_VERSION` 0.1.0 → 0.2.0, and the pinned hash moved with it** (…46cbe3 → …373ab4). Note the
+*value* of `heating_to_t` did not change — it was already `False` — but `schema_version` is part of
+the hashed payload, which is exactly what makes "old configs are never silently reinterpreted under
+new semantics" true rather than merely stated. A config written yesterday no longer hashes to a
+0.2.0 identity, which is the intended behaviour.
+
+Recorded where a reader would actually look: `CAVEATS.md` gains a top-level entry (every run is
+isothermal at the configured temperature, and a result must not be read as containing a
+plume-warming signal), and SCIENCE-4 is marked **partly answered** — buoyant rise, sedimentation and
+the isobaric assumption remain open.
+
+Two tests that set `heating_to_t=True` as an innocuous example were updated to use
+`switches.aerosol_to_j` instead. They were not weakened; the value they used simply became illegal.
+
+---
+
 ### 2026-08-13 — Task 0.6: the runner and the job lifecycle (issue #72)
 
 `studio/runner/` (`base.py`, `local.py`), `studio/modelio/execute.py`, `studio/cli/run.py`. 20 new

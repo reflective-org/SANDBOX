@@ -76,7 +76,7 @@ def test_chained_derivations_resolve_in_order() -> None:
         ("injection.so2_mass_kg", 2000.0, {SO2_PPTV}),
         ("microphysics.n_bins", 40, set()),
         ("chemistry.so2_ho2_rate", 1e-16, set()),
-        ("switches.heating_to_t", True, set()),
+        ("switches.aerosol_to_j", True, set()),  # heating_to_t cannot be True (schema 0.2.0)
     ],
 )
 def test_an_edit_changes_exactly_the_downstream_closure(

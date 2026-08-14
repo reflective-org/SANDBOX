@@ -169,7 +169,7 @@ material is **not** represented.
 
 ---
 
-### SCIENCE-4 — Box thermodynamics · **OPEN** · blocks Phase 5 · [#56](https://github.com/reflective-org/SANDBOX/issues/56)
+### SCIENCE-4 — Box thermodynamics · **PARTLY ANSWERED** (no temperature feedback) · blocks Phase 5 · [#56](https://github.com/reflective-org/SANDBOX/issues/56)
 *Is the box isobaric? isothermal? does it rise buoyantly? do particles sediment out?*
 
 Absent from the original brief. Current behaviour, from the code:
@@ -179,8 +179,16 @@ Absent from the original brief. Current behaviour, from the code:
   AD-5.4), producing a one-sided ≈ +1.2 K / 10 d warm drift. Every science script leaves it off.
 - **No buoyant rise.** No sedimentation.
 
-Each must become a schema field with a documented default, and the SW-only asymmetry must warn in
-the UI when the switch is enabled rather than silently producing a drifting temperature.
+**Partly answered (Ali, 2026-08-13): no temperature feedback.** Longwave radiation is not in the
+radiative calculation, so the heating term cannot represent the box's energy balance — enabling it
+does not make the thermodynamics more complete, it makes them one-sided, and the ~+1.2 K / 10 d
+drift is an artefact of the missing cooling rather than a result. `switches.heating_to_t` is
+therefore `Literal[False]` in the schema from version 0.2.0: `True` fails validation rather than
+being defaulted off, so it cannot be enabled by a form, a YAML file or a sweep axis without the
+schema changing first. Revisit when longwave cooling lands.
+
+The rest of SCIENCE-4 stands: buoyant rise, sedimentation and the isobaric assumption are still
+undecided, and each must become a schema field with a documented default.
 
 ---
 
