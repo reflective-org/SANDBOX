@@ -7,6 +7,9 @@ location/date, run schedule (including the operator-split coupling step ``dt_cou
 photolysis mode, the initial gas composition, and per-process **switches**. Later phases (TOMAS
 microphysics, aerosol->photolysis radiation, radiative heating, dilution) read their switch here.
 
+It describes the PHYSICS, not the bookkeeping: there is no output path, because ``run_coupled``
+returns arrays and writes nothing -- the caller owns where results land.
+
 Phase 2 scaffolding: only the gas chemistry + photolysis are wired. Switches for not-yet-implemented
 processes must stay OFF (enabling one raises, so a config can never silently claim a capability the
 model doesn't have yet -- the same "no silent assumptions" guard as the photolysis-mode validation).
@@ -18,6 +21,13 @@ import json
 import os
 from dataclasses import asdict, dataclass, field
 
+# Deliberately the JAX-free table module, NOT ``coupled.tomas_bridge``: this dataclass is constructed
+# by form validation and must stay cheap to import and to build (see coupled/backgrounds.py).
+# Absolute (not relative) because this module is also imported FLAT as ``coupled_scenario`` with
+# coupled/ on sys.path -- see coupled/conftest.py -- where a relative import has no package to resolve.
+from coupled.backgrounds import (BACKGROUND_MODES, MODE_BASES, TABULATED_BACKGROUND,
+                                 normalize_modes)
+
 #: Photolysis drivers understood by the model (validated -> no silent mis-gate of the sulfur chain).
 PHOTOLYSIS_MODES = ("reference", "sza", "tuvx")
 
@@ -25,6 +35,14 @@ PHOTOLYSIS_MODES = ("reference", "sza", "tuvx")
 #: aerosol_to_j; Phase 5 heating_to_t; Phase 6 dilution -- so all switches are now implemented.
 _IMPLEMENTED_SWITCHES = frozenset(
     {"sulfur", "nucleation", "condensation", "coagulation", "aerosol_to_j", "heating_to_t", "dilution"})
+
+#: Fields that used to exist. Loading an archived config that still carries one must say what
+#: happened, not just "unknown key" -- the config was valid when it was written.
+_REMOVED_FIELDS = {
+    "output_dir": ("removed -- the driver never read it. ``run_coupled`` returns arrays and writes "
+                   "nothing; the CALLER chooses where to save the .npz. Drop the key and pass the "
+                   "path to whatever writes the output."),
+}
 
 
 @dataclass
@@ -119,10 +137,17 @@ class CoupledScenario:
     # both span dry Dp 1.7 nm - 17.5 um. Everything downstream (initial state, Mie table, optics)
     # follows the state's own xk grid.
     tomas_nbins: int = 40
-    # Background aerosol size distribution seeded into the initial TomasState. "redcircles" (Marianna,
-    # default) uses the tabulated loader; "sabr_330"/"sabr_220"/"cesm_g6" seed a (multi-)lognormal
-    # from tomas_bridge.BACKGROUND_MODES (digitized from SABR/CESM plots -- see paper_ensemble docs).
-    background_dist: str = "redcircles"
+    # Background aerosol size distribution seeded into the initial TomasState. Either a NAME --
+    # "redcircles" (Marianna, default) uses the tabulated loader, "sabr_330"/"sabr_220"/"cesm_g6"/...
+    # seed a (multi-)lognormal from coupled.backgrounds.BACKGROUND_MODES (digitized from SABR/CESM
+    # plots -- see paper_ensemble) -- or a USER-SUPPLIED list of lognormal modes
+    # [(N [cm^-3], Dg [um], sigma_g), ...] on a DIAMETER basis, normalized to a tuple of tuples.
+    background_dist: str | tuple = TABULATED_BACKGROUND
+    # Number basis of a USER-SUPPLIED background_dist mode list: "stp" or "ambient". REQUIRED for a
+    # mode list and REJECTED for a name (the named sets carry their own basis via
+    # backgrounds.AMBIENT_BACKGROUNDS). Not defaulted: the STP->ambient factor is ~0.09 at
+    # 68 mbar/210 K, so a wrong basis is an order-of-magnitude error in N (see backgrounds.py).
+    background_modes_basis: str = ""
     # Rate constant [cm^3/molec/s] for SO2 + HO2 -> SO3 + OH (JPL 19-5 I34). JPL gives only an UPPER
     # LIMIT (~1e-18) and recommends NO products, so this is a deliberate sensitivity knob: 0.0
     # eliminates the channel; 1e-18/1e-17/1e-16 scan the plausible range. Only active in the sulfur
@@ -142,9 +167,9 @@ class CoupledScenario:
     aerosol_thickness_km: float = 1.0          # plume vertical extent (km), anchored on the box altitude
     aerosol_band_km: tuple | None = None       # optional ABSOLUTE (lo, hi) km override; None -> anchored
 
-    # --- switches & output ---
+    # --- switches ---
+    # (No output path here: ``run_coupled`` returns arrays and writes nothing -- see _REMOVED_FIELDS.)
     switches: Switches = field(default_factory=Switches)
-    output_dir: str = "coupled_output"
 
     # --- initial gas composition (pptv); species omitted start at 0 ---
     concentrations: dict = field(default_factory=dict)
@@ -193,10 +218,26 @@ class CoupledScenario:
             raise ValueError(f"condensation_alpha must be in (0, 1], got {self.condensation_alpha}")
         if self.coag_kernel_scale < 0.0:   # now wired (AD-7.2): free multiplier on the coag kernel
             raise ValueError(f"coag_kernel_scale must be >= 0, got {self.coag_kernel_scale}")
-        from coupled.tomas_bridge import BACKGROUND_MODES
-        if str(self.background_dist) not in ("redcircles", *BACKGROUND_MODES):
-            raise ValueError(f"background_dist must be 'redcircles' or one of "
-                             f"{sorted(BACKGROUND_MODES)}, got {self.background_dist!r}")
+        if isinstance(self.background_dist, str):
+            if self.background_dist not in (TABULATED_BACKGROUND, *BACKGROUND_MODES):
+                raise ValueError(f"background_dist must be {TABULATED_BACKGROUND!r}, one of "
+                                 f"{sorted(BACKGROUND_MODES)}, or a list of (N, Dg, sigma_g) "
+                                 f"lognormal modes, got {self.background_dist!r}")
+            if self.background_modes_basis:
+                raise ValueError(
+                    f"background_modes_basis={self.background_modes_basis!r} applies only to a "
+                    f"user-supplied background_dist mode list; the named distribution "
+                    f"{self.background_dist!r} carries its own basis (backgrounds."
+                    f"AMBIENT_BACKGROUNDS). Leave it empty.")
+        else:                                   # user-supplied lognormal modes
+            self.background_dist = normalize_modes(self.background_dist)
+            if self.background_modes_basis not in MODE_BASES:
+                raise ValueError(
+                    f"a user-supplied background_dist mode list needs an explicit "
+                    f"background_modes_basis, one of {list(MODE_BASES)}; got "
+                    f"{self.background_modes_basis!r}. It is not defaulted because the STP->ambient "
+                    f"factor is ~0.09 at 68 mbar/210 K -- guessing it is an order-of-magnitude "
+                    f"error in the background number concentration.")
         if self.dt_couple > self.DT:
             raise ValueError(f"dt_couple ({self.dt_couple}) must be <= output step DT ({self.DT})")
         # dt_couple drives sub-stepping within an output interval, so DT must be a whole multiple of it
@@ -210,6 +251,9 @@ class CoupledScenario:
         known = set(cls.__dataclass_fields__)
         unknown = set(d) - known
         if unknown:
+            removed = sorted(unknown & set(_REMOVED_FIELDS))
+            if removed:   # name what happened rather than "unknown key" on a config that once worked
+                raise ValueError("; ".join(f"{k}: {_REMOVED_FIELDS[k]}" for k in removed))
             raise ValueError(f"Unknown CoupledScenario keys: {sorted(unknown)}")
         return cls(**d)
 

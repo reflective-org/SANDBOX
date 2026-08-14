@@ -53,7 +53,7 @@ Every run dir has `manifest.csv`, per-case `state.npz` (full time series: 36 gas
   SciPy-BDF fallback is removed (see DECISIONS addendum 2026-07-08 and
   `debug_day12_isolation.py`).
 - aer_geo with N = 50 cm^-3 (the Pierce caption value) — one number in
-  `tomas_bridge.BACKGROUND_MODES`, then rerun `runs_geo` (resumable runner).
+  `coupled/backgrounds.py` `BACKGROUND_MODES`, then rerun `runs_geo` (resumable runner).
 - Start-time / box-size sweeps for other sites, regimes, or backgrounds (all runners
   parameterized).
 

@@ -38,7 +38,9 @@ behavior. Use ``reference`` here only for continuous-SZA testing, not for MATLAB
 
 from __future__ import annotations
 
+import inspect
 import os
+import warnings
 
 import numpy as np
 
@@ -213,6 +215,56 @@ def _envelope_grid(t0, t1, n_pts: int = 301):
     return np.linspace(t0, t1, n_pts)
 
 
+def _adapt_stop_condition(stop_condition):
+    """Normalize a ``run_coupled`` stop condition to the current ``f(diagnostics: dict) -> bool``.
+
+    TWO call shapes are accepted, dispatched on the callback's DECLARED arity -- resolved once, here,
+    at ``run_coupled`` entry, so a mis-shaped callback raises immediately instead of at the end of
+    the first outer interval (minutes into a run):
+
+    * ``f(diag)``     -- CURRENT. One dict argument; see ``run_coupled``'s docstring for its keys.
+      A criterion can reference SO2 (``diag["gas"]["SO2"]``) or particle number (``diag["N_total"]``),
+      which the two-argument form could not express.
+    * ``f(t1, SA)``   -- LEGACY: ``(t1 [s], wet SA [um^2/cm^3])``. Kept working because out-of-tree
+      run scripts and ``coupled/paper_ensemble/README.md`` document it. Emits a DeprecationWarning.
+
+    Anything else -- zero or three-plus positional parameters, or a bare ``*args``, which is
+    compatible with BOTH shapes -- raises ``TypeError``. Passing a dict to a callback that expected
+    ``t1`` would compare a dict against a float or, worse, succeed silently; the caller must declare
+    which shape it means.
+    """
+    if stop_condition is None:
+        return None
+    if not callable(stop_condition):
+        raise TypeError(f"stop_condition must be callable, got {type(stop_condition).__name__}")
+    try:
+        sig = inspect.signature(stop_condition)
+    except (TypeError, ValueError) as exc:                 # builtins / C callables have no signature
+        raise TypeError(
+            "stop_condition's signature could not be inspected, so its call shape cannot be "
+            "determined; wrap it in a plain `def stop(diag): ...` taking one dict argument") from exc
+    positional = [p for p in sig.parameters.values()
+                  if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+    var_positional = any(p.kind is p.VAR_POSITIONAL for p in sig.parameters.values())
+    if not var_positional and len(positional) == 1:
+        return stop_condition
+    if not var_positional and len(positional) == 2:
+        warnings.warn(
+            "The two-argument stop_condition f(t1, wet_SA) is deprecated; take a single "
+            "diagnostics dict instead -- f(diag) with diag['t'] and diag['SA'], plus SO2 "
+            "(diag['gas']['SO2']) and particle number (diag['N_total']).",
+            DeprecationWarning, stacklevel=3)
+
+        def _legacy(diag, _fn=stop_condition):
+            return _fn(diag["t"], diag["SA"])
+        return _legacy
+    raise TypeError(
+        f"stop_condition takes {'*args' if var_positional else len(positional)} positional "
+        f"argument(s); run_coupled supports exactly two shapes: f(diagnostics_dict) (current) or "
+        f"f(t1_seconds, wet_SA) (legacy). Declare one explicitly -- *args is compatible with both, "
+        f"so it cannot be dispatched without guessing.")
+
+
 def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_dist=False,
                 return_photolysis=False, stop_condition=None):
     """Integrate a CoupledScenario with operator splitting.
@@ -226,7 +278,29 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     ``{"t_mid" [n_int], "J" [n_int, n_photo] (s^-1), "equations" [n_photo]}`` (the ``photo_override``
     rows of ``reactions.photolysis_coeffs``, i.e. absolute TUV-x J or the j45*j_scale fallback).
     Extra outputs are appended in that order.
+
+    ``stop_condition`` is an optional ``f(diagnostics) -> bool`` evaluated once per outer interval on
+    the END-of-interval state; returning True ends the run there (that interval is still recorded).
+    ``diagnostics`` is a dict:
+
+    ==================  =========================================================================
+    ``t``               seconds since run start (use this, never ``interval * DT`` -- the outer
+                        grid snaps to the terminator, so the mean step is ~592 s, not 600 s)
+    ``interval``        1-based index of the completed outer interval
+    ``T``               box temperature [K] (evolves when ``heating_to_t`` is on)
+    ``SA``              **wet** aerosol surface area [um^2/cm^3]; NaN when TOMAS is inactive
+    ``radius_cm``       **wet** effective radius [cm]; NaN when TOMAS is inactive
+    ``h2so4wp``         aerosol H2SO4 weight percent; NaN when TOMAS is inactive
+    ``particulate_S``   aerosol sulfur [molec/cm^3, H2SO4-equivalent]; NaN when TOMAS is inactive
+    ``N_total``         total particle number [#/cm^3 at ambient T,P]; NaN when TOMAS is inactive
+    ``gas``             ``{species_name: concentration [molec/cm^3]}``, all 34 gas species
+    ==================  =========================================================================
+
+    The NaNs are deliberate: a criterion such as ``diag["SA"] < x`` must not read "TOMAS is off" as
+    "the plume has relaxed". The legacy two-argument shape ``f(t1_seconds, wet_SA)`` still works and
+    is dispatched explicitly by arity -- see ``_adapt_stop_condition``.
     """
+    _stop = _adapt_stop_condition(stop_condition)   # fail fast on a mis-shaped callback
     cfg = to_model_config(scenario)
     y0 = initial_state(scenario)
     sulfur = float(scenario.switches.sulfur)   # single gate source (NumPy match: build_env(sulfur_chain=))
@@ -313,6 +387,31 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         from .aerosol_props import _wet_diameters_m
         Dpk, _ = _wet_diameters_m(tstate)
         return np.asarray(tstate.Nk) / float(tstate.boxvol), np.asarray(Dpk)
+
+    _species = tuple(IDX)   # state-vector order; the gas dict is keyed by NAME, never by position
+
+    def _stop_diagnostics(t_now, ivl, y, aero):
+        """State a termination criterion may reference, at the END of an outer interval.
+
+        Aerosol entries are the WET quantities the heterogeneous chemistry sees (``dp_mid_um`` in the
+        saved size distribution is dry -- see docs/studio/CAVEATS.md), and are NaN, never 0, when
+        TOMAS is inactive: a ``< threshold`` criterion must not read "no aerosol model" as
+        "converged". Gas concentrations are the model's native molec/cm^3.
+        """
+        sa, radius_cm, h2so4wp, particulate_S, T_box = aero
+        n_total = (float(np.sum(np.asarray(tstate.Nk))) / float(tstate.boxvol)
+                   if tomas_active else float("nan"))
+        return {
+            "t": float(t_now),                        # s since run start
+            "interval": int(ivl),                     # 1-based index of the completed outer interval
+            "T": float(T_box),                        # box temperature, K
+            "SA": float(sa),                          # WET aerosol surface area, um^2/cm^3
+            "radius_cm": float(radius_cm),            # WET effective radius, cm
+            "h2so4wp": float(h2so4wp),                # aerosol H2SO4 weight percent
+            "particulate_S": float(particulate_S),    # molec/cm^3, as H2SO4-equivalent (AD-3.8)
+            "N_total": float(n_total),                # particle number, #/cm^3 at ambient T,P
+            "gas": dict(zip(_species, (float(v) for v in np.asarray(y)))),   # molec/cm^3, by name
+        }
 
     # --- adaptive inner (micro) step for the gas<->TOMAS handoff (two-level integration, approach B) --
     eps = float(scenario.micro_eps)
@@ -438,15 +537,15 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
 
         t_list.append(t1)
         x_list.append(np.asarray(yc))
-        aero_list.append(_aero_record())
+        _aero = _aero_record()
+        aero_list.append(_aero)
         if nk_list is not None:
             nk, dp = _sizedist_record()
             nk_list.append(nk)
             dp_list.append(dp)
-        # optional early stop (e.g. plume relaxed to background): called once per outer
-        # interval with (t1 [s], wet SA [um^2/cm^3] or nan when TOMAS inactive)
-        if stop_condition is not None and stop_condition(
-                float(t1), float(het["SA"]) if het is not None else float("nan")):
+        # optional early stop (e.g. plume relaxed to background): called once per outer interval
+        # with the end-of-interval diagnostics dict (built only when a stop condition is present)
+        if _stop is not None and _stop(_stop_diagnostics(t1, _ivl, yc, _aero)):
             print(f"[stop] condition met at t={t1/86400.0:.3f} d -- ending run early", flush=True)
             break
 

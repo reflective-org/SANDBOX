@@ -134,16 +134,25 @@ other figure module:
 
 ## 4. Extending the model runs
 
-- **New background aerosol**: add a mode to `BACKGROUND_MODES` in `coupled/tomas_bridge.py`
+- **New background aerosol**: add a mode to `BACKGROUND_MODES` in `coupled/backgrounds.py`
   (number, median diameter, σg; add it to `AMBIENT_BACKGROUNDS` if the numbers are ambient
-  rather than STP) and reference it via `CoupledScenario(background_dist=...)`.
+  rather than STP) and reference it via `CoupledScenario(background_dist=...)`. Re-exported as
+  `tomas_bridge.BACKGROUND_MODES`, which is where it is consumed. For a one-off, pass the modes
+  inline instead of naming them:
+  `CoupledScenario(background_dist=[(50.0, 0.10, 1.6)], background_modes_basis="stp")` —
+  `(N [cm⁻³], Dg [µm] diameter basis, σg)`, N > 0, Dg > 0, σg > 1, and the basis
+  (`"stp"`/`"ambient"`) is **required**, since the STP→ambient factor is ~0.09 at 68 mbar/210 K.
 - **Scenario knobs** (`coupled/coupled_scenario.py`): `nucleation_rate_scale` and
   `coag_kernel_scale` are pure multipliers; `condensation_alpha` is the absolute
   accommodation coefficient; plus `ion_pair_rate`, `so2_ho2_rate`, `dilution_regime`,
   `dilution_background`, `tomas_nbins`, `start_utc_hour`, `days`.
-- **Early stopping**: `run_coupled(..., stop_condition=f)` with `f(t1, wet_SA) -> bool` is
-  checked every coupling interval (see `run_60day.py` for the "within 10% of background SA
-  for 24 h" criterion).
+- **Early stopping**: `run_coupled(..., stop_condition=f)` with `f(diag) -> bool` is checked
+  every coupling interval on the end-of-interval state (see `run_60day.py` for the "within
+  10% of background SA for 24 h" criterion). `diag` carries `t` [s], `interval`, `T`, the wet
+  aerosol quantities `SA`/`radius_cm`/`h2so4wp`/`particulate_S`, `N_total` [#/cm³] and
+  `gas` — all 34 species by name in molec/cm³, so SO₂- or number-based criteria are
+  expressible. Aerosol entries are NaN (never 0) when TOMAS is inactive. The old two-argument
+  `f(t1, wet_SA)` still works, dispatched by arity, but is deprecated.
 - **Long runs**: >10-day integrations are routine (~30–40 min per 60-day run). The old
   day-12.14 stall was a float64 first-step pathology, fixed in `coupled/driver.py`
   (DECISIONS 2026-07-08); do not reintroduce a tiny `first_step`.
