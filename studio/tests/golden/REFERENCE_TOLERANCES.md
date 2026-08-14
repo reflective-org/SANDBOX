@@ -250,6 +250,67 @@ the correction in the table above — and it could only surface via the Studio p
 exist on the branch where the first measurement was taken. `dNdlogDp` inherits that difference at
 3.2e-13, comfortably inside its own `1e-10`, so only the `dp_mid_um` row needed changing.
 
+## What this comparison assumes about the archive — settled 2026-08-14
+
+The archived files carry **no provenance record**, so the code that produced them is not knowable
+from the data (that gap is exactly what ADR-006 closes going forward and explicitly cannot close
+retroactively). This comparison therefore rests on an assumption, and it is written down rather than
+left implicit:
+
+> **`coupled/paper_ensemble/runs/` is the uniform 810-run factorial produced by `run_ensemble.py`'s
+> axis tables, and is a valid reproduction reference.** Confirmed by Ali, 2026-08-14.
+
+**Every other archive directory is excluded**, because they were produced differently — some
+initialise from a spun-up control run (`runs_60day/` uses `frank_control_ic.json`), some predate that
+practice, some carry different configurations:
+
+`runs_60day` · `runs_bgstop` · `runs_bgstop_ctrl` · `runs_boxsize` · `runs_geo` · `runs_no_sai` ·
+`runs_special` · `runs_start_time` · `runs_start_time_geo`
+
+Reproducing one of those from the axis tables would compare two different computations, where a pass
+is luck and a failure means nothing. `paper_cases.py` only maps the factorial's case IDs, so this
+exclusion is structural rather than a convention someone has to remember.
+
+Supporting evidence, for the record: all 810 `state.npz` in `runs/` were written on **2026-07-04**
+within one 02:18–06:53 window, and six cases spanning four dilution regimes and both backgrounds
+reproduce to ≤ 4.1e-14 on every endpoint. Mtimes are not provenance, but a heterogeneous set would
+not behave that way.
+
+---
+
+## Six-case measurement, 2026-08-14
+
+The original measurement covered two cases. All six curated Tier-B cases have since been re-run and
+compared (the four dilution regimes on `sabr220`, plus `D2med` and `burst` on `sabr330`):
+
+| case | worst endpoint | worst series | `t`/`V_ratio`/`T` |
+| --- | --- | --- | --- |
+| D1low · sabr220 | 4.1e-14 | 1.6e-11 | bit-identical |
+| D2med · sabr220 | 3.0e-14 | 1.6e-11 | bit-identical |
+| D3high · sabr220 | 1.7e-14 | 1.6e-11 | bit-identical |
+| burst · sabr220 | 3.5e-14 | 1.6e-11 | bit-identical |
+| D2med · sabr330 | 2.4e-14 | 1.5e-11 | bit-identical |
+| burst · sabr330 | 3.7e-14 | 7.4e-12 | bit-identical |
+
+Every endpoint is ≤ 4.1e-14 against a `1e-12` tolerance; every series ≤ 1.6e-11 against `1e-10`.
+Wall clock 256–293 s per case.
+
+**Correction to the timing claim.** The two-case measurement noted the worst H₂SO₄ deviation at day
+1.34 and this file previously read as though deviation were tied to the early nucleation burst.
+Across six cases the worst-deviation days are **5.83, 1.34, 9.27, 2.15, 3.03, 5.74** — no common
+feature. The deviation is a flat ~1e-14 baseline with occasional spikes; it is float round-off
+scattered through the run, **not** accumulation and not burst-timed.
+
+**Where the worst per-bin size-distribution deviation sits.** All four `sabr220` cases give an
+*identical* 1.63e-11, at the same cell — t = 0.042 d, bin 5 (Dp 3.2 nm), 4.218 counts — while the two
+`sabr330` cases peak late and elsewhere (t = 7.34 d bin 6; t = 8.41 d bin 11). The common thread is
+not timing but **sparsity**: every one of them is a bin holding 1.7–4.2 particles cm⁻³. It is
+inherited from `n_cm3`, not from the `dlogdp` normalisation — those divisors agree to 6.1e-15.
+
+Regenerate the figures behind these numbers with `plot_fidelity.py` in this directory.
+
+---
+
 ## Not covered by this measurement
 
 - Only `cg1` was measured; `cg0p5` / `cg2` cases may be affected by `tomas-jax` `39535ea` landing

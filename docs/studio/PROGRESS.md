@@ -29,6 +29,43 @@ derivations to resolve rather than fixtures.
 
 ---
 
+### 2026-08-14 — The archive's status as a reference, settled and written down
+
+Ali, 2026-08-14: **`coupled/paper_ensemble/runs/` is a valid reproduction reference.** Recorded in
+`REFERENCE_TOLERANCES.md` rather than left as an implicit property of the harness, because it is an
+assumption the data cannot support on its own — those files carry no provenance record, which is
+exactly the gap ADR-006 closes going forward and cannot close retroactively.
+
+**Every other archive directory is excluded, and now says why**: `runs_60day` (initialises from a
+spun-up control run), `runs_bgstop*`, `runs_boxsize`, `runs_geo`, `runs_no_sai`, `runs_special`,
+`runs_start_time*`. They were produced differently — different initialisation, different vintages,
+different configurations — so rebuilding one from the axis tables would compare two different
+computations, where a pass is luck and a failure means nothing. The exclusion is structural:
+`paper_cases.py` only maps the factorial's case IDs.
+
+**All six curated cases now measured** (the record previously had two): every endpoint ≤ 4.1e-14
+against `1e-12`, every series ≤ 1.6e-11 against `1e-10`, `t`/`V_ratio`/`T` bit-identical in all six,
+256–293 s per case.
+
+**Two claims corrected by the wider data.**
+
+1. *Timing.* This record read as though deviation were tied to the early nucleation burst — the
+   two-case measurement had found the worst H₂SO₄ deviation at day 1.34. Across six cases the worst
+   days are 5.83, 1.34, 9.27, 2.15, 3.03, 5.74: **no common feature**. It is a flat ~1e-14 baseline
+   with occasional spikes — round-off scattered through the run, not accumulation.
+2. *The size-distribution outlier.* The four `sabr220` cases share an identical 1.63e-11 at the same
+   cell (t = 0.042 d, bin 5, 4.218 counts); the two `sabr330` cases peak late and elsewhere (day 7.34
+   bin 6; day 8.41 bin 11). The common thread is **sparsity, not timing** — every one is a bin
+   holding 1.7–4.2 particles cm⁻³. It is inherited from `n_cm3`, not from the `dlogdp` normalisation,
+   whose divisors agree to 6.1e-15.
+
+**Added**: `measure_all_cases.py` (re-measure all six, incrementally, asserting nothing) and
+`plot_fidelity.py` (three figures: headroom against tolerance, deviation against time, and the
+near-zero floor). Both are tools rather than tests — re-measuring must never "fail", it reports, and
+a human decides. Figures are regenerable and not committed.
+
+---
+
 ### 2026-08-14 — Task 0.7 (second half): the two-tier golden harness
 
 The assertions, built on the tolerances #70 measured and #76 corrected. `studio/tests/golden/`:
