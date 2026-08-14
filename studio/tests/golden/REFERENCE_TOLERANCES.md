@@ -222,12 +222,33 @@ interesting change in any of these quantities is ≫ 1e-6 relative).
 | any stored series, max over time | `1e-10` | measured worst 3.4e-12 (`H2SO4`, case 121, day 1.34); 1e-10 covers the `Cl2` trace-species worst case of 1.1e-11 with ~10× margin |
 | final size distribution, per bin, bins above 1e-6 × peak | `1e-10` | measured 2.0e-12 worst bin; per-bin conditioning is worse than integrated N, so it gets its own (looser) number |
 | photolysis `J` | `1e-11` | measured 1.09e-13, identical in both cases — TUV-x is the most reproducible part of the pipeline |
-| time axis `t`, `V_ratio`, `T`, dry bin edges `dp_mid_um` | **exact** | measured bit-identical in both cases; these are analytic, not integrated, so any drift is a real bug |
+| time axis `t`, `V_ratio`, `T` | **exact** | measured bit-identical in both cases; these are analytic, not integrated, so any drift is a real bug |
+| dry bin edges `dp_mid_um` | `1e-15` | **not exact — corrected 2026-08-14.** Bit-identical only when the fresh run is produced by `run_ensemble`. A run produced by Studio differs in 44 of 80 bins by up to **8.1e-16**, because task 0.5 adopted `sqrt(a*b)` where `run_ensemble` writes `10**(0.5*(log10 a + log10 b))` — algebraically identical, differently rounded. Asserting `exact` here would pass against the old pipeline and fail against every Studio run, looking like a physics regression over a spelling difference. |
 | near-zero species (`O1D`, `O`, and any series below 1e-6 × peak) | **excluded** | see "The one trap"; assert an absolute floor instead if coverage is wanted |
 
 These numbers describe **this environment**. A JAX/jaxlib bump is the most likely thing to move them,
 and the correct response is to re-run this measurement and update this file — not to widen a
 tolerance in a test file.
+
+## Independently reproduced (2026-08-14)
+
+The golden case was re-run a second time by a different route — through `python -m studio.cli.run`
+(the task-0.6 entry point) rather than `run_ensemble` — and compared against the archive again:
+
+| quantity | first measurement | independent re-run |
+| --- | --- | --- |
+| SO₂ final | 2.01e-14 | 2.01e-14 |
+| H₂SO₄ final / peak | 1.19e-14 / 2.97e-14 | 1.19e-14 / 2.98e-14 |
+| total N final / peak | 1.00e-14 / 1.80e-15 | 1.00e-14 / 1.80e-15 |
+| wet SA final / peak | 9.01e-15 / 1.73e-15 | 9.01e-15 / 1.73e-15 |
+| particulate S final / peak | 1.74e-14 / 5.52e-15 | 1.74e-14 / 5.52e-15 |
+| final size dist, worst bin | 2.04e-12 | 2.04e-12 |
+| gas elements exactly equal | ~31 % | 31.7 % |
+
+`t` and `V_ratio` bit-identical, as first measured. **`dp_mid_um` was not**, which is what produced
+the correction in the table above — and it could only surface via the Studio pipeline, which did not
+exist on the branch where the first measurement was taken. `dNdlogDp` inherits that difference at
+3.2e-13, comfortably inside its own `1e-10`, so only the `dp_mid_um` row needed changing.
 
 ## Not covered by this measurement
 
