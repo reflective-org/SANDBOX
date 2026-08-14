@@ -92,6 +92,11 @@ Both produced `steps = 1461`, a time axis **bit-identical** to the archive (`t` 
 100 % equal), an identical species list and identical dry diameter bins — so nothing below is
 confounded by a shifted grid.
 
+The CAVEATS note on the time axis is confirmed rather than assumed: the archived `t` spans
+0 → 864000 s in 1461 samples with **41 distinct step sizes** ranging 0.56 s to 600 s and a **mean of
+591.78 s**, not the nominal 600. Reconstructing time as `i × DT` would misplace day 10 by ~0.5 %
+here and far more on longer runs. Every "at day" below comes from the stored `t`.
+
 ### Wall clock
 
 | run | seconds | conditions |
