@@ -614,13 +614,14 @@ class ProcessSwitches(SchemaModel):
         provenance=Provenance.PAPER_ENSEMBLE,
         source="coupled/paper_ensemble/run_ensemble.py:106 (heating_to_t=False)",
         caveat=(
-            "Decision (Ali, 2026-08-13): no temperature feedback while longwave radiation is "
-            "absent from the radiative calculation. The model's heating term is SHORTWAVE-ONLY "
-            "(AD-5.4), so enabling it does not make the box thermodynamics more complete -- it "
-            "makes them one-sided, giving a ~+1.2 K / 10 d warm drift that is an artefact of the "
-            "missing cooling rather than a physical result. The MODEL still defaults this on and "
-            "every science script turns it off; Studio refuses it outright. Revisit when longwave "
-            "cooling lands (SCIENCE-4, issue #56)."
+            "Decision (Ali, 2026-08-13): heating and buoyancy are OUT OF SCOPE for this model, "
+            "not pending features. Longwave radiation is absent from the radiative calculation "
+            "(AD-5.4), so the heating term is shortwave-only: enabling it does not make the box "
+            "thermodynamics more complete, it makes them one-sided, giving a ~+1.2 K / 10 d drift "
+            "that is an artefact of the missing cooling. Answering whether the box should heat, or "
+            "rise, needs a DIFFERENT model with longwave radiation and plume dynamics. The MODEL "
+            "still defaults this on and every science script turns it off; Studio refuses it. "
+            "See SCIENCE-4 (issue #56)."
         ),
     )
     dilution: bool = SciField(
