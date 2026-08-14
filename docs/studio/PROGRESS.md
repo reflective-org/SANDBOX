@@ -29,6 +29,42 @@ derivations to resolve rather than fixtures.
 
 ---
 
+### 2026-08-14 — `main` merged into `studio/dev`; the stop condition moves to the diagnostics dict
+
+`studio/dev` now has #73's four model fixes. Studio's whole suite (196 Tier-A tests, equivalence
+tests included) passes against the changed model unmodified — `output_dir` is gone and nothing missed
+it, which is the evidence that removing it was safe rather than merely tidy.
+
+**Conflicts resolved, one per file, deliberately:**
+
+- `studio/tests/unit/test_import_boundaries.py` — took `studio/dev`'s *structure* (three clean
+  packages including `studio.resolve`, and the seam check that allows submodules of `studio.modelio`)
+  with `main`'s *wording* (the `__post_init__` pattern it describes is now past tense, because #73
+  fixed it). Asserted both survived rather than eyeballing the merge.
+- `studio/__init__.py` — merged cleanly, and the merge exposed a stale docstring of mine: it still
+  claimed two clean packages after 0.3 added a third. Fixed here, since this is where it became
+  visible.
+
+**The stop condition now takes the diagnostics dict.** #73 deprecated the two-argument form, so
+leaving it would have had Studio emit a `DeprecationWarning` on a normal path. `diag["t"]` is all it
+reads today, but the dict also carries `SA`, `N_total` and every gas species by name — which is what
+makes the spec's SO2- or number-based `termination.criteria[]` possible at all.
+
+**`max_sim_time` enforcement is now proven end to end, not just unit-tested.** A 1-day request with
+`max_sim_time_days = 0.5`, run through `studio.cli.run` with `-W error::DeprecationWarning`:
+
+```
+[stop] condition met at t=0.500 d -- ending run early
+termination: terminated_on_limit    flags: [stopped_on_limit, open_system_dilution]
+t_end: 0.5 d (requested 1.0)        74 steps
+```
+
+That path had never actually run before — nothing set `max_sim_time`, so it was the one part of 0.6
+covered only by unit tests. It also confirms 0.6's termination inference: the run is labelled
+`TERMINATED_ON_LIMIT` and flagged, so its partial output cannot be read as converged.
+
+---
+
 ### 2026-08-14 — Correction: `dp_mid_um` is not bit-identical for a Studio-produced run
 
 The tolerance record merged in #74 proposed asserting `dp_mid_um` **exact**. That holds only when the
@@ -506,10 +542,14 @@ Scaffolding only; no runnable app code yet.
 **Still open:** BLOCKING-2 (tenancy/auth), SCIENCE-1 through SCIENCE-5.
 
 **Findings worth flagging beyond the docs** — each is a tracked issue, not a TODO comment:
-- Constructing a `CoupledScenario` imports JAX, via `from coupled.tomas_bridge import
+- ~~Constructing a `CoupledScenario` imports JAX, via `from coupled.tomas_bridge import
   BACKGROUND_MODES` at `coupled_scenario.py:196`. An API validating a form per keystroke cannot pay
-  that. → task 0.8.
-- `CoupledScenario.output_dir` is dead — the driver never reads it. → task 0.8.
+  that.~~ → fixed in task 0.8: the tables moved to the JAX-free `coupled/backgrounds.py`; the first
+  `CoupledScenario()` in a process went from ~1.0 s to ~0 s, and no longer loads JAX at all.
+- ~~`CoupledScenario.output_dir` is dead — the driver never reads it.~~ → task 0.8 **removed** it
+  (rather than honouring it): `run_coupled` returns arrays and writes nothing, so the caller owns
+  the output path; honouring the field would have given the driver a filesystem side effect and a
+  second, competing source of truth for where a run's results live.
 - `make_paper_candidate_plots.py:70` hardcodes species indices `_SO2, _SO3, _H2SO4 = 32, 34, 35`
   while the npz carries its own `species` list. Latent breakage; Studio indexes by name.
 - The figure caches have no version stamp and no input-hash key, and are invalidated by manual

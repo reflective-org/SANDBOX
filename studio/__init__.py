@@ -8,10 +8,10 @@ ADR-001).
 
 Package boundaries -- enforced by ``studio/tests/unit/test_import_boundaries.py``:
 
-* ``studio.schema`` and ``studio.science`` must import NOTHING from the API, the database, the web
-  layer, or ``coupled``. Importing ``coupled`` pulls in JAX and TOMAS (``coupled_scenario.py``
-  validates ``background_dist`` against ``coupled.tomas_bridge``), which an API validating a form on
-  every keystroke cannot afford. Both packages must be usable from a bare Python session.
+* ``studio.schema``, ``studio.science`` and ``studio.resolve`` must import NOTHING from the API, the
+  database, the web layer, or ``coupled``. Importing the model (``coupled.driver`` /
+  ``coupled.tomas_bridge``) pulls in JAX and TOMAS, which an API resolving a config on every
+  keystroke cannot afford. All three must be usable from a bare Python session.
 * ``studio.modelio`` is the ONLY package permitted to import ``coupled``. It is the seam that would
   be severed if Studio were ever extracted to its own repository.
 

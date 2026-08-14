@@ -161,9 +161,9 @@ Required per background distribution: diameter basis (dry vs ambient, and at wha
 ambient), composition and mixing state (internal vs external, sulfate mass fraction), and whether
 meteoric material is represented at all.
 
-**Partially constrained by the code already:** `coupled/tomas_bridge.py:92-105` defines six named
-lognormal backgrounds as sulfate-only (`Mk[:, SRTSO4]`, `_seed_lognormal:131-132`), and
-`AMBIENT_BACKGROUNDS` (`:107`) marks which mode sets are specified at ambient vs STP — so the
+**Partially constrained by the code already:** `coupled/backgrounds.py` defines six named
+lognormal backgrounds, seeded as sulfate-only (`Mk[:, SRTSO4]` in `tomas_bridge._seed_lognormal`),
+and `AMBIENT_BACKGROUNDS` marks which mode sets are specified at ambient vs STP — so the
 dry/ambient distinction exists but is per-dataset and implicit rather than a declared field. Meteoric
 material is **not** represented.
 

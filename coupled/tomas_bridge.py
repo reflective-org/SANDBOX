@@ -19,6 +19,12 @@ from __future__ import annotations
 import os
 import sys
 
+# The background mode tables live in coupled.backgrounds -- a JAX-free module, so that scenario
+# validation can reach them without importing this one. Re-exported here because the paper scripts and
+# docs refer to ``tomas_bridge.BACKGROUND_MODES``; this module remains where they are USED.
+from .backgrounds import (BACKGROUND_MODES, AMBIENT_BACKGROUNDS,  # noqa: F401  (re-export)
+                          MODE_BASES, TABULATED_BACKGROUND, normalize_modes)
+
 # gas model on path first (for the water-activity calc used to set RH) -- model_bridge does the insert.
 from . import model_bridge  # noqa: F401  (side effect: puts gas_phase_chemistry on sys.path)
 from aerosol import h2so4wp_at  # noqa: E402  (gas model: water activity a_W from T,P,H2O)
@@ -82,31 +88,6 @@ def _grid_for(nbins):
     return tcfg.make_grid(nbins, tcfg.XK0, 2.0 ** (40.0 / nbins))
 
 
-# --- background aerosol size distributions as (multi-)lognormal modes, DIAMETER basis. Each entry is
-# a list of (N [cm^-3, STP], Dg [um], sigma_g). DIGITIZED (approximate) from the SABR / CESM plots the
-# user provided; see coupled/analyses/paper_ensemble/DECISIONS.md for the source figures and the
-# overlay-verification. "redcircles" (Marianna, tabulated loader) stays the default and is NOT here. ---
-# N chosen so each mode's PEAK dN/dlogDp = N/(sqrt(2pi)*log10(sigma_g)) matches the value read off the
-# source plot (the most reliable digitized feature): SABR 330->~1000, 220->~95; CESM Aitken->~50,
-# Accumulation->~12, Coarse->~0.5 cm^-3 STP.
-BACKGROUND_MODES = {
-    "sabr_330": [(810.0, 0.045, 2.1)],                                    # young air (high N2O), peak ~1000
-    "sabr_310": [(205.0, 0.060, 1.8)],                                    # mid air (310-320 ppbv), peak ~320
-    "sabr_220": [(49.0, 0.12, 1.6)],                                      # aged air (low N2O), peak ~95
-    "cesm_g6":  [(22.0, 0.040, 1.5), (5.3, 0.20, 1.5), (0.18, 0.90, 1.4)],  # CESM G6 SAI (r->D x2)
-    # AER 2D geoengineered stratosphere (Pierce et al. fig. 2, gray curve: 5 Mt-S/yr, 95 nm case).
-    # Dg = 0.30 um (mode radius 0.15 um) and sigma_g = 1.7 fitted to the curve; N = 120 cm^-3 per
-    # user spec (paper caption quotes 50 cm^-3). Values are AMBIENT -> no STP conversion on seeding.
-    "aer_geo":  [(120.0, 0.30, 1.7)],
-    # CESM G6 with the source plot read as AMBIENT (user-confirmed): same modes as cesm_g6 but
-    # seeded without the STP->ambient factor. cesm_g6 is kept unchanged so the original 810-run
-    # ensemble stays reproducible.
-    "cesm_g6_amb": [(22.0, 0.040, 1.5), (5.3, 0.20, 1.5), (0.18, 0.90, 1.4)],
-}
-# mode sets specified at AMBIENT conditions (seeding skips the STP->ambient factor)
-AMBIENT_BACKGROUNDS = {"aer_geo", "cesm_g6_amb"}
-
-
 def _seed_lognormal(xk_np, boxvol, modes, temp, pres, ambient=False):
     """Nk [#/cell], Mk [kg/cell] from (multi-)lognormal modes -- mirrors _bad.map_to_grid: integrate
     dN/dlog10Dp over each bin [cm^-3 STP], x STP->ambient x boxvol, Mk = Nk x geometric-mean bin mass
@@ -134,7 +115,12 @@ def _seed_lognormal(xk_np, boxvol, modes, temp, pres, ambient=False):
 
 
 def initial_tomas_state(scenario) -> TomasState:
-    """Build the initial ``TomasState`` from the scenario using the Marianna 'redcircles' distribution.
+    """Build the initial ``TomasState`` from the scenario's background aerosol distribution.
+
+    ``scenario.background_dist`` is either a NAME -- ``"redcircles"`` (Marianna, the tabulated
+    loader) or a key of ``BACKGROUND_MODES`` -- or a USER-SUPPLIED list of ``(N, Dg, sigma_g)``
+    lognormal modes, in which case ``scenario.background_modes_basis`` ("stp" / "ambient") states
+    the number basis, since a bare mode list carries none (see coupled/backgrounds.py).
 
     Gc is all-zero: gaseous H2SO4 is handed in by the driver each outer step (the gas model owns it).
     Number/mass are per grid cell (``boxvol=BOXVOL_CM3``); T in K, P in Pa (scenario.P is mbar).
@@ -147,12 +133,22 @@ def initial_tomas_state(scenario) -> TomasState:
         raise ValueError(f"tomas_nbins must be 40, 80, or 160, got {nbins}")
     pres_pa = scenario.P * 100.0                       # mbar -> Pa (TOMAS uses Pa)
     xk = _grid_for(nbins)
-    bg = str(getattr(scenario, "background_dist", "redcircles"))
-    if bg in BACKGROUND_MODES:
+    bg = getattr(scenario, "background_dist", TABULATED_BACKGROUND)
+    if not isinstance(bg, str):
+        # user-supplied lognormal modes; the basis is explicit (CoupledScenario enforces it, and it
+        # is re-checked here because initial_tomas_state accepts any scenario-shaped object)
+        modes = normalize_modes(bg)
+        basis = str(getattr(scenario, "background_modes_basis", ""))
+        if basis not in MODE_BASES:
+            raise ValueError(f"a user-supplied background_dist mode list needs "
+                             f"background_modes_basis in {list(MODE_BASES)}, got {basis!r}")
+        Nk_np, Mk_np = _seed_lognormal(np.asarray(xk), BOXVOL_CM3, modes,
+                                       scenario.T, pres_pa, ambient=basis == "ambient")
+    elif bg in BACKGROUND_MODES:
         # seed a (multi-)lognormal background (SABR / CESM) on our grid
         Nk_np, Mk_np = _seed_lognormal(np.asarray(xk), BOXVOL_CM3, BACKGROUND_MODES[bg],
                                        scenario.T, pres_pa, ambient=bg in AMBIENT_BACKGROUNDS)
-    elif bg == "redcircles":
+    elif bg == TABULATED_BACKGROUND:
         if nbins in (40, 80):
             # validated paths: get_initial_state special-cases 80 (sqrt2); 40 uses ratio 2.0.
             Nk_np, Mk_np = _bad.get_initial_state(
@@ -165,8 +161,8 @@ def initial_tomas_state(scenario) -> TomasState:
             f = _bad.stp_to_ambient_factor(scenario.T, pres_pa)   # STP dN/dlogDp -> ambient
             Nk_np, Mk_np = Nk_np * f, Mk_np * f
     else:
-        raise ValueError(f"unknown background_dist {bg!r}; valid: 'redcircles' + "
-                         f"{sorted(BACKGROUND_MODES)}")
+        raise ValueError(f"unknown background_dist {bg!r}; valid: {TABULATED_BACKGROUND!r}, "
+                         f"{sorted(BACKGROUND_MODES)}, or a list of (N, Dg, sigma_g) modes")
     Nk = jnp.asarray(Nk_np, dtype=jnp.float64)
     Mk = jnp.asarray(Mk_np, dtype=jnp.float64)
     Gc = jnp.zeros(tcfg.N_GAS_SPECIES, dtype=jnp.float64)

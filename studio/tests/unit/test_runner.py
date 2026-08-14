@@ -335,11 +335,12 @@ class TestMaxSimTimeStopCondition:
         assert _max_sim_time_stop(resolve(RunConfig())) is None
 
     @pytest.mark.tier_a
-    def test_the_callback_takes_exactly_two_positional_arguments(self) -> None:
-        """Not ``*args``: PR #73 rejects a variadic callback as ambiguous.
+    def test_the_callback_takes_exactly_one_parameter(self) -> None:
+        """The diagnostics-dict shape. Not ``*args``, which the model rejects as ambiguous.
 
-        If this assertion ever fails because the shape moved to the diagnostics dict, that is the
-        intended migration -- update it deliberately, in the commit that does the migration.
+        Arity is part of the contract, not an implementation detail: two parameters still work but
+        emit a ``DeprecationWarning``, and a variadic callback raises ``TypeError``. Asserted here
+        because it is cheap to notice and expensive to discover from a run.
         """
         import inspect
 
@@ -348,8 +349,8 @@ class TestMaxSimTimeStopCondition:
         stop = _max_sim_time_stop(_with_sim_limit(2.0))
         assert stop is not None
         parameters = list(inspect.signature(stop).parameters.values())
-        assert len(parameters) == 2
-        assert all(p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD for p in parameters)
+        assert len(parameters) == 1
+        assert parameters[0].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
 
     @pytest.mark.tier_a
     def test_it_fires_exactly_at_the_limit(self) -> None:
@@ -359,9 +360,9 @@ class TestMaxSimTimeStopCondition:
         stop = _max_sim_time_stop(_with_sim_limit(2.0))
         assert stop is not None
         two_days_s = 2.0 * 86400.0
-        assert stop(two_days_s - 1.0, 12.0) is False
-        assert stop(two_days_s, 12.0) is True
-        assert stop(two_days_s + 1.0, 12.0) is True
+        assert stop({"t": two_days_s - 1.0, "SA": 12.0}) is False
+        assert stop({"t": two_days_s, "SA": 12.0}) is True
+        assert stop({"t": two_days_s + 1.0, "SA": 12.0}) is True
 
 
 def _with_sim_limit(days: float) -> ResolvedConfig:
