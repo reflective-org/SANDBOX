@@ -26,3 +26,6 @@ gas_phase_chemistry/
 # -- SQLite database and run artefacts, both regenerable and both machine-specific
 .env
 var/
+
+# Subagent worktrees: separate checkouts, never part of this repo
+.claude/worktrees/
