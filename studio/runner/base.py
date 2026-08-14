@@ -116,6 +116,9 @@ class JobRecord(BaseModel):
     #: that dies early still says where to look.
     work_dir: Path | None = None
     input_path: Path | None = None
+    #: The provenance record (ADR-006), written at submit time -- before execution -- so a run that
+    #: dies in minute three of four still says exactly what produced it.
+    provenance_path: Path | None = None
     stdout_path: Path | None = None
     stderr_path: Path | None = None
     exit_code: int | None = None

@@ -369,3 +369,43 @@ def _with_sim_limit(days: float) -> ResolvedConfig:
     payload = RunConfig().model_dump()
     payload["termination"]["max_sim_time_days"] = days
     return resolve(RunConfig.model_validate(payload))
+
+
+class TestProvenanceIsWrittenAtSubmit:
+    """A run's provenance must exist before it can fail (ADR-006)."""
+
+    @pytest.mark.tier_a
+    def test_provenance_exists_the_moment_submit_returns(
+        self, runner: LocalSubprocessRunner, resolved: ResolvedConfig
+    ) -> None:
+        """Before the process finishes -- so a run that dies in minute three still has it.
+
+        Asserted against the record returned by ``submit()``, not after ``wait()``: the point is the
+        ordering, and checking afterwards would pass even if it were written at completion.
+        """
+        from studio.modelio.provenance import ProvenanceRecord
+
+        record = runner.submit(resolved, label="prov")
+        assert record.provenance_path is not None
+        assert record.provenance_path.is_file(), "written at submit, not at completion"
+
+        provenance = ProvenanceRecord.read(record.provenance_path)
+        assert provenance.config_hash == resolved.config.config_hash() == record.config_hash
+        assert set(provenance.submodules)  # the model is pinned, not just the app
+        runner.wait(record.job_id, timeout=30)
+
+    @pytest.mark.tier_a
+    def test_a_failed_run_still_has_its_provenance(
+        self,
+        runner: LocalSubprocessRunner,
+        resolved: ResolvedConfig,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The case that matters: four minutes in, exit 1, and someone asks what produced it."""
+        _directive(monkeypatch, mode="fail", message="synthetic failure")
+        record = runner.submit(resolved)
+        final = runner.wait(record.job_id, timeout=30)
+
+        assert final.state is JobState.FAILED
+        assert final.provenance_path is not None and final.provenance_path.is_file()
+        assert "provenance.json" in {p.name for p in runner.artifacts(final.job_id)}
