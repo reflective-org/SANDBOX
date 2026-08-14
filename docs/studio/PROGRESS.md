@@ -15,20 +15,73 @@ with full provenance, and the golden tests pass.
 | Task | Status |
 |---|---|
 | 0.1 Repo, CI, docs skeleton | **done** |
-| 0.2 `studio/schema` v0 — **review gate** | **awaiting review** (#61) |
+| 0.2 `studio/schema` v0 — **review gate** | **done** (#62, reviewed) |
 | 0.3 Dependency-graph engine + override semantics | not started |
 | 0.4 `studio/modelio` seam + `RunSummary` | not started |
-| 0.5 `studio/science` derivations | not started |
+| 0.5 `studio/science` derivations | **done** (#64) |
 | 0.6 `studio/runner` + job lifecycle | not started |
 | 0.7 Golden-file harness (two tiers) | not started |
 | 0.8 Four contained fixes in `coupled/` | not started |
 | 0.9 Vertical slice: CLI + API + minimal UI | not started |
 
-Nothing is built on top of `studio/schema` until 0.2 is reviewed and merged.
+Task order note: 0.5 was taken **before 0.3**, so the dependency-graph engine has real
+derivations to resolve rather than fixtures.
 
 ---
 
-### 2026-08-13 — Task 0.2: `studio/schema` v0 · **awaiting review** (issue #61)
+### 2026-08-13 — Task 0.5: `studio/science` derivations (issue #64)
+
+Taken **before 0.3** at Ali's direction, so the dependency-graph engine has real derivations to
+resolve rather than fixtures.
+
+**Added** — `studio/science/`: `constants.py`, `air.py`, `plume.py`, `size_distribution.py`,
+`gcr.py`. 40 new Tier-A tests (101 total).
+
+**What the consolidation actually found.** The plan described this task from memory, and two of its
+claims did not survive contact with the code. Both are corrected in `plan/PHASE_0.md`:
+
+- **Six copies of the V₀ / initial-concentration derivation, not five** — the missed one is
+  `make_rf_runs.py:44` — and `run_dilution_d1_clean.py` is at `coupled/`, not
+  `coupled/paper_ensemble/`. The divergence is real and it matters: `run_ensemble.py` uses a **15 km**
+  track, the D1 flagship a **30 km** one. Same injected mass, half the concentration. Which is right
+  depends on SCIENCE-2 (#54). Also verified: `run_60day.py:37`'s hard-coded `6.273063291666667e15`
+  is **bit-identical** to what `run_ensemble.py:46` computes, so it is a frozen copy, not a variant.
+- **The "two different mid-point expressions" are one expression.**
+  `10**(0.5*(log a + log b))` and `sqrt(a*b)` are algebraically identical, as are
+  `log b - log a` and `log(b/a)`. Measured difference on an 80-bin grid: ≤ 7e-16 (mid-point) and
+  ≤ 5e-15 (dlog10Dp) relative — a few ULP of float64. Consolidating is still worth doing; believing
+  there were two conventions was not. `test_the_repositorys_two_spellings_are_the_same_quantity`
+  measures it rather than asserting it, because that belief would otherwise get worked around.
+
+**Decisions**
+
+- **`air_number_density` is a MIRROR, not a fork.** `studio.science` may not import the model
+  (ADR-001), so this one relation is duplicated — and `test_science_air.py` runs the model's own
+  implementation in a subprocess and asserts **exact** agreement at the four T–p corners the runs
+  use. That is what makes a duplicate acceptable. Note the asymmetry: CI does not check out the
+  private submodules, so this check *skips* in CI and only really runs on a developer machine.
+- **`gcr.py` computes nothing.** `ion_pair_production_rate` raises `NotImplementedError` naming
+  SCIENCE-6; `PAPER_ENSEMBLE_ION_PAIR_RATE = 30.0` is available as a constant with its provenance.
+  A test asserts it refuses **even at ~20 km / 30°N**, where the uncited 30.0 came from — returning
+  the known value at the known point and raising elsewhere is the most tempting version of this
+  mistake, because it looks like a working function with gaps.
+- **Two constants are deliberately the model's rounded values**, recorded as such in `constants.py`:
+  SO₂ at 64.0 g/mol (true 64.066, a 0.10 % difference) and H₂SO₄ at 98.0 (true 98.079). Studio
+  inherits them so Phase 0 reproduces the golden runs; a silent correction would shift every derived
+  initial concentration and make a Studio bug indistinguishable from a model change. The ~0.036 %
+  Avogadro seam at the gas/TOMAS boundary is likewise recorded (`AVOGADRO_GAS_MODEL`) and not used.
+- **Reused, not rewritten**: `coupled.dilution.volume_ratio` / `kdil_from_regime`,
+  `coupled.aerosol_props`, `coupled.units`. They are already tested in the model, and Studio reaches
+  them through `studio/modelio` rather than keeping a second copy.
+
+**Toolchain** — Studio's Python floor is now stated as **3.12** in all three tools. numpy's bundled
+type stubs use 3.12-only `type` statements, so `mypy --strict` could not check `studio/science`
+against 3.11 at all; the lockfile and CI were already 3.12. No dependency changed, so the lockfile
+is untouched.
+
+---
+
+### 2026-08-13 — Task 0.2: `studio/schema` v0 · **merged** (#62)
 
 The review gate. Nothing is built on top of this until it is reviewed and merged.
 
