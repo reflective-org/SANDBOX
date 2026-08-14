@@ -68,6 +68,12 @@ class LocalSubprocessRunner:
         entry_module: The module launched with ``-m``. Overridable so the LIFECYCLE can be tested
             without a four-minute model run -- the default is the real path, and nothing in this
             class branches on the value. It is a parameter, not a test hook.
+        repo_root: Which checkout to record in each run's provenance. Defaults to the one this code
+            came from, which is what a local runner should record. It is a parameter because
+            "which checkout produced this?" is a real question a runner has to answer -- a worker
+            executing code from elsewhere would answer it differently -- and because CI has no
+            submodules, so the tests point it at a synthetic checkout. **It does not weaken the
+            guarantee**: a run still cannot start unless the checkout it names can be pinned.
         python_executable: Interpreter for the subprocess; defaults to the current one, so a job
             inherits the environment that submitted it rather than whatever is first on PATH.
     """
@@ -79,6 +85,7 @@ class LocalSubprocessRunner:
         max_workers: int = DEFAULT_MAX_WORKERS,
         entry_module: str = "studio.cli.run",
         python_executable: str | None = None,
+        repo_root: Path | None = None,
     ) -> None:
         if max_workers < 1:
             raise ValueError(f"max_workers must be >= 1, got {max_workers}")
@@ -87,6 +94,7 @@ class LocalSubprocessRunner:
         self.max_workers = max_workers
         self.entry_module = entry_module
         self.python_executable = python_executable or sys.executable
+        self.repo_root = repo_root
         self.registry = JobRegistry()
         self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="studio-run")
         self._processes: dict[str, subprocess.Popen[bytes]] = {}
@@ -113,7 +121,8 @@ class LocalSubprocessRunner:
         # Provenance BEFORE execution (ADR-006). Deliberately not in a try/except: if the model
         # cannot be pinned, the run must not start. A result whose origin is unknown is worth less
         # than no result, because it looks like the others.
-        provenance_path = record_for(config).write(work_dir / "provenance.json")
+        provenance = record_for(config, repo_root=self.repo_root)
+        provenance_path = provenance.write(work_dir / "provenance.json")
 
         record = JobRecord(
             job_id=job_id,

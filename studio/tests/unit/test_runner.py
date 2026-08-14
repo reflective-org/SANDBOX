@@ -41,8 +41,19 @@ def resolved() -> ResolvedConfig:
 
 
 @pytest.fixture
-def runner(tmp_path: Path) -> LocalSubprocessRunner:
-    made = LocalSubprocessRunner(tmp_path / "jobs", max_workers=2, entry_module=FIXTURE_MODULE)
+def runner(tmp_path: Path, fake_sandbox: Path) -> LocalSubprocessRunner:
+    """A runner over the fixture entry point, recording provenance for a synthetic checkout.
+
+    ``repo_root=fake_sandbox`` because submitting now writes a provenance record, which requires a
+    pinnable checkout -- and CI checks out no submodules. Pointing at a synthetic checkout is what
+    lets these tests run in CI rather than skipping; the production default is the real one.
+    """
+    made = LocalSubprocessRunner(
+        tmp_path / "jobs",
+        max_workers=2,
+        entry_module=FIXTURE_MODULE,
+        repo_root=fake_sandbox,
+    )
     yield made
     made.shutdown(cancel_running=True)
 

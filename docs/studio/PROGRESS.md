@@ -70,6 +70,14 @@ being wrong, and each is documented where it will be re-read:
 The tests build **real git repositories** rather than mocking `subprocess`: the module is a thin
 shell over git's behaviour, so a mocked git would test the mock. ~1 s, worth it.
 
+**A fourth thing CI caught that local tests could not.** Making provenance mandatory at submit means
+the runner now needs a pinnable checkout — and CI checks out no submodules, so every runner submit
+test failed there while passing locally. The fix is a `repo_root` parameter on the runner (which
+checkout to record), pointed at the shared synthetic-checkout fixture in the tests. It does **not**
+weaken the guarantee: a run still cannot start unless the checkout it names can be pinned, and the
+production default is the real one. "Which checkout produced this?" is a question a runner genuinely
+has to answer — a worker executing code from elsewhere would answer it differently.
+
 ---
 
 ### 2026-08-14 — `main` merged into `studio/dev`; the stop condition moves to the diagnostics dict

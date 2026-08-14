@@ -14,7 +14,6 @@ and not-a-checkout paths are genuinely exercised rather than asserted about a st
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -30,64 +29,6 @@ from studio.modelio.provenance import (
 )
 from studio.resolve import ResolvedConfig, apply_change, resolve, set_override
 from studio.schema import RunConfig
-
-
-def _git(path: Path, *args: str) -> None:
-    subprocess.run(
-        [
-            "git",
-            "-c",
-            "user.email=test@example.invalid",
-            "-c",
-            "user.name=Test",
-            "-c",
-            "commit.gpgsign=false",
-            *args,
-        ],
-        cwd=str(path),
-        check=True,
-        capture_output=True,
-    )
-
-
-def _make_repo(path: Path, filename: str = "file.txt") -> Path:
-    """A real git repo with one commit."""
-    path.mkdir(parents=True, exist_ok=True)
-    _git(path, "init", "--quiet")
-    (path / filename).write_text("content\n", encoding="utf-8")
-    _git(path, "add", filename)
-    _git(path, "commit", "--quiet", "-m", "initial")
-    return path
-
-
-@pytest.fixture
-def fake_sandbox(tmp_path: Path) -> Path:
-    """A SANDBOX-shaped tree: a root repo with the three model submodules REGISTERED as such.
-
-    Registered rather than merely nested, because the two differ to git: a nested repo the parent
-    does not know about shows up in ``git status --porcelain`` as an untracked entry, so the parent
-    reads as dirty. That is correct behaviour, and it is what the first version of this fixture
-    tripped over -- the code was right and the fixture was lying about the shape of a real
-    checkout.
-
-    ``protocol.file.allow=always`` is required because git refuses local-path submodules by default
-    (CVE-2022-39253). Safe here: the "remote" is a directory this test just created.
-    """
-    root = _make_repo(tmp_path / "SANDBOX")
-    for name in MODEL_SUBMODULES:
-        origin = _make_repo(tmp_path / "origins" / name)
-        _git(
-            root,
-            "-c",
-            "protocol.file.allow=always",
-            "submodule",
-            "add",
-            "--quiet",
-            str(origin),
-            name,
-        )
-    _git(root, "commit", "--quiet", "-m", "add submodules")
-    return root
 
 
 @pytest.fixture
@@ -208,6 +149,8 @@ def test_not_a_git_checkout_raises(tmp_path: Path, resolved: ResolvedConfig) -> 
 @pytest.mark.tier_a
 def test_a_missing_submodule_raises(tmp_path: Path, resolved: ResolvedConfig) -> None:
     """The SANDBOX SHA alone does not pin the model (ADR-001), so a missing submodule is fatal."""
+    from studio.tests.conftest import _make_repo
+
     root = _make_repo(tmp_path / "partial")
     _make_repo(root / "tuvx-jax")  # the other two are absent
     with pytest.raises(NotAGitCheckoutError, match="submodule"):
@@ -217,6 +160,8 @@ def test_a_missing_submodule_raises(tmp_path: Path, resolved: ResolvedConfig) ->
 @pytest.mark.tier_a
 def test_a_repo_with_no_commits_raises(tmp_path: Path, resolved: ResolvedConfig) -> None:
     """``rev-parse HEAD`` has nothing to report, which is a failure rather than an empty string."""
+    from studio.tests.conftest import _git
+
     root = tmp_path / "empty"
     root.mkdir()
     _git(root, "init", "--quiet")
