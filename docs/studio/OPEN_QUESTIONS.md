@@ -169,7 +169,7 @@ material is **not** represented.
 
 ---
 
-### SCIENCE-4 — Box thermodynamics · **PARTLY ANSWERED** (no temperature feedback) · blocks Phase 5 · [#56](https://github.com/reflective-org/SANDBOX/issues/56)
+### SCIENCE-4 — Box thermodynamics · **ANSWERED for heating and buoyancy** (2026-08-13); sedimentation open · [#56](https://github.com/reflective-org/SANDBOX/issues/56)
 *Is the box isobaric? isothermal? does it rise buoyantly? do particles sediment out?*
 
 Absent from the original brief. Current behaviour, from the code:
@@ -179,16 +179,30 @@ Absent from the original brief. Current behaviour, from the code:
   AD-5.4), producing a one-sided ≈ +1.2 K / 10 d warm drift. Every science script leaves it off.
 - **No buoyant rise.** No sedimentation.
 
-**Partly answered (Ali, 2026-08-13): no temperature feedback.** Longwave radiation is not in the
-radiative calculation, so the heating term cannot represent the box's energy balance — enabling it
-does not make the thermodynamics more complete, it makes them one-sided, and the ~+1.2 K / 10 d
-drift is an artefact of the missing cooling rather than a result. `switches.heating_to_t` is
-therefore `Literal[False]` in the schema from version 0.2.0: `True` fails validation rather than
-being defaulted off, so it cannot be enabled by a form, a YAML file or a sweep axis without the
-schema changing first. Revisit when longwave cooling lands.
+**Answered (Ali, 2026-08-13): heating and buoyancy are out of scope for this model.**
 
-The rest of SCIENCE-4 stands: buoyant rise, sedimentation and the isobaric assumption are still
-undecided, and each must become a schema field with a documented default.
+Not "undecided" — **out of scope**, which is a different status and is why this row is closed rather
+than left open. Longwave radiation is not in the radiative calculation, so the heating term cannot
+represent the box's energy balance: enabling it does not make the thermodynamics more complete, it
+makes them one-sided, and the ~+1.2 K / 10 d drift is an artefact of the missing cooling rather than
+a result. Buoyant rise follows the same logic — a parcel rises in response to a heating rate this
+model cannot compute, so a rise velocity here would be a free parameter dressed as physics.
+
+**Answering either question needs a different model**, one with longwave radiation and plume
+dynamics. It is not a gap to be filled in by a later Studio phase, and Studio must not present a
+knob implying otherwise:
+
+- `switches.heating_to_t` is `Literal[False]` from schema 0.2.0 — `True` fails validation rather
+  than being defaulted off, so it cannot be enabled by a form, a YAML file or a sweep axis.
+- **No buoyancy or heating-rate fields are added to the schema at all.** A field for a capability
+  the model does not have would advertise it; the absence is the honest interface (ADR-005).
+- Every run is therefore **isobaric and isothermal at the configured temperature**, and results
+  carry that as a top-level caveat rather than a footnote.
+
+**Still open: sedimentation.** It is untouched by this decision — a particle-loss process, not a
+thermodynamic response — and the model does not have it. It is deliberately left in this register
+rather than swept in with the rest, because "we decided not to model heating" is not an argument
+about gravitational settling.
 
 ---
 
@@ -245,7 +259,7 @@ issue at that point rather than sitting in a backlog now.
 | `chemistry.rate_overrides[]` (general) | Only `so2_ho2_rate` is a knob (`coupled_scenario.py:130`). Arbitrary per-reaction overrides do not exist. |
 | `chemistry.photolysis.tuvx_settings.{o3_column, albedo, aod}` | Not exposed. Only mode + lat/lon/doy/hour reach TUV-x (`model_bridge.py:46`). |
 | `numerics.bin_scheme.{d_min, d_max, mass_doubling}` | Fixed by the TOMAS grid; only `tomas_nbins ∈ {40, 80, 160}` is selectable (`tomas_bridge.py:146`). Ratio = `2**(40/nbins)`; the top boundary is pinned. |
-| `numerics.box_thermodynamics.*` | See SCIENCE-4. |
+| `numerics.box_thermodynamics.*` | **Not exposed, by decision.** Heating and buoyancy are out of scope (SCIENCE-4): the model cannot compute them and a field would imply it can. Isobaric + isothermal is the only behaviour. |
 | `dilution.entrainment.{entrains_background_gases, entrains_background_aerosol}` | Entrainment is unconditional when `switches.dilution` is on. Separate flags are new code. |
 | `dilution.background_evolves` | See SCIENCE-5. Only `false` is accepted. |
 | `background.aerosol` custom lognormal modes | Six named modes + tabulated `redcircles` only — but `_seed_lognormal` (`tomas_bridge.py:110`) already accepts arbitrary `(N, Dg, σg)` tuples, so this is a small, worthwhile early addition. |
