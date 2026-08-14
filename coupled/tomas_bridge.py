@@ -19,6 +19,12 @@ from __future__ import annotations
 import os
 import sys
 
+# The background mode tables live in coupled.backgrounds -- a JAX-free module, so that scenario
+# validation can reach them without importing this one. Re-exported here because the paper scripts and
+# docs refer to ``tomas_bridge.BACKGROUND_MODES``; this module remains where they are USED.
+from .backgrounds import (BACKGROUND_MODES, AMBIENT_BACKGROUNDS,  # noqa: F401  (re-export)
+                          TABULATED_BACKGROUND)
+
 # gas model on path first (for the water-activity calc used to set RH) -- model_bridge does the insert.
 from . import model_bridge  # noqa: F401  (side effect: puts gas_phase_chemistry on sys.path)
 from aerosol import h2so4wp_at  # noqa: E402  (gas model: water activity a_W from T,P,H2O)
@@ -80,31 +86,6 @@ def _grid_for(nbins):
     if nbins == 80:
         return tcfg.make_grid_80bin()
     return tcfg.make_grid(nbins, tcfg.XK0, 2.0 ** (40.0 / nbins))
-
-
-# --- background aerosol size distributions as (multi-)lognormal modes, DIAMETER basis. Each entry is
-# a list of (N [cm^-3, STP], Dg [um], sigma_g). DIGITIZED (approximate) from the SABR / CESM plots the
-# user provided; see coupled/analyses/paper_ensemble/DECISIONS.md for the source figures and the
-# overlay-verification. "redcircles" (Marianna, tabulated loader) stays the default and is NOT here. ---
-# N chosen so each mode's PEAK dN/dlogDp = N/(sqrt(2pi)*log10(sigma_g)) matches the value read off the
-# source plot (the most reliable digitized feature): SABR 330->~1000, 220->~95; CESM Aitken->~50,
-# Accumulation->~12, Coarse->~0.5 cm^-3 STP.
-BACKGROUND_MODES = {
-    "sabr_330": [(810.0, 0.045, 2.1)],                                    # young air (high N2O), peak ~1000
-    "sabr_310": [(205.0, 0.060, 1.8)],                                    # mid air (310-320 ppbv), peak ~320
-    "sabr_220": [(49.0, 0.12, 1.6)],                                      # aged air (low N2O), peak ~95
-    "cesm_g6":  [(22.0, 0.040, 1.5), (5.3, 0.20, 1.5), (0.18, 0.90, 1.4)],  # CESM G6 SAI (r->D x2)
-    # AER 2D geoengineered stratosphere (Pierce et al. fig. 2, gray curve: 5 Mt-S/yr, 95 nm case).
-    # Dg = 0.30 um (mode radius 0.15 um) and sigma_g = 1.7 fitted to the curve; N = 120 cm^-3 per
-    # user spec (paper caption quotes 50 cm^-3). Values are AMBIENT -> no STP conversion on seeding.
-    "aer_geo":  [(120.0, 0.30, 1.7)],
-    # CESM G6 with the source plot read as AMBIENT (user-confirmed): same modes as cesm_g6 but
-    # seeded without the STP->ambient factor. cesm_g6 is kept unchanged so the original 810-run
-    # ensemble stays reproducible.
-    "cesm_g6_amb": [(22.0, 0.040, 1.5), (5.3, 0.20, 1.5), (0.18, 0.90, 1.4)],
-}
-# mode sets specified at AMBIENT conditions (seeding skips the STP->ambient factor)
-AMBIENT_BACKGROUNDS = {"aer_geo", "cesm_g6_amb"}
 
 
 def _seed_lognormal(xk_np, boxvol, modes, temp, pres, ambient=False):

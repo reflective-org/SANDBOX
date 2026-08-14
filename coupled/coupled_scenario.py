@@ -18,6 +18,12 @@ import json
 import os
 from dataclasses import asdict, dataclass, field
 
+# Deliberately the JAX-free table module, NOT ``coupled.tomas_bridge``: this dataclass is constructed
+# by form validation and must stay cheap to import and to build (see coupled/backgrounds.py).
+# Absolute (not relative) because this module is also imported FLAT as ``coupled_scenario`` with
+# coupled/ on sys.path -- see coupled/conftest.py -- where a relative import has no package to resolve.
+from coupled.backgrounds import BACKGROUND_MODES, TABULATED_BACKGROUND
+
 #: Photolysis drivers understood by the model (validated -> no silent mis-gate of the sulfur chain).
 PHOTOLYSIS_MODES = ("reference", "sza", "tuvx")
 
@@ -121,8 +127,8 @@ class CoupledScenario:
     tomas_nbins: int = 40
     # Background aerosol size distribution seeded into the initial TomasState. "redcircles" (Marianna,
     # default) uses the tabulated loader; "sabr_330"/"sabr_220"/"cesm_g6" seed a (multi-)lognormal
-    # from tomas_bridge.BACKGROUND_MODES (digitized from SABR/CESM plots -- see paper_ensemble docs).
-    background_dist: str = "redcircles"
+    # from coupled.backgrounds.BACKGROUND_MODES (digitized from SABR/CESM plots -- see paper_ensemble).
+    background_dist: str = TABULATED_BACKGROUND
     # Rate constant [cm^3/molec/s] for SO2 + HO2 -> SO3 + OH (JPL 19-5 I34). JPL gives only an UPPER
     # LIMIT (~1e-18) and recommends NO products, so this is a deliberate sensitivity knob: 0.0
     # eliminates the channel; 1e-18/1e-17/1e-16 scan the plausible range. Only active in the sulfur
@@ -193,9 +199,8 @@ class CoupledScenario:
             raise ValueError(f"condensation_alpha must be in (0, 1], got {self.condensation_alpha}")
         if self.coag_kernel_scale < 0.0:   # now wired (AD-7.2): free multiplier on the coag kernel
             raise ValueError(f"coag_kernel_scale must be >= 0, got {self.coag_kernel_scale}")
-        from coupled.tomas_bridge import BACKGROUND_MODES
-        if str(self.background_dist) not in ("redcircles", *BACKGROUND_MODES):
-            raise ValueError(f"background_dist must be 'redcircles' or one of "
+        if str(self.background_dist) not in (TABULATED_BACKGROUND, *BACKGROUND_MODES):
+            raise ValueError(f"background_dist must be {TABULATED_BACKGROUND!r} or one of "
                              f"{sorted(BACKGROUND_MODES)}, got {self.background_dist!r}")
         if self.dt_couple > self.DT:
             raise ValueError(f"dt_couple ({self.dt_couple}) must be <= output step DT ({self.DT})")
