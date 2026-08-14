@@ -80,7 +80,9 @@ Per set: `slopegraph`, `amplification_ratios`, `elasticity`, `sizedist_by_nuc|le
 `banana_D2med_ylgnbu` (colormap variant).
 
 ### Oxidation — `runs/plots/oxidation/` (`make_oxidation_plots.py`)
-`OH_by_dilution` (linear, 5 regimes, categorical colors); `sulfur_budget_D2med`
+`OH_by_dilution`, `HO2_by_dilution`, `H2O2_by_dilution` (one figure per oxidant; linear,
+5 regimes, categorical colors, sci-notation exponent pinned per species at 10^6/10^7/10^8);
+`sulfur_budget_D2med`
 (pure-sulfur budget, µg S cm^-3 + stacked fractions; AMS-style colors, dashed orange gas
 H2SO4, direct labels). SABR-220 only (no geo dependence).
 

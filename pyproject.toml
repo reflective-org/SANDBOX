@@ -34,17 +34,89 @@ jax-chemistry = [
     "optimistix>=0.0.6",
     "lineax>=0.0.4",
 ]
+# Plume Studio: the configure/run/compare front-end over the coupled model (studio/, docs/studio/).
+# Deliberately lightweight -- SQLite + an in-process worker pool, no Redis/Celery/Docker in Phase 0
+# (docs/studio/adr/ADR-007-stack.md). Alembic is here from the first migration so that moving to
+# Postgres is a connection-string change rather than a rewrite.
+studio = [
+    "pydantic>=2.7",
+    "pint>=0.23",            # units at the presentation boundary only, never inside the model call
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "sse-starlette>=2.0",    # progress is pushed (spec 7.3), not polled
+    "typer>=0.12",           # CLI: scripted ensembles must not require the browser
+]
+# studio linting/typing; separate from `dev` so the model's suite is unaffected
+studio-dev = [
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "black>=24.3",
+    "hypothesis>=6.100",     # property tests for unit round-trips across the valid T-p range
+]
 
 # the models themselves live in the tuvx-jax / stratchem-jax / tomas-jax git submodules
 # (put on sys.path by coupled/model_bridge.py and coupled/tomas_bridge.py); this project
 # installs the coupling layer + shared dependencies.
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["coupled*"]
-exclude = ["coupled.paper_ensemble.runs*"]
+include = ["coupled*", "studio*"]
+exclude = ["coupled.paper_ensemble.runs*", "studio.tests*", "studio.web*"]
 
 [tool.pytest.ini_options]
+# NOTE: testpaths stays coupled/tests deliberately -- CLAUDE.md documents separate suites per
+# component, and Studio is a fourth. Run it explicitly: pytest studio/tests -m tier_a
 testpaths = ["coupled/tests"]
 markers = [
     "slow: end-to-end runs that invoke the real TOMAS microphysics or TUV-x port (deselect with -m 'not slow')",
+    "tier_a: studio -- fast checks plus one short real run; runs in CI on every commit (ADR-009)",
+    "tier_b: studio -- full-case golden reproduction against the archived ensemble; minutes, nightly/manual (ADR-009)",
 ]
+
+# ----------------------------------------------------------------------------------------------
+# Plume Studio tooling. Scoped to studio/ so the model's existing style is left alone.
+# ----------------------------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["studio"]
+extend-exclude = ["studio/web"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # import sorting
+    "B",         # bugbear
+    "UP",        # pyupgrade
+    "ANN",       # missing annotations -- mypy --strict enforces the rest
+    "RUF",
+]
+# ARG/ANN on tests would fight pytest fixtures; ANN401 (typed **kwargs as Any) is not worth the noise
+ignore = ["ANN401"]
+
+[tool.ruff.lint.per-file-ignores]
+"studio/tests/**" = ["ANN"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+extend-exclude = "studio/web"
+
+[tool.mypy]
+python_version = "3.11"
+# --strict is applied to studio/schema and studio/science on the command line and in CI; the settings
+# here are the baseline for everything else under studio/.
+files = ["studio"]
+exclude = ["studio/web/", "studio/tests/"]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+# The model is untyped and is not ours to annotate; studio/modelio is the only importer (ADR-001).
+module = ["coupled.*", "config", "tomas_jax.*", "tuvx_photolysis.*"]
+ignore_missing_imports = true
