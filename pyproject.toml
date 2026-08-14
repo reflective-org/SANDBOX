@@ -121,5 +121,19 @@ check_untyped_defs = true
 
 [[tool.mypy.overrides]]
 # The model is untyped and is not ours to annotate; studio/modelio is the only importer (ADR-001).
-module = ["coupled.*", "config", "tomas_jax.*", "tuvx_photolysis.*"]
+# `follow_imports = "silent"` matters as much as ignore_missing_imports: once studio/modelio imports
+# `coupled`, mypy would otherwise report errors from the MODEL's source (its own untyped deps --
+# yaml, scipy, the flat `aerosol` module), which are not Studio's to fix and would make the check
+# unusable. Studio's own use of those imports is still checked.
+module = [
+    "coupled.*",
+    "config",
+    "aerosol",
+    "background_aerosol_distribution",
+    "tomas_jax.*",
+    "tuvx_photolysis.*",
+    "yaml",
+    "scipy.*",
+]
 ignore_missing_imports = true
+follow_imports = "silent"

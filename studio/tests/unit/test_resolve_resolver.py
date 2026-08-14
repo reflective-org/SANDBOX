@@ -10,6 +10,10 @@ number that reaches the model, recomputing too much quietly discards something t
 
 from __future__ import annotations
 
+import subprocess
+import sys
+import textwrap
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -247,11 +251,24 @@ def test_a_degenerate_input_is_caught_by_the_schema_before_the_derivation_runs()
 def test_resolution_does_not_import_the_model() -> None:
     """The API resolves on every keystroke; a JAX import on that path would be unaffordable.
 
-    The static and runtime boundary checks live in test_import_boundaries.py; this one asserts the
-    same thing about the actual call path, which is what the cost is attached to.
+    Run in a FRESH interpreter, not in-process. ``test_import_boundaries.py`` covers the same ground
+    for imports; this one covers the CALL, because a lazy import inside ``resolve()`` would slip
+    past an import-time check. In-process it would prove nothing either way: another test module in
+    this session imports ``studio.modelio.scenario``, which is allowed to reach the model, and that
+    alone would put ``coupled`` in ``sys.modules``.
     """
-    import sys
-
-    resolve(RunConfig())
-    assert "coupled" not in sys.modules
-    assert "jax" not in sys.modules
+    probe = textwrap.dedent("""
+        import sys
+        from studio.resolve import resolve
+        from studio.schema import RunConfig
+        resolve(RunConfig())
+        print(sorted({"coupled", "jax", "jaxlib"} & {m.split(".")[0] for m in sys.modules}))
+        """)
+    proc = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).resolve().parents[3]),
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "[]", f"resolving pulled in {proc.stdout.strip()}"

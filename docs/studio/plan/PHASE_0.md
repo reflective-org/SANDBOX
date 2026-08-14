@@ -68,7 +68,7 @@ construction. It is a data-model problem, not a UI problem.
 
 ---
 
-## 0.4 — `studio/modelio` seam + `RunSummary`
+## 0.4 — `studio/modelio` seam + `RunSummary` · *done* (issue #68)
 
 - `to_scenario(RunConfig) -> CoupledScenario` — the single conversion point, and the **only** package
   permitted to import `coupled`.

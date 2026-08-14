@@ -115,7 +115,12 @@ def test_only_the_model_seam_imports_coupled() -> None:
     Catches imports hidden inside function bodies, which the runtime check above cannot see.
     """
     offenders = _modules_importing_coupled()
-    stray = {module for module in offenders if module not in MODEL_SEAM_PACKAGES}
+    stray = {
+        module
+        for module in offenders
+        # a submodule of the seam (studio.modelio.scenario) is the seam; a sibling package is not
+        if not any(module == seam or module.startswith(f"{seam}.") for seam in MODEL_SEAM_PACKAGES)
+    }
     assert stray == set(), (
         f"{sorted(stray)} import `coupled`, but ADR-001 names {sorted(MODEL_SEAM_PACKAGES)} as the "
         f"only model seam. Move the call behind studio.modelio, or amend ADR-001 in this change."

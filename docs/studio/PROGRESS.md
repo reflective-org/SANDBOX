@@ -17,7 +17,7 @@ with full provenance, and the golden tests pass.
 | 0.1 Repo, CI, docs skeleton | **done** |
 | 0.2 `studio/schema` v0 — **review gate** | **done** (#62, reviewed) |
 | 0.3 Dependency-graph engine + override semantics | **done** (#66) |
-| 0.4 `studio/modelio` seam + `RunSummary` | not started |
+| 0.4 `studio/modelio` seam + `RunSummary` | **done** (#68) |
 | 0.5 `studio/science` derivations | **done** (#64) |
 | 0.6 `studio/runner` + job lifecycle | not started |
 | 0.7 Golden-file harness (two tiers) | not started |
@@ -26,6 +26,63 @@ with full provenance, and the golden tests pass.
 
 Task order note: 0.5 was taken **before 0.3**, so the dependency-graph engine has real
 derivations to resolve rather than fixtures.
+
+---
+
+### 2026-08-13 — Task 0.4: the model seam and `RunSummary` (issue #68)
+
+`studio/modelio/`: `scenario.py` (the seam) and `summary.py` (the reduction). 23 new Tier-A tests
+(171 total).
+
+**The equivalence test passes.** `to_scenario(resolve(RunConfig()))` is **field-for-field identical**
+to `run_ensemble.build_scenario()` for `30N_20km__sabr220__D2med__a1p0__nuc1__cg1`, compared as
+`dataclasses.asdict` with exact equality on every field including the floats. The schema is a
+faithful superset of what the ensemble ran, and that is now proven rather than intended — before any
+run, instead of via a diverging result days later. The derived `SO2` initial concentration matches
+to the last bit, which is the evidence that consolidating that derivation in 0.5 changed nothing.
+
+**Measured, because the cost is not where anyone would guess.** Importing
+`studio.modelio.scenario` takes ~0.13 s and pulls in **no JAX at all**. The first `to_scenario()`
+*call* takes ~1.05 s, because `CoupledScenario.__post_init__` imports `coupled.tomas_bridge` to
+validate `background_dist` (`coupled_scenario.py:196`) and *that* is what loads JAX; later calls are
+free. So `to_scenario` is deliberately **not** re-exported from `studio/modelio/__init__.py` —
+a comparison view reading a `RunSummary` should not pay for a model it is not using, and the
+expensive import should be visible at the import site. Task 0.8 tracks making the model's import
+lazy.
+
+**`RunSummary`** — versioned, and self-describing about the three traps:
+
+- **Every series declares its basis.** `SA`/`radius_cm` are WET, `dp_mid_um`/`dNdlogDp`/`total_n`
+  are DRY, gas mixing ratios are not-applicable. It is a required field, so a plot axis cannot be
+  labelled by guesswork.
+- **Species are indexed by name** from the npz's own `species` list. The synthetic test archive
+  deliberately orders species so SO2 sits at index 2 — nothing like the 32/34/35 an existing script
+  hard-codes — so a positional reduction would report ozone as SO2, plausibly and silently.
+- **The time axis is the stored `t`**, never `i × DT`.
+- **Termination is an argument, never inferred.** The npz records what the state did, not why the
+  loop stopped; a run that hit a wall-clock limit and one that finished look identical in it.
+  Archived runs are `UNKNOWN` and flagged `NO_PROVENANCE_RECORD` (ADR-006).
+
+**The conservation check refuses to report a number when one would mislead.** In-box sulfur is not
+expected to be conserved with dilution on — the box is an open system, so a large "residual" would
+be measuring the dilution and a small one would mean something was wrong. When `V(t)/V0 > 1` the
+check returns `not_applicable` with the reason and the start/end values, so the decay is visible
+without being dressed up as a budget error. A closed box gets a real residual.
+
+**Found and fixed while writing it**
+
+- A `sum()` over a generator starting at integer `0`, which mypy caught: the sulfur total was
+  `ndarray | Literal[0]` and would have been unindexable had the species list ever been empty.
+- Once `studio/modelio` imported `coupled`, `mypy` began reporting errors from the **model's own**
+  source (its untyped `yaml`, `scipy`, and flat `aerosol` imports). Fixed with
+  `follow_imports = "silent"` on the model modules — Studio's use of them is still checked; the
+  model is not ours to annotate.
+- Two of my own test constants were wrong: an "irregular" time axis whose last point was exactly
+  `4 × 600 s` (so it proved nothing about nominal grids), and a closed-box sulfur budget that did
+  not close. Both were caught by the tests failing, which is the system working.
+- I wrote a test checking `sys.modules` in-process for the resolver — the exact mistake
+  `test_import_boundaries.py`'s own docstring warns about, and it failed as soon as another module
+  imported the seam. It now runs in a fresh interpreter, where it is meaningful.
 
 ---
 
