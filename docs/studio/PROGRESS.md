@@ -20,7 +20,7 @@ with full provenance, and the golden tests pass.
 | 0.4 `studio/modelio` seam + `RunSummary` | **done** (#68) |
 | 0.5 `studio/science` derivations | **done** (#64) |
 | 0.6 `studio/runner` + job lifecycle | **done** (#72) |
-| 0.7 Golden-file harness (two tiers) | **in progress** — reference deviation measured (#70); assertions not yet written |
+| 0.7 Golden-file harness (two tiers) | **done** (#70 measured, #79 asserted) |
 | 0.8 Four contained fixes in `coupled/` | not started |
 | 0.9 Vertical slice: CLI + API + minimal UI | **in progress** — 0.9a provenance (#80); 0.9b–e to come |
 
@@ -77,6 +77,64 @@ checkout to record), pointed at the shared synthetic-checkout fixture in the tes
 weaken the guarantee: a run still cannot start unless the checkout it names can be pinned, and the
 production default is the real one. "Which checkout produced this?" is a question a runner genuinely
 has to answer — a worker executing code from elsewhere would answer it differently.
+
+### 2026-08-14 — Task 0.7 (second half): the two-tier golden harness
+
+The assertions, built on the tolerances #70 measured and #76 corrected. `studio/tests/golden/`:
+`tolerances.py`, `paper_cases.py`, `make_fixture.py`, and one test module per tier. 17 new Tier-A
+tests (214 total) plus 3 Tier-B tests.
+
+**Tier B's first real run found a bug in the harness, and it was mine.** Three exceedances —
+`D2med/H2SO4 3.377e-12`, `D3high/SO3 5.995e-12`, `D3high/OH 5.535e-12` — all against `1e-12`. Not a
+reproduction failure: `3.377e-12` is essentially the **3.38e-12 the measurement itself recorded** for
+H₂SO₄ max-over-time. The harness applied the *endpoint* tolerance to whole-*series* comparisons, which
+are two different rows of the record (`1e-12` for final/peak, `1e-10` for a series maximum).
+
+No tolerance was widened — that is what this harness's own failure messages forbid. The two numbers
+the record already specifies are now applied to the two things they describe, via a named
+`assert_headline_matches` so the call sites read like the record's rows. Tier A had the same
+conflation, invisible there because it compares against its own fixture where the deviation is ~0.
+
+Tier B also now reports **every** deviation rather than only the exceedances: 27 minutes of compute
+should produce a measurement, not a verdict. The D3high series maxima (~6e-12, inside `1e-10`) are
+new data the original two-case measurement did not have.
+
+**Tier A — 19 s, a real run against a committed fixture.** 1 day, 40 bins: the cheapest run that
+still exercises gas chemistry, TUV-x photolysis, all three microphysics processes and dilution. The
+fixture is a **uniform-stride** reduction (every 4th sample plus the last — 38 of 147, 40 kB) because
+a coarsening grid aliases the morning number spike by up to 8×, and a fixture built on one would
+encode the aliasing and then assert it forever. It catches drift in *Studio's own* pipeline, which is
+a different claim from reproducing the archive.
+
+**Tier B — six curated 10-day cases against the archive**, ~28 min, nightly/manual. D1/D2/D3/burst ×
+sabr220/sabr330, all `cg1` deliberately: `REFERENCE_TOLERANCES.md` records that cg0p5/cg2 may
+straddle the tomas-jax commit that wired `coag_kernel_scale` through, so adopting one needs its own
+measurement first.
+
+**Decisions**
+
+- **The tolerances live in one module, each citing its measurement**, and the failure messages say
+  *re-measure, do not widen*. A tolerance widened to make a test pass is a test that no longer tests
+  anything; putting the provenance at the point of failure is the cheapest defence against that.
+- **The near-zero floor is in the comparison, not in each test.** Unguarded relative error reaches
+  4.24e+04 on night-time `O1D` at 1e-35 molec cm⁻³; comparing only samples above 1e-6 × a series' own
+  peak is what makes the comparison mean anything, and `O1D`/`O` are excluded outright.
+- **Photolysis is compared per reaction, not summed.** A compensating pair of errors across two
+  reactions survives a total. J was added to the fixture for this — at 1.09e-13 measured it is the
+  most reproducible part of the pipeline, so drift there is signal rather than noise.
+- **Tier B reports every deviation before failing**, and is not parametrised per case: after 28
+  minutes of compute, the whole table is worth much more than the first failure, and it shows whether
+  a deviation is systematic or specific to one regime.
+- **Both tiers carry a physical floor** — SO₂ consumed, H₂SO₄ produced, particles formed, plume
+  expanded. A tolerance-based test cannot tell that a run did nothing at all.
+- `paper_cases.py` maps a case ID back to a `RunConfig` by parsing the ensemble's own token
+  convention. It lives under `studio/tests/` rather than in `studio/`: Tier B needs the axes as test
+  data, which is not the same as needing a preset library (task 0.2 deferred that deliberately).
+
+**Honest limitation, and it undercuts the plan's wording.** The plan calls Tier A "CI, seconds", but
+CI does not check out the private submodules, so the model cannot run there — in CI this module
+**skips**, and Tier A there remains the pure schema/units/DAG/hash/expansion tests. Fixing it means
+giving CI a deploy key, which is its own change. Recorded rather than papered over.
 
 ---
 
