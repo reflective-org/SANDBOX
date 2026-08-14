@@ -53,7 +53,7 @@ own string, and one the 0.4 equivalence test must cover explicitly.
 
 ---
 
-## 0.3 — Dependency-graph engine and override semantics
+## 0.3 — Dependency-graph engine and override semantics · *done* (issue #66)
 
 The mechanism that makes "go back and edit stage 1 without losing your stage 6 choices" correct by
 construction. It is a data-model problem, not a UI problem.

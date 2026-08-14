@@ -83,10 +83,10 @@ jobs:
       - name: black
         run: .venv/bin/black --check studio/
 
-      # --strict on the two packages that must stay pure; the pyproject baseline covers the rest.
+      # --strict on the three packages that must stay pure; the pyproject baseline covers the rest.
       - name: mypy
         run: |
-          .venv/bin/mypy --strict studio/schema studio/science
+          .venv/bin/mypy --strict studio/schema studio/science studio/resolve
           .venv/bin/mypy
 
       # Tier B (full-case golden reproduction against the archived ensemble) is NOT run here: the
