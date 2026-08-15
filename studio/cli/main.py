@@ -31,22 +31,15 @@ from typing import Any
 import typer
 import yaml
 
-from studio.modelio.provenance import record_for
 from studio.resolve import ResolvedConfig, resolve
 from studio.schema import RunConfig, RunSet
+from studio.service import prepare, submit_and_record
 from studio.store import (
-    LocalDirectoryStore,
     create_db_engine,
-    create_run,
     create_run_set,
     database_url,
-    record_artifact,
-    record_job,
-    record_summary,
-    record_transition,
     session_factory,
     session_scope,
-    upgrade_to_head,
 )
 
 app = typer.Typer(
@@ -54,18 +47,6 @@ app = typer.Typer(
     no_args_is_help=True,
     help="Configure, run and inspect coupled SAI plume box-model simulations.",
 )
-
-#: Artefacts recorded for every run, by kind -> filename in the job's work directory. The set is
-#: fixed rather than "whatever the directory contains", so a missing one is an error rather than a
-#: silently shorter list.
-_ARTIFACTS = {
-    "input": "input.json",
-    "provenance": "provenance.json",
-    "state": "state.npz",
-    "summary": "summary.json",
-    "stdout": "stdout.log",
-    "stderr": "stderr.log",
-}
 
 
 def _load_mapping(path: Path) -> dict[str, Any]:
@@ -108,96 +89,6 @@ def _run_set(path: Path) -> RunSet:
         raise typer.Exit(code=2) from exc
 
 
-def _prepare(database: str | None, out: Path) -> tuple[Any, LocalDirectoryStore]:
-    """Migrate the database and open the artefact store. Idempotent: startup can always call it."""
-    url = database_url(database)
-    upgrade_to_head(url)
-    return session_factory(create_db_engine(url)), LocalDirectoryStore(out / "artifacts")
-
-
-def _require(row: Any, what: str, key: str) -> Any:
-    """Return ``row``, or raise saying what went missing.
-
-    ``Session.get`` returns ``None`` for a row that is not there, and passing that on would fail
-    several frames later with an ``AttributeError`` about ``None``. Here it means the database
-    changed underneath a run that is mid-flight -- rare, and worth naming precisely when it happens.
-    """
-    if row is None:
-        raise RuntimeError(
-            f"{what} {key!r} vanished from the database while its run was in progress; "
-            f"the run may have been deleted concurrently"
-        )
-    return row
-
-
-def _submit_and_record(
-    factory: Any,
-    store: LocalDirectoryStore,
-    runner: Any,
-    *,
-    config: ResolvedConfig,
-    label: str,
-    run_set_row: Any,
-    wait: bool,
-) -> tuple[str, str]:
-    """Persist a run, submit it, and record what came back. Returns ``(run_id, job_state)``."""
-    provenance = record_for(config)
-    with session_scope(factory) as session:
-        run = create_run(
-            session,
-            run_set=run_set_row,
-            config=config,
-            label=label,
-            provenance=provenance.model_dump(mode="json"),
-        )
-        run_id = run.id
-
-    record = runner.submit(config, label=label)
-    with session_scope(factory) as session:
-        from studio.store.models import RunRow
-
-        run_row = _require(session.get(RunRow, run_id), "run", run_id)
-        job = record_job(
-            session,
-            run=run_row,
-            state=record.state.value,
-            work_dir=record.work_dir,
-            detail=record.detail,
-        )
-        job_id = job.id
-
-    if not wait:
-        return run_id, record.state.value
-
-    final = runner.wait(record.job_id)
-    with session_scope(factory) as session:
-        from studio.store.models import JobRow, RunRow
-
-        job_row = _require(session.get(JobRow, job_id), "job", job_id)
-        # EVERY transition the runner saw, not just the final state. A thinner trail than the
-        # runner's defeats the point of persisting one: "queued -> succeeded" hides how long it
-        # waited for a worker, and "queued -> failed" hides whether it ever started.
-        for transition in final.transitions[1:]:
-            record_transition(
-                session,
-                job=job_row,
-                state=transition.state.value,
-                detail=transition.detail,
-                exit_code=final.exit_code if transition.state is final.state else None,
-            )
-        run_row = _require(session.get(RunRow, run_id), "run", run_id)
-        for kind, filename in _ARTIFACTS.items():
-            source = Path(final.work_dir or ".") / filename
-            if source.is_file():
-                record_artifact(session, run=run_row, kind=kind, source=source, store=store)
-        summary_path = Path(final.work_dir or ".") / "summary.json"
-        if summary_path.is_file():
-            record_summary(
-                session, run=run_row, summary=json.loads(summary_path.read_text(encoding="utf-8"))
-            )
-    return run_id, final.state.value
-
-
 @app.command()
 def run(
     config: Path = typer.Argument(..., help="RunConfig as YAML or JSON"),
@@ -221,13 +112,13 @@ def run(
 
     from studio.runner import LocalSubprocessRunner
 
-    factory, store = _prepare(database, out)
+    factory, store = prepare(database, out)
     runner = LocalSubprocessRunner(out / "jobs")
     try:
         with session_scope(factory) as session:
             run_set_row = create_run_set(session, label=label or config.stem)
-        run_id, state = _submit_and_record(
-            factory, store, runner, config=resolved, label=label, run_set_row=run_set_row, wait=wait
+        run_id, state = submit_and_record(
+            factory, store, runner, config=resolved, run_set=run_set_row, label=label, wait=wait
         )
     finally:
         runner.shutdown()
@@ -257,7 +148,7 @@ def sweep(
 
     from studio.runner import LocalSubprocessRunner
 
-    factory, store = _prepare(database, out)
+    factory, store = prepare(database, out)
     runner = LocalSubprocessRunner(out / "jobs")
     failures = 0
     try:
@@ -268,14 +159,13 @@ def sweep(
                 axes=run_set.model_dump(mode="json")["axes"],
             )
         for item in expanded:
-            run_id, state = _submit_and_record(
+            run_id, state = submit_and_record(
                 factory,
                 store,
                 runner,
                 config=resolve(item.config),
+                run_set=run_set_row,
                 label=item.label,
-                run_set_row=run_set_row,
-                wait=True,
             )
             typer.echo(f"[studio] {item.label or run_id} -> {state}")
             failures += state != "succeeded"
