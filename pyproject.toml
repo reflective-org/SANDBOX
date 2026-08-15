@@ -59,6 +59,11 @@ studio-dev = [
 # the models themselves live in the tuvx-jax / stratchem-jax / tomas-jax git submodules
 # (put on sys.path by coupled/model_bridge.py and coupled/tomas_bridge.py); this project
 # installs the coupling layer + shared dependencies.
+[project.scripts]
+# The scripted path is first-class (ADR-002): a sweep launched from a terminal goes through the same
+# schema, resolver, store and runner as one launched from the web.
+plume-studio = "studio.cli.main:app"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["coupled*", "studio*"]
@@ -101,6 +106,9 @@ ignore = ["ANN401"]
 
 [tool.ruff.lint.per-file-ignores]
 "studio/tests/**" = ["ANN"]
+# B008 flags function calls in argument defaults, which is exactly how typer declares options.
+# Scoped to the CLI rather than disabled globally, where it catches real mutable-default bugs.
+"studio/cli/main.py" = ["B008"]
 
 [tool.black]
 line-length = 100
