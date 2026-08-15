@@ -22,10 +22,53 @@ with full provenance, and the golden tests pass.
 | 0.6 `studio/runner` + job lifecycle | **done** (#72) |
 | 0.7 Golden-file harness (two tiers) | **done** (#70 measured, #79 asserted) |
 | 0.8 Four contained fixes in `coupled/` | not started |
-| 0.9 Vertical slice: CLI + API + minimal UI | **in progress** — 0.9a provenance (#80), 0.9b persistence (#83); 0.9c–e to come |
+| 0.9 Vertical slice: CLI + API + minimal UI | **in progress** — 0.9a provenance (#80), 0.9b persistence (#83), 0.9c CLI (#85); 0.9d–e to come |
 
 Task order note: 0.5 was taken **before 0.3**, so the dependency-graph engine has real
 derivations to resolve rather than fixtures.
+
+---
+
+### 2026-08-15 — Task 0.9c: the CLI (issue #85)
+
+**Half the exit criteria now works**: a run can be submitted from the CLI, produces a stored result
+with full provenance, and is readable afterwards from a different process. 10 new Tier-A tests
+(256 total).
+
+```
+plume-studio run config.yaml --out runs/     # 19 s for 1 day / 40 bins, end to end
+plume-studio sweep sweep.yaml --plan         # expand axes, print N, submit NOTHING
+plume-studio status <run-id>                 # from any process, after the CLI has exited
+```
+
+Verified end to end: `run` resolved, recorded provenance, persisted, submitted, waited, recorded six
+artefacts and the summary, and exited `succeeded`. `status` — in a **separate process, after the
+first had exited** — printed the full transition trail, every artefact with its size, and
+`reproducible NO — a checkout was dirty`, which is the honest answer for a tree with uncommitted
+work.
+
+**The CLI is not a wrapper over the API** (ADR-002). It goes through the same schema, resolver,
+store and runner, so a sweep launched from a terminal and one launched from the web produce
+identical rows and identical provenance. Scripted ensembles must not require the browser, and the
+existing workflow is entirely scripted.
+
+**`--plan` mirrors `run_ensemble.py`'s `plan` verb** because deciding to spend 810 × 4.6 minutes
+should take a second command. It prints what would run, with each case's hash, and creates no row.
+
+**Two things fixed after looking at real output rather than at tests:**
+
+1. **The persisted trail was thinner than the runner's.** The first end-to-end run recorded
+   `queued → succeeded`, dropping `running`. Persisting transitions is pointless if it drops one:
+   `queued → succeeded` hides how long a job waited for a worker, and `queued → failed` hides whether
+   it ever started. It now copies every transition the runner saw, and a test asserts the exact
+   sequence.
+2. **`session.get()` returns `None`,** and I was passing it straight into the repository, where it
+   would have failed several frames later as an `AttributeError` about `None`. mypy caught it; it now
+   raises naming the row and the key, since it means the database changed under a run in flight.
+
+Exit codes keep 0.6's meaning: **2** for "never started" (a bad file, an invalid config, an unknown
+run), **1** for a run that did not succeed. `--dry-run` and `--plan` are the cheap paths, so most of
+the tests need neither the model nor a database.
 
 ---
 
