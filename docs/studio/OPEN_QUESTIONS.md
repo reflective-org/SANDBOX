@@ -169,7 +169,7 @@ material is **not** represented.
 
 ---
 
-### SCIENCE-4 — Box thermodynamics · **OPEN** · blocks Phase 5 · [#56](https://github.com/reflective-org/SANDBOX/issues/56)
+### SCIENCE-4 — Box thermodynamics · **ANSWERED for heating and buoyancy** (2026-08-13); sedimentation open · [#56](https://github.com/reflective-org/SANDBOX/issues/56)
 *Is the box isobaric? isothermal? does it rise buoyantly? do particles sediment out?*
 
 Absent from the original brief. Current behaviour, from the code:
@@ -179,8 +179,30 @@ Absent from the original brief. Current behaviour, from the code:
   AD-5.4), producing a one-sided ≈ +1.2 K / 10 d warm drift. Every science script leaves it off.
 - **No buoyant rise.** No sedimentation.
 
-Each must become a schema field with a documented default, and the SW-only asymmetry must warn in
-the UI when the switch is enabled rather than silently producing a drifting temperature.
+**Answered (Ali, 2026-08-13): heating and buoyancy are out of scope for this model.**
+
+Not "undecided" — **out of scope**, which is a different status and is why this row is closed rather
+than left open. Longwave radiation is not in the radiative calculation, so the heating term cannot
+represent the box's energy balance: enabling it does not make the thermodynamics more complete, it
+makes them one-sided, and the ~+1.2 K / 10 d drift is an artefact of the missing cooling rather than
+a result. Buoyant rise follows the same logic — a parcel rises in response to a heating rate this
+model cannot compute, so a rise velocity here would be a free parameter dressed as physics.
+
+**Answering either question needs a different model**, one with longwave radiation and plume
+dynamics. It is not a gap to be filled in by a later Studio phase, and Studio must not present a
+knob implying otherwise:
+
+- `switches.heating_to_t` is `Literal[False]` from schema 0.2.0 — `True` fails validation rather
+  than being defaulted off, so it cannot be enabled by a form, a YAML file or a sweep axis.
+- **No buoyancy or heating-rate fields are added to the schema at all.** A field for a capability
+  the model does not have would advertise it; the absence is the honest interface (ADR-005).
+- Every run is therefore **isobaric and isothermal at the configured temperature**, and results
+  carry that as a top-level caveat rather than a footnote.
+
+**Still open: sedimentation.** It is untouched by this decision — a particle-loss process, not a
+thermodynamic response — and the model does not have it. It is deliberately left in this register
+rather than swept in with the rest, because "we decided not to model heating" is not an argument
+about gravitational settling.
 
 ---
 
@@ -204,6 +226,27 @@ required. Until then `background_evolves` is a schema field whose only accepted 
 
 ---
 
+### SCIENCE-6 — GCR ion-pair production rate has no derivation · **OPEN** · Phase 0/4 · [#63](https://github.com/reflective-org/SANDBOX/issues/63)
+*What is the ion-pair production rate as a function of altitude, latitude and solar-cycle phase?*
+
+Raised by task 0.5. The two values available in the repository are an **uncited constant** and a
+value that **switches off a physical process**: the paper ensemble uses a bare `30.0` cm⁻³ s⁻¹
+(`run_ensemble.py:102`, described in `TABLE_microphysics_parameters.md` as "galactic cosmic rays at
+~20 km"), and the model defaults to `0.0`, which disables ion-induced nucleation entirely
+(`coupled/coupled_scenario.py:117`).
+
+It feeds the ion-induced channels of Dunne et al. (2016) nucleation — the most sensitive part of this
+system. GCR ionisation varies by roughly a factor of two over the solar cycle and strongly with
+latitude and altitude, so one number is wrong nearly everywhere except where it was read off.
+
+`studio/science/gcr.py` therefore raises `NotImplementedError` rather than interpolating an uncited
+number, and exposes `PAPER_ENSEMBLE_ION_PAIR_RATE = 30.0` as a constant with its provenance attached.
+
+**Answered when** either a citable parameterisation is agreed and implemented with its reference, or
+the decision is recorded that the fixed value stands, with its sensitivity quantified.
+
+---
+
 ## Register of capabilities the spec assumes but the model does not have
 
 Not open questions — settled facts, listed here because the spec's stage descriptions imply
@@ -216,7 +259,7 @@ issue at that point rather than sitting in a backlog now.
 | `chemistry.rate_overrides[]` (general) | Only `so2_ho2_rate` is a knob (`coupled_scenario.py:130`). Arbitrary per-reaction overrides do not exist. |
 | `chemistry.photolysis.tuvx_settings.{o3_column, albedo, aod}` | Not exposed. Only mode + lat/lon/doy/hour reach TUV-x (`model_bridge.py:46`). |
 | `numerics.bin_scheme.{d_min, d_max, mass_doubling}` | Fixed by the TOMAS grid; only `tomas_nbins ∈ {40, 80, 160}` is selectable (`tomas_bridge.py:146`). Ratio = `2**(40/nbins)`; the top boundary is pinned. |
-| `numerics.box_thermodynamics.*` | See SCIENCE-4. |
+| `numerics.box_thermodynamics.*` | **Not exposed, by decision.** Heating and buoyancy are out of scope (SCIENCE-4): the model cannot compute them and a field would imply it can. Isobaric + isothermal is the only behaviour. |
 | `dilution.entrainment.{entrains_background_gases, entrains_background_aerosol}` | Entrainment is unconditional when `switches.dilution` is on. Separate flags are new code. |
 | `dilution.background_evolves` | See SCIENCE-5. Only `false` is accepted. |
 | `background.aerosol` custom lognormal modes | Six named modes + tabulated `redcircles` only — but `_seed_lognormal` (`tomas_bridge.py:110`) already accepts arbitrary `(N, Dg, σg)` tuples, so this is a small, worthwhile early addition. |

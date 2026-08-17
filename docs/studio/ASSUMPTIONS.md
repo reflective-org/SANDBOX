@@ -36,8 +36,16 @@ plus a conversion layer becomes the better trade.
 
 ## ASSUMPTION-2 — The archived `state.npz` files are the golden reference, at a tolerance yet to be measured
 
-**Made:** 2026-08-13 · **Affects:** `studio/tests/golden/` ·
+**Made:** 2026-08-13 · **Settled:** 2026-08-13 (#70) · **Affects:** `studio/tests/golden/` ·
 **Recorded in:** [ADR-009](adr/ADR-009-golden-file-strategy.md)
+
+> **Settled.** The measurement exists:
+> [`studio/tests/golden/REFERENCE_TOLERANCES.md`](../../studio/tests/golden/REFERENCE_TOLERANCES.md).
+> Reproduction is **close but not bit-for-bit** — every headline quantity within 2.1e-12, worst
+> deviation anywhere 3.4e-12, but only ~31 % of gas state-vector elements bit-identical. The archive
+> is usable as a golden reference at ~1e-12 (endpoints) / ~1e-10 (series and per-bin size
+> distribution); exact equality is not. The paragraphs below stand as the reasoning that made the
+> measurement necessary; the *consequence* below still holds and cannot be retrofitted.
 
 Golden fixtures are derived from the existing `coupled/paper_ensemble/runs*/` outputs. Whether
 re-running those cases **today** reproduces them bit-for-bit is *unverified*: the submodule commits
@@ -52,7 +60,10 @@ the measurement together with the SHAs it was taken at.
 **Consequence.** Golden fixtures record the SHA at which the reference was *measured*, not the SHA at
 which the data was originally produced. This is an honest limitation and cannot be retrofitted.
 
-**What would settle it.** The measurement itself, in `studio/tests/golden/REFERENCE_TOLERANCES.md`.
+**What settled it.** The measurement itself, in `studio/tests/golden/REFERENCE_TOLERANCES.md`
+(2026-08-13, issue #70). It also produced a result nobody had asked for: the model is bit-for-bit
+deterministic run-to-run *today*, so the residual is drift between the archive's toolchain and this
+one — which is what makes a 1e-12 tolerance defensible rather than arbitrary.
 
 ---
 

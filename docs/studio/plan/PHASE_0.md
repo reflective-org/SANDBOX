@@ -27,7 +27,7 @@ Delivered as above, with two things worth stating plainly rather than leaving im
 
 ---
 
-## 0.2 — `studio/schema` v0 · **review gate**
+## 0.2 — `studio/schema` v0 · **review gate** · *implemented, awaiting review* (issue #61)
 
 - `SciField(unit=…, range=…, provenance=…, cite=…, derived_from=[…])` over
   `Field(json_schema_extra=…)`.
@@ -45,9 +45,15 @@ Delivered as above, with two things worth stating plainly rather than leaving im
 
 **Request review explicitly before building on it.**
 
+Delivered as specified, with two divergences recorded in `PROGRESS.md` rather than absorbed
+silently: `max_sim_time` is optional (simulated time is already bounded by `schedule.duration_days`,
+and a required second bound would need an invented default), and `DilutionRegime.CONSTANT` is
+spelled `"constant"` where the model spells it `""` — the only enum value that is not the model's
+own string, and one the 0.4 equivalence test must cover explicitly.
+
 ---
 
-## 0.3 — Dependency-graph engine and override semantics
+## 0.3 — Dependency-graph engine and override semantics · *done* (issue #66)
 
 The mechanism that makes "go back and edit stage 1 without losing your stage 6 choices" correct by
 construction. It is a data-model problem, not a UI problem.
@@ -62,7 +68,7 @@ construction. It is a data-model problem, not a UI problem.
 
 ---
 
-## 0.4 — `studio/modelio` seam + `RunSummary`
+## 0.4 — `studio/modelio` seam + `RunSummary` · *done* (issue #68)
 
 - `to_scenario(RunConfig) -> CoupledScenario` — the single conversion point, and the **only** package
   permitted to import `coupled`.
@@ -77,16 +83,20 @@ construction. It is a data-model problem, not a UI problem.
 
 ---
 
-## 0.5 — `studio/science` derivations
+## 0.5 — `studio/science` derivations · *done* (issue #64)
 
 One cited, tested implementation of each derivation that currently exists several times over.
 
 **Consolidate:**
-- V₀ and mass → initial concentration — five copies today (`run_ensemble.py:41-46`,
-  `run_dilution_d1_clean.py:61`, `run_60day.py:37`, `viz/bake_plume_dynamics.py:63`, `run_boxsize.py`),
-  with two different V₀ values.
-- dN/dlogDp and bin edges — four copies, two mid-point expressions
-  (`run_ensemble.py:146-149` vs `run_dilution_d1_clean.py:588-590`).
+- V₀ and mass → initial concentration — **six** copies today, not five: `run_ensemble.py:41-46,95`,
+  `run_60day.py:37`, `make_rf_runs.py:44`, `viz/bake_plume_dynamics.py:62-63`,
+  `coupled/run_dilution_d1_clean.py:61,130` (note: at `coupled/`, not `coupled/paper_ensemble/`),
+  and `run_boxsize.py:43`. Two different V₀ values — a 15 km track and a 30 km one, a factor of two.
+- dN/dlogDp and bin edges — four copies, written two ways. **Corrected by 0.5:** the two
+  expressions (`run_ensemble.py:147-149` vs `coupled/run_dilution_d1_clean.py:587-589`) are
+  *algebraically identical*, not two conventions — `10**(0.5*(log a + log b)) == sqrt(a*b)` — and
+  measured agreement on an 80-bin grid is to a few ULP (≤ 7e-16 relative). The consolidation is
+  still worth doing; the divergence claim was not accurate.
 
 **Reuse, do not rewrite:** `coupled/dilution.py:62` `volume_ratio` and `:74` `kdil_from_regime` (both
 tested); `air_number_density` (`stratchem-jax/config.py:55`); `coupled/aerosol_props.py`;
@@ -102,7 +112,7 @@ Avogadro mismatch at the gas/TOMAS seam. Studio inherits it and does not silentl
 
 ---
 
-## 0.6 — `studio/runner` + job lifecycle
+## 0.6 — `studio/runner` + job lifecycle · *done* (issue #72)
 
 `JobRunner` Protocol; `LocalSubprocessRunner` launching `python -m studio.cli.run` with the
 thread-pinning environment from `launch_parallel.py:26-30`. Lifecycle
@@ -115,7 +125,7 @@ input file. `run_coupled` prints rather than logs, so stdout is captured as the 
 
 ---
 
-## 0.7 — Golden-file harness · *do this early*
+## 0.7 — Golden-file harness · *done* (measurement #70/#74, harness #79)
 
 **First task is a measurement, not an assertion.** Re-run two archived cases at today's submodule
 SHAs and record the observed per-quantity deviation in
