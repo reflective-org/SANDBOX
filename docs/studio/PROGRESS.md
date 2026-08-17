@@ -7,10 +7,11 @@ Phase plan: [`plan/PHASE_0.md`](plan/PHASE_0.md). Decisions: [`adr/`](adr/). Ope
 
 ---
 
-## Phase 0 — Skeleton and vertical slice · **in progress**
+## Phase 0 — Skeleton and vertical slice · **COMPLETE** (2026-08-17)
 
 Exit criteria: a run can be submitted from the CLI **and** from the web UI, produces a stored result
-with full provenance, and the golden tests pass.
+with full provenance, and the golden tests pass. **All three met** — see the phase-completion entry
+below for what was verified and what was deliberately left undone.
 
 | Task | Status |
 |---|---|
@@ -26,6 +27,55 @@ with full provenance, and the golden tests pass.
 
 Task order note: 0.5 was taken **before 0.3**, so the dependency-graph engine has real
 derivations to resolve rather than fixtures.
+
+---
+
+### 2026-08-17 — Phase 0 complete: `studio/dev` merged to `main`
+
+Nine tasks, 269 Tier-A tests, 43 typed source files. Every exit criterion met, and the ones that were
+met *narrowly* are named below rather than rounded up.
+
+**What works end to end.** A configuration goes from a YAML file or a browser form through the
+schema, the resolver, the model seam and the runner into a real coupled run, and comes back as a
+`state.npz`, a versioned `RunSummary`, six recorded artefacts and an immutable provenance record
+naming the SANDBOX commit and all three submodule SHAs. Both front ends share one submit function,
+so their rows cannot diverge.
+
+**The merge into `main` had exactly the conflict predicted in the #73 review**: the two `studio/`
+files that PR edited on `main`, which `studio/dev` had since moved past. Resolved as recorded then —
+`studio/dev`'s structure (three clean packages, the seam-submodule check) with `main`'s corrected
+past-tense wording (the `__post_init__` pattern it describes was fixed by #73). Both sides asserted
+present rather than eyeballed.
+
+**Verified on the merged result, not before it**: 269 Studio Tier-A tests, the model's own 132 tests,
+`ruff`, `black`, `mypy --strict`.
+
+**What is deliberately not done, and why**
+
+- **No React + Vite** (ADR-007 named it). One self-contained HTML page instead: a build toolchain for
+  a single form is machinery ahead of need. `/api/schema` exists so the form can be *generated* when
+  the UI outgrows one form.
+- **CI cannot see the submodules**, so three checks skip there and run only locally: Tier A's real
+  1-day run, the 0.4 equivalence test, and the `air_number_density` mirror check. A deploy key would
+  fix it; until then CI verifies the pure layers and a developer machine verifies the model-facing
+  ones. This is the weakest point in the setup and is worth saying plainly.
+- **`PROGRESS.md` conflicts on almost every parallel PR** — six times in this phase, once losing a
+  commit to a squash. One file per entry would end it.
+- **BLOCKING-2** (tenancy) and **SCIENCE-1, -2, -3, -5, -6** remain open; SCIENCE-4 is answered for
+  heating and buoyancy and open for sedimentation.
+
+**The five findings from this phase that changed the code rather than the docs**
+
+1. The plan's claim that the repository held two different dN/dlogDp conventions was wrong — they are
+   the same expression, 7e-16 apart.
+2. Bit-for-bit reproduction of the archive is **false** (~31 % of gas elements differ), so ADR-009's
+   "measure before asserting" was load-bearing rather than cautious.
+3. `dp_mid_um` is not bit-identical for a *Studio*-produced run, because 0.5 deliberately changed the
+   spelling — a tolerance measured through one pipeline is not a tolerance for another.
+4. The first Tier-B run failed on a tolerance the harness had misread (endpoint vs series), not on a
+   regression.
+5. `DateTime(timezone=True)` returns naive datetimes on SQLite and aware ones on Postgres; the same
+   comparison would have been right in production and wrong in development.
 
 ---
 

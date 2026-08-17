@@ -1,4 +1,4 @@
-# Phase 0 — Skeleton and vertical slice
+# Phase 0 — Skeleton and vertical slice · **COMPLETE** (2026-08-17)
 
 **Goal:** one hardcoded end-to-end path, real from top to bottom, however narrow.
 
