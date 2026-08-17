@@ -112,7 +112,7 @@
       <div class="row">
         <label><span>Duration (days)</span><input name="schedule.duration_days" type="number" step="1" min="1" value="1"></label>
         <label><span>Size bins</span>
-          <select name="microphysics.n_bins"><option>40</option><option>80</option><option>160</option></select>
+          <select name="microphysics.n_bins" data-number><option>40</option><option>80</option><option>160</option></select>
         </label>
       </div>
       <div class="row">
@@ -164,7 +164,11 @@ function formConfig() {
   for (const el of $("form").elements) {
     if (!el.name || el.name === "label") continue;
     const [group, field] = el.name.split(".");
-    const value = el.type === "number" ? Number(el.value) : el.value;
+    // `el.type` is "select-one" for a <select>, so a numeric enum rendered as a dropdown arrives
+    // as the STRING "40" and Literal[40, 80, 160] refuses it -- which blocked every run from this
+    // page until test_page_payload caught it. Numeric controls declare themselves.
+    const numeric = el.type === "number" || el.dataset.number !== undefined;
+    const value = numeric ? Number(el.value) : el.value;
     (config[group] ||= {})[field] = value;
   }
   return config;
