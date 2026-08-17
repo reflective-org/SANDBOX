@@ -115,9 +115,11 @@ export function fieldSpec(root: JsonSchema, path: string): FieldSpec {
   const { node, nullable } = unwrapNullable(raw);
   const meta: XStudio = node["x-studio"] ?? raw["x-studio"] ?? {};
   const kind = kindOf(node);
-  const range = meta.range;
-  const min = node.minimum ?? node.exclusiveMinimum ?? range?.[0] ?? undefined;
-  const max = node.maximum ?? node.exclusiveMaximum ?? range?.[1] ?? undefined;
+  // Pydantic emits standard JSON Schema keys for its constraints, so those come first; `x-studio`'s
+  // own `range` is the fallback for a constraint expressed only in metadata.
+  const range = meta.range ?? {};
+  const min = node.minimum ?? node.exclusiveMinimum ?? range.ge ?? range.gt;
+  const max = node.maximum ?? node.exclusiveMaximum ?? range.le ?? range.lt;
   const spec: FieldSpec = {
     path,
     label: meta.label || node.title || path.split(".").pop() || path,

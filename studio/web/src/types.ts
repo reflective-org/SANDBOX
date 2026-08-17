@@ -14,7 +14,13 @@ export interface XStudio {
   source?: string;
   cite?: string;
   derived_from?: string[];
-  range?: [number | null, number | null];
+  /**
+   * The field's constraint, as the comparison operators Pydantic was given: `{gt: 0}`,
+   * `{ge: -90, le: 90}`, `{ge: 0, lt: 366}`. A dict, **not** a `[min, max]` tuple -- typing it as a
+   * tuple made `range[0]` silently `undefined`, so no bound was ever read from here.
+   * `test_range_metadata_is_a_dict_of_operators` pins the shape on the Python side.
+   */
+  range?: Partial<Record<"gt" | "ge" | "lt" | "le", number>>;
 }
 
 export interface JsonSchema {

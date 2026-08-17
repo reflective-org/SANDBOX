@@ -153,6 +153,19 @@ nav.stages {
   background: var(--stale);
   color: #fff;
 }
+/* Both at once: `current` paints the background blue and `has-stale` painted the text red, which
+   left red-on-blue and a label you could not read. The stale state wins the whole tab, since it is
+   the more urgent of the two things being said. */
+.stage-tab.current.has-stale {
+  background: var(--stale);
+  border-color: var(--stale);
+  color: #fff;
+  font-weight: 600;
+}
+.stage-tab.current.has-stale .num {
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
+}
 
 /* ---- stage body ------------------------------------------------------------------------ */
 

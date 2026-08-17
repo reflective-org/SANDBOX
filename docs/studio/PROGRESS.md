@@ -73,6 +73,28 @@ vitest, build — kept separate from the Python lane so a broken bundle is not r
 failure. `tsc` earned its place immediately: it caught that `@vitejs/plugin-react` was imported but
 never added to `plugins`, so JSX would not have transformed at all.
 
+**Then driven in a real browser**, because static screenshots and unit tests between them still had
+not exercised what a user does. `studio/web/scripts/smoke.mjs` drives Chrome over the DevTools
+Protocol (Node 22's built-in WebSocket, so no Playwright): type a length, watch the derived volume
+follow, pin it, move the input underneath it, click accept. It found four things the tests did not:
+
+1. **`temperature_k = 9999` validates.** 17 of 22 numeric fields have a lower bound and no upper one;
+   the 5 that are bounded both ways are bounded *definitionally* (latitude ±90, hour <24). Recorded as
+   SCIENCE-7 / #91 rather than fixed, because "temperature ≤ 300 K" is a convention and inventing it
+   is the failure mode this project puts first. `test_which_numeric_fields_have_no_upper_bound` pins
+   the current list so a decision arrives as a visible change.
+2. **`x-studio.range` is a dict of operators** (`{gt: 0}`), and the front end had typed it as a
+   `[min, max]` tuple — so `range[0]` was always `undefined` and a metadata-only bound reached the
+   input as no bound at all. Nothing failed, which is why it now has a test on both sides.
+3. **The hash was read only at mount**, so browser back/forward moved the URL and left the view put.
+   Navigation now assigns `location.hash` (which records history, unlike `replaceState`) and a
+   `hashchange` listener follows it.
+4. **A stale *current* tab was red-on-blue** and nearly unreadable — `current` painted the background
+   and `has-stale` painted the text. The stale state now takes the whole tab.
+
+Also corrected: the TS fixture claimed `minimum: 150, maximum: 300` for temperature while its own
+docstring said it was copied from `/api/schema`. It was not; it is now.
+
 **Not done, deliberately:** no preview panels (dilution curve, size-distribution builder, SZA/OH
 diurnal — they need `/api/preview/*`), no ensemble axes, no results view. Stages 2 and 3 stay thin
 until SCIENCE-2 (t=0) is answered, and stage 1 until SCIENCE-1.

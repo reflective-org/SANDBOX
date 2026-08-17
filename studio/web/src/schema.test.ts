@@ -5,9 +5,9 @@
  *
  * The fixture below is copied from `GET /api/schema`, not invented: each entry is one of the eight
  * shapes the schema actually emits (inline numeric enum, `const`, boolean, `$ref` enum, plain
- * number, nullable derived, `array<string>`, `map<string, number>`). `test_the_web_fixture_matches`
- * on the Python side asserts these still match the live schema, so this file cannot quietly drift
- * into testing a schema that no longer exists.
+ * number, nullable derived, `array<string>`, `map<string, number>`). On the Python side,
+ * `test_web_contract.py` asserts the live schema still emits each of those shapes at these very
+ * fields, so this file cannot quietly drift into testing a schema that no longer exists.
  *
  * The first test is the #89 regression: a numeric enum must produce the number 40, never "40".
  */
@@ -21,14 +21,39 @@ const schema: JsonSchema = {
     DilutionRegime: { type: "string", enum: ["constant", "D1", "D2", "D3", "D5", "burst"] },
     Site: {
       properties: {
+        // Exactly as /api/schema emits it: `gt=0` becomes exclusiveMinimum, and there is NO upper
+        // bound (see issue on physical ranges -- 9999 K currently validates).
         temperature_k: {
           type: "number",
           default: 210.0,
           title: "Temperature",
           description: "Box temperature.",
-          minimum: 150,
-          maximum: 300,
-          "x-studio": { unit: "K", label: "Temperature", provenance: "paper_ensemble" },
+          exclusiveMinimum: 0,
+          "x-studio": {
+            unit: "K",
+            label: "Temperature",
+            provenance: "paper_ensemble",
+            range: { gt: 0 },
+          },
+        },
+        // Bounds on both sides, to prove le/ge are read: latitude is ge=-90, le=90.
+        latitude_deg: {
+          type: "number",
+          default: 30.0,
+          minimum: -90,
+          maximum: 90,
+          "x-studio": {
+            unit: "degree",
+            label: "Latitude",
+            provenance: "paper_ensemble",
+            range: { ge: -90, le: 90 },
+          },
+        },
+        // Metadata-only bounds: the fallback path, which a tuple type silently disabled.
+        metadata_only_bound: {
+          type: "number",
+          default: 1.0,
+          "x-studio": { unit: "1", label: "Meta bound", provenance: "convention", range: { ge: 2, le: 8 } },
         },
       },
     },
@@ -149,8 +174,8 @@ describe("fieldSpec", () => {
     const spec = fieldSpec(schema, "site.temperature_k");
     expect(spec.unit).toBe("K");
     expect(spec.label).toBe("Temperature");
-    expect(spec.min).toBe(150);
-    expect(spec.max).toBe(300);
+    expect(spec.min).toBe(0);
+    expect(spec.max).toBeUndefined();
     expect(spec.provenance).toBe("paper_ensemble");
     expect(spec.default).toBe(210);
   });
@@ -221,5 +246,25 @@ describe("valueAt", () => {
   it("returns undefined for a path that is not there, without throwing", () => {
     expect(valueAt(config, "site.nope")).toBeUndefined();
     expect(valueAt(config, "a.b.c")).toBeUndefined();
+  });
+});
+
+describe("bounds", () => {
+  it("reads standard JSON Schema bounds", () => {
+    const spec = fieldSpec(schema, "site.latitude_deg");
+    expect(spec.min).toBe(-90);
+    expect(spec.max).toBe(90);
+  });
+
+  it("falls back to x-studio range, which is a dict of operators and not a tuple", () => {
+    // The regression: typed as `[min, max]`, `range[0]` was always undefined, so a constraint
+    // expressed only in metadata reached the input as no constraint at all.
+    const spec = fieldSpec(schema, "site.metadata_only_bound");
+    expect(spec.min).toBe(2);
+    expect(spec.max).toBe(8);
+  });
+
+  it("reports no upper bound where the schema declares none", () => {
+    expect(fieldSpec(schema, "site.temperature_k").max).toBeUndefined();
   });
 });

@@ -86,3 +86,54 @@ def test_every_laid_out_field_carries_the_metadata_the_form_renders() -> None:
         if not meta.get("unit") or not meta.get("provenance"):
             missing.append(path)
     assert not missing, f"fields with no unit or provenance: {missing}"
+
+
+@pytest.mark.tier_a
+def test_range_metadata_is_a_dict_of_operators() -> None:
+    """``x-studio.range`` is ``{gt: 0}`` / ``{ge: -90, le: 90}`` -- a dict, never a ``[min, max]``.
+
+    The front end reads bounds from here when the JSON Schema carries none, and it originally typed
+    this as a tuple: ``range[0]`` on a dict is ``undefined``, so a constraint expressed only in
+    metadata reached the input as no constraint at all. Nothing failed, which is why it needs a test
+    rather than a comment. The operator vocabulary is pinned so the TypeScript union can rely on it.
+    """
+    from studio.schema.layout import laid_out_fields
+
+    schema = run_config_json_schema()
+    allowed = {"gt", "ge", "lt", "le"}
+    seen: set[str] = set()
+    for path in laid_out_fields():
+        meta = _node(schema, path).get("x-studio", {})
+        if (declared := meta.get("range")) is None:
+            continue
+        assert isinstance(declared, dict), f"{path}: range is {type(declared).__name__}, not a dict"
+        unknown = set(declared) - allowed
+        assert not unknown, f"{path}: unknown range operator(s) {unknown}; update the TS union too"
+        seen |= set(declared)
+    assert seen, "no field declares a range at all, which would make this test vacuous"
+
+
+@pytest.mark.tier_a
+def test_which_numeric_fields_have_no_upper_bound() -> None:
+    """Documents an open decision rather than asserting it is right.
+
+    17 of the 22 numeric fields have a lower bound and no upper one, so ``temperature_k = 9999`` and
+    ``so2_mass_kg = 1e12`` both validate today. Whether physical fields should carry upper bounds is
+    a science decision (issue #91) and picking the numbers here would be exactly the "quietly chosen
+    plausible value" the project forbids.
+
+    This test pins the *current* answer so the decision, when made, shows up as a deliberate change
+    to this list -- and so nobody assumes bounds exist that do not.
+    """
+    schema = run_config_json_schema()
+    from studio.schema.layout import laid_out_fields
+
+    unbounded = []
+    for path in laid_out_fields():
+        node = _node(schema, path)
+        if node.get("type") not in ("number", "integer") or "enum" in node:
+            continue
+        if not {"maximum", "exclusiveMaximum"} & set(node):
+            unbounded.append(path)
+    assert len(unbounded) == 17, f"the set of unbounded fields changed: {unbounded}"
+    assert "site.temperature_k" in unbounded

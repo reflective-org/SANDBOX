@@ -33,10 +33,17 @@ export function App() {
   const [runs, setRuns] = useState<RunBrief[]>([]);
   const [reference, setReference] = useState<Record<string, unknown>>({});
 
-  /** Navigate. Keeps the URL in step so a stage can be linked to and survives a reload. */
+  /**
+   * Navigate. Assigning the hash rather than calling `history.replaceState` is deliberate: it
+   * records a history entry, so the browser's back button steps through stages and agrees with the
+   * wizard's own "← back". `replaceState` recorded nothing, so back left the wizard entirely.
+   *
+   * The state is set here as well as by the `hashchange` listener so navigation never depends on an
+   * event arriving; both paths are idempotent.
+   */
   const goTo = useCallback((id: string) => {
     setStageId(id);
-    window.history.replaceState(null, "", `#${id}`);
+    if (window.location.hash.replace(/^#/, "") !== id) window.location.hash = id;
   }, []);
 
   // One load of the two things that describe the form. Neither changes while the page is open: a
@@ -67,6 +74,19 @@ export function App() {
       }
     })();
   }, []);
+
+  // Follow the hash while the page is open, not only at mount. Without this, browser back/forward
+  // moves the URL and leaves the view where it was -- and a hash typed into the address bar does
+  // nothing at all. Found by driving the wizard with scripts/smoke.mjs.
+  useEffect(() => {
+    if (!layout) return;
+    const onHashChange = () => {
+      const requested = window.location.hash.replace(/^#/, "");
+      if (layout.stages.some((s) => s.id === requested)) setStageId(requested);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [layout]);
 
   /** Field specs, built once per schema. Keyed by path, so no lookup walks the schema twice. */
   const specs = useMemo(() => {

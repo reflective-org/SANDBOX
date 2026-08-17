@@ -247,6 +247,28 @@ the decision is recorded that the fixed value stands, with its sensitivity quant
 
 ---
 
+### SCIENCE-7 — Physical upper bounds: `temperature_k = 9999` validates · **OPEN** · Phase 1 · [#91](https://github.com/reflective-org/SANDBOX/issues/91)
+
+Found by driving the wizard in a real browser and typing 9999 into the temperature box, expecting a
+refusal. There was none: the schema declares only `gt=0`.
+
+**17 of 22 numeric fields have a lower bound and no upper bound.** The 5 that are bounded on both
+sides are bounded *definitionally* — latitude ±90, day-of-year <366, hour <24, an accommodation
+coefficient in [0, 1] — so the line was never drawn deliberately; bounds appeared where the number's
+own definition supplied one and were omitted where an upper limit would be a judgement about
+plausible physics.
+
+**Not resolved by picking numbers.** "Temperature ≤ 300 K" is a convention, and inventing it is the
+fabricated-physics failure mode. The candidate with a real source is to bound temperature and
+pressure by the validity range of the TUV-x tables and JPL rate fits — which needs someone who knows
+those ranges to state them — optionally with soft, non-blocking warnings elsewhere so a deliberate
+sensitivity test can still leave the envelope.
+
+`test_which_numeric_fields_have_no_upper_bound` pins the current list, so a decision arrives as a
+visible change to it rather than as a silent tightening.
+
+---
+
 ## Register of capabilities the spec assumes but the model does not have
 
 Not open questions — settled facts, listed here because the spec's stage descriptions imply
