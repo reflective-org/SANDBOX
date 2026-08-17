@@ -40,15 +40,6 @@ def api(tmp_path: Path) -> Any:
 
 
 @pytest.mark.tier_a
-def test_the_page_is_served(api: Any) -> None:
-    client, _ = api
-    response = client.get("/")
-    assert response.status_code == 200
-    assert "Plume Studio" in response.text
-    assert "/api/config/resolve" in response.text, "the page must talk to the real resolver"
-
-
-@pytest.mark.tier_a
 def test_the_schema_endpoint_is_the_schema(api: Any) -> None:
     """Nothing in the UI may invent a field that does not exist here (ADR-002)."""
     from studio.schema import SCHEMA_VERSION
@@ -250,3 +241,123 @@ def test_a_submitted_run_appears_immediately_with_202(api: Any, repo_root: Path)
     assert (
         client.get(f"/api/runs/{body['run_id']}").json()["config_hash"] == body["config_hash"]
     ), "the identity in the response is the one that was stored"
+
+
+@pytest.mark.tier_a
+def test_the_layout_manifest_is_served(api: Any) -> None:
+    """The wizard's field placement (spec section 8), served rather than hard-coded client-side."""
+    client, _ = api
+    manifest = client.get("/api/layout").json()
+    assert [stage["number"] for stage in manifest["stages"]] == list(range(1, 9))
+    assert manifest["first_stage"] == "environment"
+    assert manifest["stages"][-1]["id"] == "review"
+
+
+@pytest.mark.tier_a
+def test_the_reference_config_is_served_and_is_the_golden_case(api: Any) -> None:
+    """What the review stage diffs against.
+
+    It must be ``RunConfig()`` resolved -- the same object the Tier A golden tests use -- so that
+    "differs from the reference" means one thing across the UI and the test suite.
+    """
+    client, _ = api
+    payload = client.get("/api/config/defaults").json()
+    expected = resolve(RunConfig())
+    assert payload["config_hash"] == expected.config.config_hash()
+    assert payload["consistent"] is True
+    assert payload["overrides"] == {}
+
+
+@pytest.mark.tier_a
+def test_changing_a_field_recomputes_its_dependents(api: Any) -> None:
+    client, _ = api
+    start = client.post("/api/config/resolve", json={"config": {}}).json()
+    moved = client.post(
+        "/api/config/change",
+        json={**start, "path": "injection.plume_length_m", "value": 30000.0},
+    ).json()
+    assert moved["config"]["injection"]["plume_length_m"] == 30000.0
+    assert moved["derived"]["plume_volume_cm3"] == pytest.approx(
+        2 * start["derived"]["plume_volume_cm3"]
+    ), "double the length, double the volume -- the derivation ran server-side"
+    assert moved["config_hash"] != start["config_hash"], "identity follows the values"
+
+
+@pytest.mark.tier_a
+def test_editing_a_derived_field_pins_it_and_going_stale_is_reported(api: Any) -> None:
+    """The override cycle spec section 8 requires, over HTTP.
+
+    Typing into a computed box is an override, not a value that the next edit silently discards; and
+    once an input moves underneath it, the client is given both numbers and a choice.
+    """
+    client, _ = api
+    start = client.post("/api/config/resolve", json={"config": {}}).json()
+
+    pinned = client.post(
+        "/api/config/change",
+        json={**start, "path": "injection.plume_volume_cm3", "value": 9.9e11},
+    ).json()
+    assert "injection.plume_volume_cm3" in pinned["overrides"]
+    assert pinned["consistent"] is True, "an override anchored now is not yet stale"
+
+    moved = client.post(
+        "/api/config/change",
+        json={**pinned, "path": "injection.plume_length_m", "value": 17000.0},
+    ).json()
+    assert moved["consistent"] is False
+    assert moved["stale_fields"] == ["injection.plume_volume_cm3"]
+    entry = moved["stale"][0]
+    assert entry["current_value"] == 9.9e11
+    assert entry["derived_value"] != 9.9e11, "the user is shown what it would recompute to"
+    assert [c["path"] for c in entry["changed_inputs"]] == ["injection.plume_length_m"]
+
+    accepted = client.post(
+        "/api/config/accept", json={**moved, "path": "injection.plume_volume_cm3"}
+    ).json()
+    assert accepted["consistent"] is True
+    assert accepted["overrides"] == {}
+    assert accepted["config"]["injection"]["plume_volume_cm3"] == entry["derived_value"]
+
+    kept = client.post(
+        "/api/config/keep", json={**moved, "path": "injection.plume_volume_cm3"}
+    ).json()
+    assert kept["consistent"] is True, "re-anchored, so no longer stale"
+    assert kept["config"]["injection"]["plume_volume_cm3"] == 9.9e11
+
+
+@pytest.mark.tier_a
+def test_an_unknown_field_in_a_change_is_refused(api: Any) -> None:
+    """Fail loud (ADR-005): a typo'd path must not silently write a key the model never reads."""
+    client, _ = api
+    start = client.post("/api/config/resolve", json={"config": {}}).json()
+    response = client.post(
+        "/api/config/change", json={**start, "path": "site.temprature_k", "value": 210.0}
+    )
+    assert response.status_code in (404, 422)
+
+
+@pytest.mark.tier_a
+def test_the_root_serves_the_wizard_or_says_why_not(api: Any) -> None:
+    """Either the built wizard or an actionable message -- never a silent fall back to the old page.
+
+    The bundle is a build artefact and is not committed, so both branches are legitimate depending
+    on the checkout; what must never happen is the superseded page being served as if it were the
+    app, since it exposes 10 of the schema's 42 fields.
+    """
+    client, _ = api
+    response = client.get("/", follow_redirects=False)
+    if response.status_code == 307:
+        assert response.headers["location"] == "/app/"
+    else:
+        assert response.status_code == 503
+        assert "studio/web" in response.text, "the message must name the build command"
+
+
+@pytest.mark.tier_a
+def test_the_superseded_page_is_still_reachable(api: Any) -> None:
+    """Kept only until the wizard can display a result (Phase 6)."""
+    client, _ = api
+    response = client.get("/legacy")
+    assert response.status_code == 200
+    assert "Plume Studio" in response.text
+    assert "/api/config/resolve" in response.text, "it must talk to the real resolver, not its own"

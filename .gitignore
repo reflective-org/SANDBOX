@@ -29,3 +29,8 @@ var/
 
 # Subagent worktrees: separate checkouts, never part of this repo
 .claude/worktrees/
+
+# Plume Studio web: dependencies and the built bundle (a build artefact -- `npm run build` remakes
+# it, and committing it would put a 200 kB minified diff in every UI PR).
+studio/web/node_modules/
+studio/api/static/app/

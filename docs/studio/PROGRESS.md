@@ -29,6 +29,56 @@ derivations to resolve rather than fixtures.
 
 ---
 
+### 2026-08-17 — The eight-stage wizard, and the page that could not launch a run
+
+**The Phase-0 page was rejecting its own default state.** A `<select>` reports
+`el.type === "select-one"`, so the size-bins dropdown sent the string `"40"`, `n_bins:
+Literal[40, 80, 160]` refused it, and the derived panel showed `—` with Run disabled. No run could
+be launched from the browser at all. Every API test passed throughout, because all of them post a
+dict built in Python and none exercised the payload the browser builds (#89).
+
+**The real cause was that the form was hand-written.** It never fetched `/api/schema` despite
+ADR-002, and exposed **10 of the schema's 42 fields**. Spec §8 forbids exactly this — *"adding a
+schema field must not require hand-written form code"* — so the fix is structural rather than a
+patched coercion:
+
+- **`studio/schema/layout.py`** — the layout manifest: which field belongs on which of the spec's
+  eight stages (§5.1–5.8), and nothing else. Units, ranges, labels and read-only-ness stay in
+  `SciField`, so the two cannot disagree about what a field means.
+- **`test_layout.py`** makes it binding: every leaf field of `RunConfig` must appear exactly once.
+  A new schema field now fails the suite until it has a home, which is the mechanism §8 asks for.
+- **`studio/web`** — TypeScript + React + Vite, as ADR-007 specified all along. The Phase-0 page was
+  a stopgap and is now at `/legacy`, kept only because it remains the only view of a finished run's
+  series (results are Phase 6). It dies when the wizard can show a result.
+- **`studio/web/src/schema.ts`** — the form generator. Control *and value type* both come from the
+  schema, which is the structural end of the #89 class of bug: `coerce()` gives a numeric enum the
+  number 40, because the schema says `type: integer`, not because a DOM attribute hinted at it.
+- **Four config endpoints** — `resolve`, `change`, `accept`, `keep` — expose the override semantics
+  task 0.3 built and the API had never surfaced. The browser holds one config; the server decides
+  what it means (§8: *"no per-step local copies"*).
+
+**A second bug, found by looking at the screen.** The review stage reported *"2 fields differ from
+the defaults"* for an untouched config, one row showing `—` against `—`. Pydantic omits `default`
+from JSON Schema for `default_factory` fields, so the 15-species gas dict and the dilution overrides
+map appeared to have no default. The diff now runs against `GET /api/config/defaults` — `RunConfig()`
+resolved, the same object the golden tests use — and an untouched config correctly reports **0**.
+
+**Science decisions are visible in the UI, not just enforced by it.** `switches.heating_to_t` renders
+as `false · only accepted value` with the longwave reason (SCIENCE-4); stage 1 carries *blocked on
+SCIENCE-1* because the tropopause-relative altitude and dataset-derived p/T need the climatology
+product. A user meeting a thin stage learns why it is thin.
+
+**Tests:** 289 Python Tier-A (+20) and 23 vitest. CI gains a `web` job — `npm ci`, typecheck,
+vitest, build — kept separate from the Python lane so a broken bundle is not reported as a Python
+failure. `tsc` earned its place immediately: it caught that `@vitejs/plugin-react` was imported but
+never added to `plugins`, so JSX would not have transformed at all.
+
+**Not done, deliberately:** no preview panels (dilution curve, size-distribution builder, SZA/OH
+diurnal — they need `/api/preview/*`), no ensemble axes, no results view. Stages 2 and 3 stay thin
+until SCIENCE-2 (t=0) is answered, and stage 1 until SCIENCE-1.
+
+---
+
 ### 2026-08-15 — Tasks 0.9d and 0.9e: the API, the page, and the shared service
 
 **Phase 0's exit criteria are met.** A run can be submitted from the CLI *and* from the web UI,

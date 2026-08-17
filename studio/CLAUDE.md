@@ -53,8 +53,19 @@ uv venv --python 3.12 .venv                                  # project-local, gi
 uv pip install -r studio/requirements.lock                   # the pinned, committed environment
 uv pip install -e . --no-deps                                # `coupled` + `studio` importable
 cp studio/.env.example .env                                  # then edit; .env is never committed
+
+npm --prefix studio/web ci                                   # the wizard's pinned dependencies
+npm --prefix studio/web run build                            # -> studio/api/static/app (gitignored)
+npm --prefix studio/web run dev                              # Vite on 5173, proxying /api to 8765
 ```
 
+`uvicorn studio.api.app:app` serves the built wizard at `/`. Unbuilt, `/` returns 503 naming the
+build command rather than falling back to the superseded page at `/legacy` — that page exposes 10 of
+the schema's 42 fields, so serving it as if it were the app would be a silent downgrade.
+
+- **The wizard's form is generated** from `/api/schema` plus `studio/schema/layout.py`. Adding a
+  schema field must not require editing form code (spec §8); `test_layout.py` fails if a field has no
+  stage, and `test_web_contract.py` fails if the schema stops emitting a shape the generator handles.
 - All Python work inside the project-local venv. **Never install into the system interpreter, never
   `sudo`, never modify anything outside the repo and its declared data directories.** Note the model's
   dependencies happen to live in a pyenv global environment on this machine; Studio does not adopt
