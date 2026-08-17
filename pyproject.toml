@@ -51,6 +51,7 @@ studio = [
 # studio linting/typing; separate from `dev` so the model's suite is unaffected
 studio-dev = [
     "ruff>=0.5",
+    "httpx2>=0.1",           # starlette's TestClient dependency; plain httpx is deprecated for it
     "mypy>=1.10",
     "black>=24.3",
     "hypothesis>=6.100",     # property tests for unit round-trips across the valid T-p range

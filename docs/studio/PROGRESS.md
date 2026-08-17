@@ -22,10 +22,66 @@ with full provenance, and the golden tests pass.
 | 0.6 `studio/runner` + job lifecycle | **done** (#72) |
 | 0.7 Golden-file harness (two tiers) | **done** (#70 measured, #79 asserted) |
 | 0.8 Four contained fixes in `coupled/` | not started |
-| 0.9 Vertical slice: CLI + API + minimal UI | **in progress** — 0.9a provenance (#80), 0.9b persistence (#83), 0.9c CLI (#85); 0.9d–e to come |
+| 0.9 Vertical slice: CLI + API + minimal UI | **done** — 0.9a provenance (#80), 0.9b persistence (#83), 0.9c CLI (#85), 0.9d API + 0.9e UI (#87) |
 
 Task order note: 0.5 was taken **before 0.3**, so the dependency-graph engine has real
 derivations to resolve rather than fixtures.
+
+---
+
+### 2026-08-15 — Tasks 0.9d and 0.9e: the API, the page, and the shared service
+
+**Phase 0's exit criteria are met.** A run can be submitted from the CLI *and* from the web UI,
+produces a stored result with full provenance, and the golden tests pass. 13 new Tier-A tests
+(269 total).
+
+**One flow, two front ends.** `studio/service.py` was extracted the moment there were two callers:
+a second copy of "resolve, record provenance, persist, submit, follow, store artefacts" would drift
+within a week, and the drift would be invisible — both paths would keep working and only their rows
+would disagree. ADR-002's "identical rows from either path" is a property of there being one
+function, not of two being written carefully.
+
+**Verified against a real server**, not only a test client:
+
+```
+POST /api/runs        -> 202 {"state":"queued"}
+SSE   t+ 0.0s  running
+      t+20.1s  succeeded
+GET  /api/runs        -> reproducible: false · termination: completed
+                         SO2 3.309e9 -> 1.720e6 pptv · peak N 3.07e6 cm^-3
+```
+
+**Three bugs found by looking at output rather than at green tests:**
+
+1. **The database never showed `running`.** Transitions were written only after a job finished, so
+   the stream would sit at `queued` for four minutes and then jump to `succeeded` — a trail, but
+   useless as progress. `finalise` now follows the runner and persists each transition as it
+   happens, which is also why the stream can read the *database* and still be live.
+2. **`reproducible` came back as `0`, not `false`** — an `Integer` column where a `Boolean`
+   belonged. The **drift test caught it** the moment the model changed, and the second migration
+   took one command. That is the return on putting Alembic in at 0.9b rather than later.
+3. **SSE looked broken under `TestClient`**, reporting only the terminal state. It was the test
+   client serialising requests, not the code. The SSE test now runs a real uvicorn server in a
+   thread and changes state while the stream is open — the only shape that can catch a stream which
+   reports nothing until the end.
+
+**Deliberate divergence from ADR-007: no React + Vite.** The page is one self-contained HTML file
+served by FastAPI. A build toolchain for a single form is machinery ahead of need — the same
+reasoning that kept Redis and Docker out of Phase 0 — and the repository already has precedent in
+`coupled/viz/*.html`. Recorded here rather than taken silently; React earns its place when the UI
+outgrows one form, and `/api/schema` already exists so the form can be generated rather than
+hand-written when it does.
+
+**The figure is deterministic from `RunSummary`** (ADR-004), drawn as inline SVG from the stored
+summary — never from the raw npz. The same summary always draws the same figure, so a lost figure is
+never a lost result.
+
+Smaller points: `POST /api/runs` returns **202**, because the run is accepted rather than finished,
+and finalising happens on a worker thread — a four-minute `await` would stall every other request
+including the stream reporting on that very run. Invalid configs are **422**, including
+`heating_to_t: true`, which the schema refuses because the model cannot represent the physics
+(SCIENCE-4); that refusal reaches the browser rather than crashing the server. `httpx2` joins
+`studio-dev` as starlette's test-client dependency.
 
 ---
 

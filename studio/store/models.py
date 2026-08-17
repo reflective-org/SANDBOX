@@ -33,6 +33,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -146,7 +147,7 @@ class RunRow(Base):
     #: The provenance record (ADR-006) as written at submit time, stored verbatim.
     provenance: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     #: False when any checkout was dirty: the SHAs do not describe the code that ran.
-    reproducible: Mapped[bool | None] = mapped_column(Integer, nullable=True)
+    reproducible: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime)
 
     run_set: Mapped[RunSetRow] = relationship(back_populates="runs")
