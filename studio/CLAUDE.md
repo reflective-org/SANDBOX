@@ -36,13 +36,13 @@ looks right, presented with the same confidence as a computed result, is worse t
 - **No shortcuts around the main code path.** Do not special-case tests, do not bypass validation, do
   not stub the model to make a UI demo work. If a demo needs fake data it is clearly labelled
   synthetic and lives in a fixture.
-- **Type hints everywhere.** `mypy --strict` on `studio/schema` and `studio/science`.
+- **Type hints everywhere.** `mypy --strict` on `studio/schema`, `studio/science` and `studio/resolve`.
 - **Known bugs are issues, not TODO comments.** If a TODO is unavoidable it references an issue number.
 
 ## Package boundaries — enforced by tests
 
-- `studio/schema` and `studio/science` import nothing from the API, the database, the web layer, or
-  `coupled`. They must be usable from a bare Python session. Importing `coupled` pulls in JAX.
+- `studio/schema`, `studio/science` and `studio/resolve` import nothing from the API, the database,
+  the web layer, or `coupled`. They must be usable from a bare Python session. Importing `coupled` pulls in JAX.
 - **`studio/modelio` is the only package permitted to import `coupled`.**
 - Enforced by `studio/tests/unit/test_import_boundaries.py`, both at runtime and statically.
 
@@ -73,7 +73,7 @@ cp studio/.env.example .env                                  # then edit; .env i
 ```bash
 pytest studio/tests -m tier_a      # fast; what CI runs
 pytest studio/tests -m tier_b      # full-case golden reproduction; nightly/manual
-mypy --strict studio/schema studio/science
+mypy --strict studio/schema studio/science studio/resolve
 ruff check studio/ && black --check studio/
 ```
 
@@ -100,17 +100,41 @@ just documented in [`CAVEATS.md`](../docs/studio/CAVEATS.md):
 
 ## Git workflow
 
-- Trunk-based, short-lived branches: `feat/<issue>-<slug>`, `fix/…`, `docs/…`, `chore/…`.
-- Every branch corresponds to an issue. Labels: `phase-0`…`phase-n`, `science`, `blocking`,
-  `architecture`, `frontend`, `backend`, `data`, `testing`, `docs`; a milestone per phase.
+**`studio/dev` is the integration branch. Studio PRs target it, never `main`.** Branch off
+`studio/dev`, and pass the base explicitly — `gh pr create --base studio/dev` — because `gh`
+defaults to the repository's default branch, which is `main`.
+
+```
+main ────●────────────●──────────●   viz + model work, plus batched Studio merges
+          \              \        /
+studio/dev ●──●──●────────●──●──●    integration; CI runs on pushes here
+            \  \             \
+   task 0.2 ─●  \             \      one task → one branch → one PR → studio/dev
+   task 0.3 ────●              \
+   task 0.4 ────────────────────●
+```
+
+- `studio/dev` → `main` at phase boundaries, or sooner when something there is needed by the model
+  side. **Merge `main` into `studio/dev` regularly** — the model and viz work moves independently,
+  and a long-lived branch that never pulls is how you get a conflicted merge nobody wants to do.
+  A conflicted PR is also silently untested: GitHub cannot build the merge ref, so no workflow runs
+  at all.
+- Task 0.1 pre-dates this and went straight into `main` (#59). Everything from 0.2 on goes through
+  `studio/dev`.
+- Short-lived task branches: `feat/<issue>-<slug>`, `fix/…`, `docs/…`, `chore/…`.
+- Every branch corresponds to an issue. Labels: `studio` plus `science`, `blocking`, `architecture`,
+  `frontend`, `backend`, `data`, `testing`, `docs`. **Do not use the `phase-N` labels** — those are
+  the coupled model's phases (issues #11–#28), not Studio's; name the Studio phase in the text.
 - Conventional commits. Small, coherent commits; no "wip" on shared branches.
 - **One task, one PR.** No scope creep.
-- **Model-side changes to `coupled/` go in their own PR**, with their own tests — never buried inside
-  an app feature.
-- Annotated tag at each phase completion (`v0.1.0-phase0`) with release notes.
+- **Model-side changes to `coupled/` go in their own PR against `main`**, with their own tests —
+  never buried inside an app feature, and never routed through `studio/dev`.
+- Annotated tag at each phase completion (`v0.1.0-phase0`) with release notes, cut from `main` after
+  the phase's `studio/dev` → `main` merge.
 
 ## PR checklist
 
+- [ ] Base branch is `studio/dev` (not `main`)
 - [ ] Linked issue; scope matches
 - [ ] New/changed schema fields carry unit, range, description, default, provenance
 - [ ] Any new `[ASSUMPTION]` added to `docs/studio/ASSUMPTIONS.md`

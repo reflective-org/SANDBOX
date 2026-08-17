@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume Studio</title>
+<!--
+  The Phase-0 web slice: configure, submit, watch, read the result.
+
+  ONE self-contained page, no build step. ADR-007 named React + Vite; that is deferred until the UI
+  is more than one form, and the deferral is recorded in PROGRESS.md rather than taken silently. The
+  repository already has precedent for self-contained pages (coupled/viz/*.html), and a build
+  toolchain for a single form would be machinery ahead of need -- the same reasoning that kept Redis
+  and Docker out of Phase 0.
+
+  This page exposes a SUBSET of the schema, and says so. The full form is generated from
+  /api/schema, which is why that endpoint exists now rather than later.
+-->
+<style>
+  :root {
+    --surface: #fcfcfb; --raised: #ffffff; --line: #e1e0d9;
+    --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #78766f;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --warn: #eda100; --bad: #e34948;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --surface: #1a1a19; --raised: #232322; --line: #3a3a37;
+      --ink: #ffffff; --ink-2: #c3c2b7; --ink-3: #8f8e85;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --warn: #c98500; --bad: #e66767;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface); color: var(--ink);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  header { padding: 20px 24px 12px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
+  header p { margin: 4px 0 0; color: var(--ink-2); font-size: 13px; }
+  main { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 0; align-items: start; }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+  .panel { padding: 20px 24px; }
+  .panel + .panel { border-left: 1px solid var(--line); min-height: calc(100vh - 78px); }
+  @media (max-width: 820px) { .panel + .panel { border-left: 0; border-top: 1px solid var(--line); min-height: 0; } }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-3);
+       margin: 0 0 12px; font-weight: 600; }
+  label { display: block; margin: 0 0 12px; font-size: 13px; color: var(--ink-2); }
+  label span { display: block; margin-bottom: 3px; }
+  input, select {
+    width: 100%; padding: 7px 9px; font: inherit; color: var(--ink);
+    background: var(--raised); border: 1px solid var(--line); border-radius: 6px;
+  }
+  input:focus, select:focus { outline: 2px solid var(--s1); outline-offset: -1px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  button {
+    width: 100%; padding: 9px 14px; font: inherit; font-weight: 600; cursor: pointer;
+    color: #fff; background: var(--s1); border: 0; border-radius: 6px;
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .derived { margin: 14px 0 0; padding: 12px; background: var(--raised);
+             border: 1px solid var(--line); border-radius: 8px; }
+  .derived dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0;
+                font-size: 12.5px; }
+  .derived dt { color: var(--ink-3); }
+  .derived dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+  .hash { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: var(--ink-3);
+          word-break: break-all; }
+  .note { font-size: 12px; color: var(--ink-3); margin: 10px 0 0; }
+  .runs { display: flex; flex-direction: column; gap: 8px; }
+  .run { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised);
+         cursor: pointer; }
+  .run[aria-selected="true"] { outline: 2px solid var(--s1); outline-offset: -1px; }
+  .run-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .state { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .state.queued, .state.running { color: var(--warn); }
+  .state.succeeded { color: var(--s3); }
+  .state.failed, .state.terminated_on_limit, .state.cancelled { color: var(--bad); }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--line); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .flag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px;
+          border: 1px solid var(--line); color: var(--ink-2); margin: 0 4px 4px 0; }
+  .flag.bad { color: var(--bad); border-color: var(--bad); }
+  figure { margin: 16px 0 0; }
+  figcaption { font-size: 12px; color: var(--ink-3); margin-top: 6px; }
+  .empty { color: var(--ink-3); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Plume Studio</h1>
+  <p>Configure, run and inspect coupled SAI plume box-model simulations.
+     Phase&nbsp;0 slice — a subset of the schema, the whole pipeline.</p>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Configure</h2>
+    <form id="form">
+      <div class="row">
+        <label><span>Temperature (K)</span><input name="site.temperature_k" type="number" step="0.1" value="210"></label>
+        <label><span>Pressure (mbar)</span><input name="site.pressure_mbar" type="number" step="0.1" value="55"></label>
+      </div>
+      <div class="row">
+        <label><span>Latitude (°)</span><input name="site.latitude_deg" type="number" step="0.5" value="30"></label>
+        <label><span>H₂O (ppmv)</span><input name="site.h2o_ppmv" type="number" step="0.0001" value="6.9104"></label>
+      </div>
+      <div class="row">
+        <label><span>SO₂ released (kg)</span><input name="injection.so2_mass_kg" type="number" step="1" value="1000"></label>
+        <label><span>Track length (m)</span><input name="injection.plume_length_m" type="number" step="100" value="15000"></label>
+      </div>
+      <div class="row">
+        <label><span>Duration (days)</span><input name="schedule.duration_days" type="number" step="1" min="1" value="1"></label>
+        <label><span>Size bins</span>
+          <select name="microphysics.n_bins"><option>40</option><option>80</option><option>160</option></select>
+        </label>
+      </div>
+      <div class="row">
+        <label><span>Dilution regime</span>
+          <select name="dilution.regime">
+            <option value="D1">D1 low</option><option value="D2" selected>D2 med</option>
+            <option value="D3">D3 high</option><option value="D5">D5 very high</option>
+            <option value="burst">burst</option><option value="constant">constant rate</option>
+          </select>
+        </label>
+        <label><span>Background aerosol</span>
+          <select name="background.aerosol">
+            <option value="sabr_220" selected>SABR-220</option><option value="sabr_330">SABR-330</option>
+            <option value="sabr_310">SABR-310</option><option value="cesm_g6">CESM G6</option>
+            <option value="redcircles">redcircles</option>
+          </select>
+        </label>
+      </div>
+      <label><span>Label</span><input name="label" type="text" placeholder="what this run is for"></label>
+      <button id="submit" type="submit">Run</button>
+    </form>
+
+    <div class="derived">
+      <dl>
+        <dt>Plume volume V₀</dt><dd id="d-v0">—</dd>
+        <dt>Initial SO₂</dt><dd id="d-so2">—</dd>
+      </dl>
+      <p class="hash" id="d-hash">—</p>
+      <p class="note">Derived by the server, not the form — the same resolver the CLI uses.
+        Identity is the hash; two runs differing only in label are one computation.</p>
+    </div>
+    <p class="note" id="warn"></p>
+  </section>
+
+  <section class="panel">
+    <h2>Runs</h2>
+    <div class="runs" id="runs"><p class="empty">No runs yet.</p></div>
+    <div id="detail"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (x, d = 3) => (x === null || x === undefined) ? "—" :
+  (Math.abs(x) >= 1e5 || (Math.abs(x) < 1e-2 && x !== 0) ? x.toExponential(d) : x.toFixed(d));
+
+function formConfig() {
+  const config = {};
+  for (const el of $("form").elements) {
+    if (!el.name || el.name === "label") continue;
+    const [group, field] = el.name.split(".");
+    const value = el.type === "number" ? Number(el.value) : el.value;
+    (config[group] ||= {})[field] = value;
+  }
+  return config;
+}
+
+async function resolveConfig() {
+  const response = await fetch("/api/config/resolve", {
+    method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify({config: formConfig()}),
+  });
+  if (!response.ok) {
+    const problem = await response.json().catch(() => ({detail: response.statusText}));
+    // A validation failure is the schema doing its job, so it is shown rather than swallowed.
+    $("warn").textContent = "Invalid configuration: " + (problem.detail || "").split("\n")[0];
+    $("d-v0").textContent = $("d-so2").textContent = "—";
+    $("d-hash").textContent = "—";
+    $("submit").disabled = true;
+    return;
+  }
+  const data = await response.json();
+  $("warn").textContent = "";
+  $("submit").disabled = false;
+  $("d-v0").textContent = fmt(data.derived.plume_volume_cm3) + " cm³";
+  $("d-so2").textContent = fmt(data.derived.so2_initial_pptv) + " pptv";
+  $("d-hash").textContent = data.config_hash;
+}
+
+async function loadRuns(selectId) {
+  const runs = await (await fetch("/api/runs")).json();
+  const container = $("runs");
+  if (!runs.length) { container.innerHTML = '<p class="empty">No runs yet.</p>'; return; }
+  container.innerHTML = "";
+  for (const run of runs) {
+    const card = document.createElement("div");
+    card.className = "run";
+    card.setAttribute("role", "button");
+    card.setAttribute("aria-selected", String(run.run_id === selectId));
+    card.innerHTML = `<div class="run-top">
+        <strong>${run.label || "(unlabelled)"}</strong>
+        <span class="state ${run.state}">${run.state}</span>
+      </div>
+      <div class="hash">${run.config_hash.slice(0, 24)}…</div>`;
+    card.onclick = () => showRun(run.run_id);
+    container.appendChild(card);
+  }
+}
+
+function seriesChart(summary) {
+  // Deterministic from the RunSummary (ADR-004): the same summary always draws the same figure,
+  // so a lost figure is never a lost result. Log y, because SO2 spans six decades.
+  const wanted = [["SO2", "var(--s1)"], ["H2SO4", "var(--s3)"], ["total_n", "var(--s2)"]];
+  const days = summary.time_days, W = 640, H = 260, L = 54, R = 96, T = 12, B = 30;
+  const present = wanted.filter(([name]) => summary.series[name]);
+  const values = present.flatMap(([name]) => summary.series[name].values.filter((v) => v > 0));
+  if (!values.length) return "<p class='empty'>No positive values to plot.</p>";
+  const lo = Math.log10(Math.min(...values)), hi = Math.log10(Math.max(...values));
+  const x = (d) => L + (d / days[days.length - 1]) * (W - L - R);
+  const y = (v) => T + (1 - (Math.log10(v) - lo) / (hi - lo || 1)) * (H - T - B);
+  const paths = present.map(([name, colour]) => {
+    const points = summary.series[name].values
+      .map((v, i) => (v > 0 ? `${x(days[i]).toFixed(1)},${y(v).toFixed(1)}` : null))
+      .filter(Boolean).join(" ");
+    const last = summary.series[name].values.map((v, i) => [v, i]).filter(([v]) => v > 0).pop();
+    return `<polyline fill="none" stroke="${colour}" stroke-width="2" stroke-linejoin="round" points="${points}"/>
+      <text x="${x(days[last[1]]) + 6}" y="${y(last[0]) + 4}" fill="${colour}" font-size="11">${name}</text>`;
+  }).join("");
+  const ticks = [];
+  for (let e = Math.ceil(lo); e <= Math.floor(hi); e++) {
+    ticks.push(`<line x1="${L}" x2="${W - R}" y1="${y(10 ** e)}" y2="${y(10 ** e)}" stroke="var(--line)"/>
+      <text x="${L - 6}" y="${y(10 ** e) + 4}" text-anchor="end" font-size="10" fill="var(--ink-3)">1e${e}</text>`);
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img"
+      aria-label="Gas-phase species and particle number against simulated time">
+    ${ticks.join("")}
+    <line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="var(--ink-3)"/>
+    <text x="${L}" y="${H - 8}" font-size="10" fill="var(--ink-3)">0 d</text>
+    <text x="${W - R}" y="${H - 8}" text-anchor="end" font-size="10" fill="var(--ink-3)">${days[days.length - 1].toFixed(2)} d</text>
+    ${paths}
+  </svg>`;
+}
+
+async function showRun(runId) {
+  await loadRuns(runId);
+  const run = await (await fetch(`/api/runs/${runId}`)).json();
+  const flags = (run.headline?.flags || []).map((f) => `<span class="flag">${f}</span>`).join("");
+  const repro = run.reproducible === false
+    ? '<span class="flag bad">not reproducible — a checkout was dirty</span>' : "";
+  let figure = "";
+  if (run.state === "succeeded") {
+    const summary = await (await fetch(`/api/runs/${runId}/summary`)).json();
+    figure = `<figure>${seriesChart(summary)}
+      <figcaption>Drawn from the stored RunSummary, never the raw npz — the same summary always
+      draws the same figure. Termination: ${summary.termination}.</figcaption></figure>`;
+  }
+  $("detail").innerHTML = `
+    <h2 style="margin-top:22px">${run.label || "(unlabelled)"} · <span class="state ${run.state}">${run.state}</span></h2>
+    <p class="hash">run ${run.run_id}<br>config ${run.config_hash}</p>
+    <p>${repro}${flags}</p>
+    <table>
+      <tr><th>final SO₂</th><td class="num">${fmt(run.headline?.final_so2_pptv)} pptv</td></tr>
+      <tr><th>peak H₂SO₄</th><td class="num">${fmt(run.headline?.peak_h2so4_pptv)} pptv</td></tr>
+      <tr><th>peak number</th><td class="num">${fmt(run.headline?.peak_number_cm3)} cm⁻³</td></tr>
+      <tr><th>final surface area</th><td class="num">${fmt(run.headline?.final_surface_area)} µm² cm⁻³</td></tr>
+    </table>
+    ${figure}
+    <h2 style="margin-top:22px">Lifecycle</h2>
+    <table>${run.transitions.map((t) =>
+      `<tr><th>${t.state}</th><td>${new Date(t.at).toLocaleTimeString()}</td></tr>`).join("")}</table>
+    <h2 style="margin-top:22px">Artefacts</h2>
+    <table>${(run.artifacts || []).map((a) =>
+      `<tr><th><a href="/api/runs/${runId}/artifacts/${a.kind}">${a.kind}</a></th>
+       <td class="num">${a.size_bytes.toLocaleString()} B</td></tr>`).join("")}</table>`;
+}
+
+$("form").addEventListener("input", resolveConfig);
+$("form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  $("submit").disabled = true;
+  const label = $("form").elements["label"].value;
+  const response = await fetch("/api/runs", {
+    method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify({config: formConfig(), label}),
+  });
+  const {run_id: runId} = await response.json();
+  await showRun(runId);
+  // Progress is PUSHED (spec 7.3), not polled: the server streams state changes as they happen.
+  const stream = new EventSource(`/api/events/runs/${runId}`);
+  stream.addEventListener("state", async () => { await showRun(runId); });
+  stream.onerror = () => { stream.close(); $("submit").disabled = false; };
+  stream.addEventListener("state", (event) => {
+    const state = JSON.parse(event.data).state;
+    if (["succeeded", "failed", "cancelled", "terminated_on_limit"].includes(state)) {
+      stream.close(); $("submit").disabled = false;
+    }
+  });
+});
+
+resolveConfig();
+loadRuns();
+</script>
+</body>
+</html>

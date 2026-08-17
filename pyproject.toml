@@ -51,6 +51,7 @@ studio = [
 # studio linting/typing; separate from `dev` so the model's suite is unaffected
 studio-dev = [
     "ruff>=0.5",
+    "httpx2>=0.1",           # starlette's TestClient dependency; plain httpx is deprecated for it
     "mypy>=1.10",
     "black>=24.3",
     "hypothesis>=6.100",     # property tests for unit round-trips across the valid T-p range
@@ -59,6 +60,11 @@ studio-dev = [
 # the models themselves live in the tuvx-jax / stratchem-jax / tomas-jax git submodules
 # (put on sys.path by coupled/model_bridge.py and coupled/tomas_bridge.py); this project
 # installs the coupling layer + shared dependencies.
+[project.scripts]
+# The scripted path is first-class (ADR-002): a sweep launched from a terminal goes through the same
+# schema, resolver, store and runner as one launched from the web.
+plume-studio = "studio.cli.main:app"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["coupled*", "studio*"]
@@ -79,8 +85,11 @@ markers = [
 # ----------------------------------------------------------------------------------------------
 [tool.ruff]
 line-length = 100
-target-version = "py311"
-src = ["studio"]
+# Studio's floor is 3.12, not the model's >=3.10: the lockfile is compiled for 3.12, CI runs 3.12,
+# and numpy's bundled type stubs use 3.12-only `type` statements, so mypy cannot check this package
+# against anything older. All three tools state the same floor deliberately.
+target-version = "py312"
+src = ["."]
 extend-exclude = ["studio/web"]
 
 [tool.ruff.lint]
@@ -98,14 +107,17 @@ ignore = ["ANN401"]
 
 [tool.ruff.lint.per-file-ignores]
 "studio/tests/**" = ["ANN"]
+# B008 flags function calls in argument defaults, which is exactly how typer declares options.
+# Scoped to the CLI rather than disabled globally, where it catches real mutable-default bugs.
+"studio/cli/main.py" = ["B008"]
 
 [tool.black]
 line-length = 100
-target-version = ["py311"]
+target-version = ["py312"]
 extend-exclude = "studio/web"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 # --strict is applied to studio/schema and studio/science on the command line and in CI; the settings
 # here are the baseline for everything else under studio/.
 files = ["studio"]
@@ -118,5 +130,19 @@ check_untyped_defs = true
 
 [[tool.mypy.overrides]]
 # The model is untyped and is not ours to annotate; studio/modelio is the only importer (ADR-001).
-module = ["coupled.*", "config", "tomas_jax.*", "tuvx_photolysis.*"]
+# `follow_imports = "silent"` matters as much as ignore_missing_imports: once studio/modelio imports
+# `coupled`, mypy would otherwise report errors from the MODEL's source (its own untyped deps --
+# yaml, scipy, the flat `aerosol` module), which are not Studio's to fix and would make the check
+# unusable. Studio's own use of those imports is still checked.
+module = [
+    "coupled.*",
+    "config",
+    "aerosol",
+    "background_aerosol_distribution",
+    "tomas_jax.*",
+    "tuvx_photolysis.*",
+    "yaml",
+    "scipy.*",
+]
 ignore_missing_imports = true
+follow_imports = "silent"

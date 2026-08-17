@@ -8,6 +8,26 @@ ones that arise from *configuring and comparing* runs.
 
 ---
 
+## The box does not heat and does not rise — and this model cannot answer whether it should
+
+**Every run is isobaric and isothermal at the configured temperature.** There is no radiative
+heating response and no buoyant rise. A result must not be read as containing a plume-warming
+signal, a lofting signal, or an altitude change.
+
+This is a **scope boundary, not a pending feature** (Ali, 2026-08-13). The model's heating term is
+shortwave-only — longwave cooling is absent from the radiative calculation (AD-5.4) — so enabling it
+would not make the thermodynamics more complete, it would make them one-sided, producing a
+~+1.2 K / 10 d drift that is an artefact of the missing cooling. Buoyant rise follows from a heating
+rate this model cannot compute, so a rise velocity would be a free parameter dressed as physics.
+
+**Answering either question requires a different model**, with longwave radiation and plume
+dynamics. Studio therefore refuses `switches.heating_to_t` outright (schema 0.2.0, `True` fails
+validation) and exposes **no** buoyancy or heating-rate fields at all — a knob for a capability the
+model does not have would advertise it.
+
+Sedimentation is a separate question and remains genuinely open (SCIENCE-4, issue #56); it is a
+particle-loss process, not a thermodynamic response, and this decision says nothing about it.
+
 ## Top-level caveats — shown on every results view
 
 ### The definition of t = 0 is unresolved, and it dominates particle number
