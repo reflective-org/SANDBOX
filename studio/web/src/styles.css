@@ -628,3 +628,267 @@ aside.runs li {
     margin-top: 30px;
   }
 }
+
+/* ---- preview panels -------------------------------------------------------------------- */
+
+.panel {
+  margin-top: 26px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.panel-head h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-3);
+  margin: 0 0 6px;
+  border: 0;
+  padding: 0;
+}
+.panel-status {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+.panel-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+  max-width: 78ch;
+}
+
+figure.chart {
+  margin: 0;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px 12px 6px;
+}
+figure.chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+figure.chart figcaption {
+  font-size: 11px;
+  color: var(--ink-3);
+  padding: 4px 2px 4px;
+  min-height: 1.4em;
+}
+
+/* Grid and axes stay recessive: they are scaffolding, not data. */
+.chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.chart-axis {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.chart-tick {
+  fill: var(--ink-3);
+  font-size: 10px;
+  font-family: var(--mono);
+}
+.chart-axis-label {
+  fill: var(--ink-3);
+  font-size: 10.5px;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.chart-line.muted {
+  stroke: var(--line-strong);
+  stroke-width: 1.25;
+}
+.chart-line.dashed {
+  stroke-dasharray: 5 4;
+}
+
+.chart-series-label {
+  fill: var(--accent-ink);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.chart-series-label.muted {
+  fill: var(--ink-3);
+  font-weight: 400;
+}
+
+/* The band is the only fill on the chart, so it must sit clearly behind the line. */
+.chart-band {
+  fill: var(--sunken);
+}
+.chart-crosshair {
+  stroke: var(--ink-3);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.chart-marker {
+  fill: var(--override);
+  stroke: var(--raised);
+  stroke-width: 2;
+}
+.chart-marker-label {
+  fill: var(--override);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.chart-readout {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--ink-2);
+  padding: 4px 2px;
+  min-height: 1.4em;
+}
+.chart-readout .at {
+  color: var(--ink-3);
+}
+.chart-readout strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.chart-error {
+  margin: 0;
+  padding: 9px 11px;
+  background: var(--stale-bg);
+  border: 1px solid var(--stale);
+  border-radius: 6px;
+  color: var(--stale);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+
+/* ---- parcel diagram -------------------------------------------------------------------- */
+
+.parcel {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 12px 14px;
+  flex-wrap: wrap;
+}
+.parcel svg {
+  width: 320px;
+  max-width: 100%;
+  height: auto;
+}
+.parcel-box {
+  fill: var(--sunken);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.parcel-dim,
+.parcel-caption {
+  fill: var(--ink-3);
+  font-size: 10px;
+  font-family: var(--mono);
+}
+.parcel-facts {
+  flex: 1;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.parcel-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 3px;
+}
+.parcel-facts .k {
+  color: var(--ink-3);
+}
+.parcel-facts .v {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.parcel-note {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+/* ---- species bars ---------------------------------------------------------------------- */
+
+.bars {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.bar-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 76px;
+  gap: 10px;
+  align-items: center;
+  font-size: 11.5px;
+}
+.bar-name {
+  font-family: var(--mono);
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bar-track {
+  background: var(--sunken);
+  border-radius: 3px;
+  height: 12px;
+}
+.bar-fill {
+  background: var(--accent);
+  height: 100%;
+  border-radius: 3px;
+}
+.bar-value {
+  font-family: var(--mono);
+  color: var(--ink);
+  text-align: right;
+}
+
+/* A text field holds a draft until Enter or blur, so a five-digit number is one edit and not five
+   (and does not lose focus after the first keystroke). */
+.draft {
+  position: relative;
+}
+.draft-hint {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  background: var(--surface);
+  padding: 2px 4px;
+  border-radius: 3px;
+  pointer-events: none;
+}
+.draft input {
+  width: 100%;
+}

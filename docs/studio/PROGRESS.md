@@ -95,6 +95,31 @@ follow, pin it, move the input underneath it, click accept. It found four things
 Also corrected: the TS fixture claimed `minimum: 150, maximum: 300` for temperature while its own
 docstring said it was copied from `/api/schema`. It was not; it is now.
 
+**Preview panels, one per stage** (spec §8). Every curve is the model's own implementation, never a
+lookalike: the dilution curves are `coupled.dilution.volume_ratio`, the size distribution is the
+state `initial_tomas_state` actually seeds, the bin grid is TOMAS's own, and the SZA comes from the
+gas model's `solar.py`. A preview that re-derived a formula would eventually disagree with the run
+while still looking exactly like a dilution curve. Stages 1, 3, 4, 5 and 7 get server-computed
+panels; stages 2 and 6 draw the config itself (parcel geometry, gas composition) and say so.
+
+Building them caught the ADR-003 units trap first-hand: `stp_to_ambient_factor` takes **Pa** while
+the schema's canonical unit is mbar, so a hand-assembled call scaled the whole distribution by
+exactly 100 — and the plot still looked like a perfectly good size distribution. The panel now goes
+through `to_scenario` + `initial_tomas_state`, and the test asserts the seeded total against the
+*declared* mode concentration (49 cm⁻³ at STP × 0.0706 = 3.46 cm⁻³) rather than against whatever the
+code currently produces.
+
+Cost: SZA and concentration are pure `studio.science`/NumPy and never import JAX (asserted in a
+subprocess) — stage 1 is the landing stage and must not stall. The three model-backed panels pay a
+one-off ~1.2 s JAX import, then run in ~1 ms.
+
+**A UX bug reported from actual use:** typing `15000` sent five requests — 1, 15, 150, 1500, 15000 —
+and the in-flight request disabled the input, so focus was lost after the first digit and the rest
+went nowhere. Every automated check had typed whole values at once, so nothing caught it. Text
+fields now hold a **draft** and commit on Enter or blur (Escape abandons); dropdowns and checkboxes
+stay immediate, since one interaction there is one decision. `Field.test.tsx` types keystroke by
+keystroke, and config requests are now numbered so a slow reply cannot clobber a newer edit.
+
 **Not done, deliberately:** no preview panels (dilution curve, size-distribution builder, SZA/OH
 diurnal — they need `/api/preview/*`), no ensemble axes, no results view. Stages 2 and 3 stay thin
 until SCIENCE-2 (t=0) is answered, and stage 1 until SCIENCE-1.

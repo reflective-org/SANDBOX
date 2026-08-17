@@ -227,6 +227,37 @@ def create_app(home: Path | None = None, database: str | None = None) -> FastAPI
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=f"no such field: {exc}") from exc
 
+    @app.post("/api/preview/{panel}")
+    def preview(panel: str, request: ResolveRequest) -> dict[str, Any]:
+        """A stage's preview panel: what this configuration implies, before spending compute.
+
+        Spec section 8 -- sub-second, and never the full model. Every curve is the model's own
+        implementation (``studio/modelio/preview.py`` explains why that is not negotiable).
+
+        Imported inside the handler, not at module scope: four of the five panels need ``coupled``,
+        which pulls JAX and costs about 1.2 s once. Paying that at import would put it on every
+        process that serves ``/api/config/resolve`` -- including the CLI's -- for a panel the user
+        may never open. The first panel request in a process is therefore slow; the rest are ~1 ms.
+        """
+        from studio.modelio.preview import PANELS
+
+        builder = PANELS.get(panel)
+        if builder is None:
+            raise HTTPException(
+                status_code=404, detail=f"no preview {panel!r}; have {sorted(PANELS)}"
+            )
+        try:
+            config = RunConfig.model_validate(request.config)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        try:
+            return builder(config)
+        except NotImplementedError as exc:
+            # An unimplemented derivation must say so rather than draw a plausible curve (ADR-005).
+            raise HTTPException(status_code=501, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     @app.post("/api/runs", status_code=202)
     async def create_run_endpoint(request: SubmitRequest) -> dict[str, Any]:
         """Submit a run and return immediately with its identity.

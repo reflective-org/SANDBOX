@@ -13,10 +13,11 @@
  * stage 3 cannot lose anything, because there was never a second copy to lose it from.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, type ConfigState } from "./api";
 import { Field } from "./Field";
 import { Review } from "./Review";
+import { PANELS_BY_STAGE } from "./panels";
 import { type FieldSpec, fieldSpec } from "./schema";
 import { valueAt } from "./schema";
 import type { JsonSchema, LayoutManifest, ResolvedPayload, RunBrief } from "./types";
@@ -112,19 +113,32 @@ export function App() {
     ? { config: payload.config, overrides: payload.overrides }
     : null;
 
+  // A ref, so `loadPanel` can stay stable while still sending the CURRENT config.
+  const payloadRef = useRef<Record<string, unknown>>({});
+  payloadRef.current = payload?.config ?? {};
+
+  // Every config operation is numbered, and a reply that is not the newest is dropped. Two edits in
+  // quick succession can otherwise return out of order and leave the form showing the OLDER of the
+  // two -- rare, silent, and indistinguishable from an edit that did not take.
+  const requestId = useRef(0);
+
   const run = useCallback(
     async (operation: (s: ConfigState) => Promise<ResolvedPayload>) => {
       if (!state) return;
+      const id = ++requestId.current;
       setBusy(true);
       try {
-        setPayload(await operation(state));
+        const next = await operation(state);
+        if (id !== requestId.current) return;
+        setPayload(next);
         setError("");
       } catch (err) {
+        if (id !== requestId.current) return;
         // A 422 here is the schema refusing a value; show its message rather than reverting
         // silently, so the user can see which field and why (ADR-005).
         setError(err instanceof ApiError ? err.message : String(err));
       } finally {
-        setBusy(false);
+        if (id === requestId.current) setBusy(false);
       }
     },
     [state],
@@ -135,6 +149,13 @@ export function App() {
     [run],
   );
   const onAccept = useCallback((path: string) => void run((s) => api.accept(s, path)), [run]);
+
+  // Passed to the panels so they never import the API client themselves. Stable, so a panel's
+  // effect refires when the CONFIG changes and not merely because App re-rendered.
+  const loadPanel = useCallback(
+    (panel: string, signal: AbortSignal) => api.preview(panel, payloadRef.current, signal),
+    [],
+  );
   const onKeep = useCallback((path: string) => void run((s) => api.keep(s, path)), [run]);
 
   const onSubmit = useCallback(() => {
@@ -175,6 +196,7 @@ export function App() {
   if (!stage) return <main className="fatal">the layout manifest has no stages</main>;
   const index = layout.stages.indexOf(stage);
   const staleByPath = new Map(payload.stale.map((entry) => [entry.path, entry]));
+  const StagePanel = PANELS_BY_STAGE[stage.id];
 
   return (
     <main>
@@ -260,6 +282,8 @@ export function App() {
             </div>
           ))
         )}
+
+        {StagePanel ? <StagePanel config={payload.config} load={loadPanel} /> : null}
 
         {error ? <p className="error">{error}</p> : null}
 

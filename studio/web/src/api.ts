@@ -74,6 +74,17 @@ export const api = {
   keep: (state: ConfigState, path: string) =>
     post<ResolvedPayload>("/api/config/keep", { ...state, path }),
 
+  /**
+   * A stage's preview panel. The first call in a server process imports JAX (~1.2 s); the rest are
+   * about a millisecond, so the panels are cheap enough to refetch on every edit.
+   */
+  preview: (panel: string, config: Record<string, unknown>, signal: AbortSignal) =>
+    request<Record<string, unknown>>(`/api/preview/${panel}`, {
+      method: "POST",
+      body: JSON.stringify({ config }),
+      signal,
+    }),
+
   submit: (config: Record<string, unknown>, label: string) =>
     post<{ run_id: string; config_hash: string; state: string }>("/api/runs", { config, label }),
 

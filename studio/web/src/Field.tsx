@@ -12,8 +12,105 @@
  * follows from the schema.
  */
 
+import { useEffect, useRef, useState } from "react";
 import { type FieldSpec, coerce, display } from "./schema";
 import type { StaleField } from "./types";
+
+/** The text a value shows in an input. Kept out of `display`, which is for reading, not editing. */
+function toText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([k, v]) => `${k}=${String(v)}`)
+      .join(", ");
+  }
+  return String(value);
+}
+
+/**
+ * A text-like input that commits on blur or Enter, not on every keystroke.
+ *
+ * Typing "15000" used to send five requests -- 1, 15, 150, 1500, 15000 -- each of which resolved
+ * server-side and re-rendered the form, and each of which was a config the user never asked for.
+ * Worse, the in-flight request disabled the field, so focus was lost after the first digit and the
+ * remaining four went nowhere. Reported from actual use, which is the only way this shows up: every
+ * automated check typed a whole value at once.
+ *
+ * So the field owns a local draft while it is being edited, and the config only moves when the user
+ * says they are done. Escape abandons the edit; the value from the server wins whenever the field
+ * is not being edited, so an accept/keep elsewhere still updates it.
+ */
+function DraftInput({
+  id,
+  value,
+  type,
+  placeholder,
+  min,
+  max,
+  step,
+  onCommit,
+}: {
+  id: string;
+  value: unknown;
+  type: "number" | "text";
+  placeholder?: string | undefined;
+  min?: number | undefined;
+  max?: number | undefined;
+  step?: number | string | undefined;
+  onCommit: (raw: string) => void;
+}) {
+  const committed = toText(value);
+  const [draft, setDraft] = useState(committed);
+  const [editing, setEditing] = useState(false);
+  const ref = useRef<HTMLInputElement | null>(null);
+
+  // Follow the server while not editing; never yank the text out from under someone mid-type.
+  useEffect(() => {
+    if (!editing) setDraft(committed);
+  }, [committed, editing]);
+
+  const commit = () => {
+    setEditing(false);
+    if (draft !== committed) onCommit(draft);
+  };
+
+  return (
+    <div className="draft">
+      <input
+        ref={ref}
+        id={id}
+        type={type}
+        value={draft}
+        {...(placeholder !== undefined ? { placeholder } : {})}
+        {...(min !== undefined ? { min } : {})}
+        {...(max !== undefined ? { max } : {})}
+        {...(step !== undefined ? { step } : {})}
+        onFocus={() => setEditing(true)}
+        onChange={(e) => {
+          setEditing(true);
+          setDraft(e.target.value);
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+            ref.current?.blur();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            setDraft(committed);
+            setEditing(false);
+            ref.current?.blur();
+          }
+        }}
+      />
+      {editing && draft !== committed ? (
+        <span className="draft-hint">press Enter to apply</span>
+      ) : null}
+    </div>
+  );
+}
 
 interface Props {
   spec: FieldSpec;
@@ -100,6 +197,11 @@ export function Field({
   );
 }
 
+/**
+ * `disabled` reaches only the immediate controls (select, checkbox). Disabling a text input during
+ * an in-flight request is what stole focus mid-typing, and a draft input has nothing to protect:
+ * its value is local until the user commits it.
+ */
 function control(
   spec: FieldSpec,
   value: unknown,
@@ -148,54 +250,37 @@ function control(
     case "number":
     case "integer":
       return (
-        <input
+        <DraftInput
           id={id}
+          value={value}
           type="number"
-          value={value === null || value === undefined ? "" : String(value)}
           step={spec.kind === "integer" ? 1 : "any"}
-          {...(spec.min !== undefined ? { min: spec.min } : {})}
-          {...(spec.max !== undefined ? { max: spec.max } : {})}
-          disabled={disabled}
-          onChange={(e) => emit(e.target.value)}
+          min={spec.min}
+          max={spec.max}
+          onCommit={emit}
         />
       );
     case "string_list":
       return (
-        <input
+        <DraftInput
           id={id}
+          value={value}
           type="text"
           placeholder="comma separated, e.g. SO2, OH"
-          value={Array.isArray(value) ? value.join(", ") : ""}
-          disabled={disabled}
-          onChange={(e) => emit(e.target.value)}
+          onCommit={emit}
         />
       );
     case "number_map":
       return (
-        <input
+        <DraftInput
           id={id}
+          value={value}
           type="text"
           placeholder="NAME=value, e.g. SO2=90"
-          value={
-            value && typeof value === "object"
-              ? Object.entries(value as Record<string, unknown>)
-                  .map(([k, v]) => `${k}=${String(v)}`)
-                  .join(", ")
-              : ""
-          }
-          disabled={disabled}
-          onChange={(e) => emit(e.target.value)}
+          onCommit={emit}
         />
       );
     default:
-      return (
-        <input
-          id={id}
-          type="text"
-          value={value === null || value === undefined ? "" : String(value)}
-          disabled={disabled}
-          onChange={(e) => emit(e.target.value)}
-        />
-      );
+      return <DraftInput id={id} value={value} type="text" onCommit={emit} />;
   }
 }
