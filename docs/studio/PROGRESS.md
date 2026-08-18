@@ -29,6 +29,39 @@ derivations to resolve rather than fixtures.
 
 ---
 
+### 2026-08-18 — SCIENCE-1 answered, and the date became a date
+
+**Answered (Ali): zonal-mean, monthly climatology**, selected by the month of the release. So the
+reduced product is `(lat × month × level)` — order 86k values per field, a few MB, small enough to
+commit with a checksum instead of fetching at run time, and the same way the paper ensemble reasons
+(a latitude band, not a place). Longitude remains a required input because the solar zenith angle
+needs it; it just does not select the meteorology. The convention goes into the dataset identifier in
+provenance, so a longitude-resolved product later cannot silently reinterpret a config made now.
+**Task 1.1 is unblocked** — what it still needs is a source decision (ERA5 / MERRA-2 / MLS), and
+BLOCKING-5's warning that reanalysis stratospheric water vapour is biased dry suggests H₂O may want a
+different source from p and T.
+
+**The date follows from the answer.** A monthly climatology is an average over years, so there is no
+year to give: `schedule.month` and `schedule.day_of_month` are entered and **`day_of_year` is
+derived** on a fixed non-leap calendar. Entering both would allow a config whose month and day
+disagree — the climatology read at one date and the sun at another. `studio/science/calendar.py` owns
+the convention, and the test pins the value that ties it to the archive: **21 June is day 172**, the
+ensemble's number, now derived rather than typed.
+
+Non-leap is a declaration, not an oversight. The same date in a leap year is day 173 and the solar
+declination differs by ~0.01°, far below the uncertainty in anything it feeds; the fixed calendar buys
+a config that means one thing forever. 29 and 31 February are refused rather than clamped, in the
+schema (so the error names the fields typed) as well as in the derivation.
+
+Verified in the browser: 21 June → 172, 21 December → 355, 1 January → 1, 30 February → 422 with the
+calendar's own message. The SZA panel follows: 13.74 h of daylight in June against 9.93 h in December
+at 30°N, with a December minimum SZA of 53.42° against the 30 + 23.44 = 53.44° the geometry demands.
+
+The model seam now refuses an unresolved `day_of_year` the same way it refuses an unresolved
+concentration — a raw config reaching the model would pick a solar declination of its own.
+
+---
+
 ### 2026-08-17 — Schema 0.3.0: the emission system has one degree of freedom
 
 Raised in use: *"I thought we give the emission rate and the speed of traveling, and by that we

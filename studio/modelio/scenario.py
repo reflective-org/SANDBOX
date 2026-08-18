@@ -74,6 +74,14 @@ def to_scenario(config: RunConfig | ResolvedConfig) -> CoupledScenario:
             "start with no SO2."
         )
 
+    day_of_year = run.schedule.day_of_year
+    if day_of_year is None:
+        raise ValueError(
+            "schedule.day_of_year is unresolved. It is a DERIVED field since the date became a "
+            "month and a day (SCIENCE-1): run the config through studio.resolve.resolve() before "
+            "converting it, rather than letting the model pick a solar declination of its own."
+        )
+
     concentrations: dict[str, float] = {**run.background.gas_pptv, "SO2": so2_pptv}
     dilution_background: dict[str, float] = {
         "SO2": run.background.so2_pptv,
@@ -86,7 +94,7 @@ def to_scenario(config: RunConfig | ResolvedConfig) -> CoupledScenario:
         WTR=run.site.h2o_ppmv,
         latitude=run.site.latitude_deg,
         longitude=run.site.longitude_deg,
-        day_of_year=run.schedule.day_of_year,
+        day_of_year=day_of_year,
         start_utc_hour=run.schedule.start_utc_hour,
         days=run.schedule.duration_days,
         DT=run.numerics.output_dt_s,

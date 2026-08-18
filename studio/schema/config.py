@@ -159,15 +159,44 @@ class Site(SchemaModel):
 class Schedule(SchemaModel):
     """When the release happens and how long the box is integrated."""
 
-    day_of_year: int = SciField(
-        default=172,
+    month: int = SciField(
+        default=6,
         unit=Unit.DIMENSIONLESS,
         ge=1,
-        le=366,
-        label="Day of year",
-        description="Day of year of the release; sets the solar declination.",
+        le=12,
+        label="Month",
+        description=(
+            "Month of the release. Selects the monthly climatology (SCIENCE-1: the reduced product "
+            "is a monthly average over years, so there is no year to give) and, with the day, sets "
+            "the solar declination."
+        ),
         provenance=Provenance.PAPER_ENSEMBLE,
         source="coupled/paper_ensemble/TABLE_microphysics_parameters.md (day 172, ~21 June)",
+    )
+    day_of_month: int = SciField(
+        default=21,
+        unit=Unit.DIMENSIONLESS,
+        ge=1,
+        le=31,
+        label="Day of month",
+        description=(
+            "Day of the month. Validated against the month on a fixed NON-LEAP calendar, so 31 "
+            "February is refused rather than clamped."
+        ),
+        provenance=Provenance.PAPER_ENSEMBLE,
+        source="coupled/paper_ensemble/TABLE_microphysics_parameters.md (day 172, ~21 June)",
+    )
+    day_of_year: int | None = SciField(
+        default=None,
+        unit=Unit.DIMENSIONLESS,
+        label="Day of year",
+        description=(
+            "Day of year, on a fixed non-leap calendar: what the solar declination is computed "
+            "from. Derived rather than entered, so it cannot disagree with the month the "
+            "climatology is read at. 21 June is day 172, which is the ensemble's value."
+        ),
+        provenance=Provenance.DERIVED,
+        derived_from=["schedule.month", "schedule.day_of_month"],
     )
     start_utc_hour: float = SciField(
         default=0.0,
@@ -196,6 +225,24 @@ class Schedule(SchemaModel):
         source="coupled/paper_ensemble/run_ensemble.py:99",
         examples=[10, 60],
     )
+
+    @model_validator(mode="after")
+    def _the_date_must_exist(self) -> Schedule:
+        """Refuse 31 February at validation, not in the derivation.
+
+        The derivation would catch it too, but its error names a calendar function; this one names
+        the two fields the user typed. Same reasoning as the DT/dt_couple rule elsewhere in this
+        module: validate where the message can be useful.
+        """
+        from studio.science.calendar import days_in_month
+
+        length = days_in_month(self.month)
+        if self.day_of_month > length:
+            raise ValueError(
+                f"month {self.month} has {length} days on the non-leap calendar (SCIENCE-1), so "
+                f"day_of_month={self.day_of_month} is not a date"
+            )
+        return self
 
 
 class Injection(SchemaModel):

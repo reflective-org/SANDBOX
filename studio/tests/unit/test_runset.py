@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import pytest
 
+from studio.resolve import resolve
 from studio.schema import (
     Axis,
     AxisKind,
@@ -177,7 +178,10 @@ def test_the_golden_case_resolves_to_the_ensembles_values() -> None:
     # unswept values stay at the ensemble's fixed configuration
     assert config.microphysics.n_bins == 80
     assert config.microphysics.ion_pair_rate == 30.0
-    assert config.schedule.day_of_year == 172
+    # 21 June on the non-leap calendar (SCIENCE-1). The ensemble's 172 is now derived from the
+    # entered date rather than typed, so this asserts the mapping as well as the value.
+    assert (config.schedule.month, config.schedule.day_of_month) == (6, 21)
+    assert resolve(config).config.schedule.day_of_year == 172
     assert config.chemistry.so2_ho2_rate == 1e-18
     assert config.switches.aerosol_to_j is False
     assert config.switches.heating_to_t is False

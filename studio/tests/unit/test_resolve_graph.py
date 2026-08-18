@@ -113,13 +113,25 @@ def test_the_schemas_derived_chain() -> None:
     #   duration -> {rate, length} -> volume -> mixing ratio
     # Declared order would get this wrong at three separate steps, so the topological requirement is
     # load-bearing rather than illustrative.
+    # `schedule.day_of_year` depends on nothing in the emission chain, so where it lands among the
+    # ready nodes is decided by the sort, not by the physics -- so the ORDER assertions below are
+    # the ones that carry weight, and this tuple is only a snapshot of the whole set.
     assert schema_derived_fields() == (
         "injection.emission_duration_s",
+        "schedule.day_of_year",
         "injection.emission_rate_kg_s",
         "injection.plume_length_m",
         "injection.plume_volume_cm3",
         "injection.so2_initial_pptv",
     )
+    order = schema_derived_fields()
+    for earlier, later in (
+        ("injection.emission_duration_s", "injection.emission_rate_kg_s"),
+        ("injection.emission_duration_s", "injection.plume_length_m"),
+        ("injection.plume_length_m", "injection.plume_volume_cm3"),
+        ("injection.plume_volume_cm3", "injection.so2_initial_pptv"),
+    ):
+        assert order.index(earlier) < order.index(later), f"{later} must resolve after {earlier}"
     assert "injection.plume_volume_cm3" in graph.dependencies_of("injection.so2_initial_pptv")
     assert graph.downstream_of(["injection.plume_length_m"]) == (
         "injection.plume_volume_cm3",
