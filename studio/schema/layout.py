@@ -107,16 +107,20 @@ STAGES: tuple[Stage, ...] = (
             Section(
                 title="Parcel geometry",
                 fields=(
-                    "injection.plume_length_m",
+                    "injection.track_length_m",
                     "injection.plume_width_m",
                     "injection.plume_height_m",
                 ),
+                note="The track length is entered here only under the MASS_AND_LENGTH basis "
+                "(stage 3); under RATE_AND_SPEED it is derived from speed and duration and this "
+                "value is ignored.",
             ),
             Section(
                 title="Derived",
-                fields=("injection.plume_volume_cm3",),
-                note="length x width x height. The t = 0 definition (SCIENCE-2) decides which "
-                "geometry is the physically right one to enter above.",
+                fields=("injection.plume_length_m", "injection.plume_volume_cm3"),
+                note="Length is whichever the basis produces; volume is length x width x height. "
+                "The t = 0 definition (SCIENCE-2) decides which geometry is the physically right "
+                "one to enter above.",
             ),
         ),
     ),
@@ -127,12 +131,24 @@ STAGES: tuple[Stage, ...] = (
         blurb="How much sulfur goes into that volume.",
         spec_ref="5.3",
         sections=(
-            Section(title="Emission", fields=("injection.so2_mass_kg",)),
+            Section(
+                title="Emission",
+                fields=(
+                    "injection.so2_mass_kg",
+                    "injection.emission_basis",
+                    "injection.emission_rate_kg_s",
+                    "injection.platform_speed_m_s",
+                ),
+                note="The basis decides what is entered and what is computed. MASS_AND_LENGTH "
+                "takes the track length on stage 2 and ignores rate and speed; RATE_AND_SPEED "
+                "takes rate and speed here and derives the length from them.",
+            ),
             Section(
                 title="Derived",
-                fields=("injection.so2_initial_pptv",),
-                note="Mass over volume, as a mixing ratio at the ambient number density -- so it "
-                "moves when temperature, pressure or any geometry field moves.",
+                fields=("injection.emission_duration_s", "injection.so2_initial_pptv"),
+                note="Duration is mass / rate, and is not applicable under MASS_AND_LENGTH. The "
+                "mixing ratio is mass over volume at the ambient number density -- so it moves "
+                "when temperature, pressure or any geometry field moves.",
             ),
         ),
     ),

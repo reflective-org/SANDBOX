@@ -117,8 +117,11 @@ def test_range_metadata_is_a_dict_of_operators() -> None:
 def test_which_numeric_fields_have_no_upper_bound() -> None:
     """Documents an open decision rather than asserting it is right.
 
-    17 of the 22 numeric fields have a lower bound and no upper one, so ``temperature_k = 9999`` and
-    ``so2_mass_kg = 1e12`` both validate today. Whether physical fields should carry upper bounds is
+    19 of the numeric fields have a lower bound and no upper one, so ``temperature_k = 9999`` and
+    ``so2_mass_kg = 1e12`` both validate today. Schema 0.3.0 added two more of them --
+    ``emission_rate_kg_s`` and ``platform_speed_m_s`` -- and neither has a physical ceiling
+    either, which is the same open question at a larger size: a platform speed of 10 km/s
+    validates. Whether physical fields should carry upper bounds is
     a science decision (issue #91) and picking the numbers here would be exactly the "quietly chosen
     plausible value" the project forbids.
 
@@ -135,5 +138,6 @@ def test_which_numeric_fields_have_no_upper_bound() -> None:
             continue
         if not {"maximum", "exclusiveMaximum"} & set(node):
             unbounded.append(path)
-    assert len(unbounded) == 17, f"the set of unbounded fields changed: {unbounded}"
+    assert len(unbounded) == 19, f"the set of unbounded fields changed: {unbounded}"
+    assert "injection.platform_speed_m_s" in unbounded, "added in 0.3.0, still unbounded above"
     assert "site.temperature_k" in unbounded

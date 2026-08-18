@@ -27,11 +27,20 @@ from studio.schema import RunConfig, canonical_json, canonical_payload, config_h
 from studio.schema.hashing import CANONICAL_FORM_VERSION
 
 #: SHA-256 of the canonical JSON of ``RunConfig()`` -- the paper ensemble's golden case, which is
-#: also the schema's default configuration. Tied to SCHEMA_VERSION 0.2.0 and canonical form 1.
-#: Moved from ...46cbe3 when 0.2.0 refused the temperature feedback: the VALUE of heating_to_t did
-#: not change (False either way), but schema_version is part of the hashed payload, which is what
-#: makes "old configs are never silently reinterpreted under new semantics" true rather than stated.
-GOLDEN_DEFAULT_HASH = "e9d207b91d74d45076433cdd25b0f3b59f365dbefd4f8c1b47afe1fdc2373ab4"
+#: also the schema's default configuration. Tied to SCHEMA_VERSION 0.3.0 and canonical form 1.
+#:
+#: It has moved twice, and both moves are the mechanism working rather than a nuisance:
+#:
+#: * ...46cbe3 -> ...373ab4 (0.2.0) when the temperature feedback was refused. The VALUE of
+#:   heating_to_t did not change -- False either way -- but schema_version is part of the hashed
+#:   payload, which is what makes "old configs are never silently reinterpreted" true.
+#: * ...373ab4 -> the value below (0.3.0) when the emission basis, platform speed, emission rate
+#:   and the entered track length were added, and plume_length_m became derived. The default RUN is
+#:   unchanged -- same 1 t into the same 1.5e12 cm^3, and the initial mixing ratio is identical to
+#:   the last bit -- but the config that describes it now has four more fields, so it is a different
+#:   configuration and must hash differently. A schema that grew a field without moving the hash
+#:   would be one where two different configs could share an identity.
+GOLDEN_DEFAULT_HASH = "6dc8686420359ed7aab994592b7424f8a288cc9a9e4ddfe7bf8ec522df7bc31c"
 
 
 @pytest.mark.tier_a

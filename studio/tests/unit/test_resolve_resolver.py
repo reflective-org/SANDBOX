@@ -238,12 +238,20 @@ def test_a_degenerate_input_is_caught_by_the_schema_before_the_derivation_runs()
     """A zero plume dimension is rejected at validation, not deep in the arithmetic.
 
     Both layers refuse it -- ``plume_volume_cm3`` raises on a non-positive dimension too (see
-    ``test_science_plume.py``) -- but the schema's ``gt=0`` fires first, which is the better place:
-    the error names the field the user typed in rather than a function they have never heard of.
-    The derivation's own check remains as the guard for any caller that does not come through the
-    schema.
+    ``test_science_plume.py``) -- but the schema's ``gt=0`` fires first for an ENTERED field, which
+    is the better place: the error names the field the user typed in rather than a function they
+    have never heard of.
+
+    Since 0.3.0 the two layers cover different fields, and both cases are checked here. The entered
+    track length is caught by the schema. ``plume_length_m`` is now DERIVED, so it carries no
+    ``gt`` -- a derived field's constraint is that its inputs are valid -- and typing 0 into it is
+    an override, caught by the derivation's own guard. Without that guard a pinned zero would reach
+    the volume and produce a division by zero in the mixing ratio.
     """
-    with pytest.raises(ValueError, match="plume_length_m"):
+    with pytest.raises(ValueError, match="track_length_m"):
+        apply_change(resolve(RunConfig()), "injection.track_length_m", 0.0)
+
+    with pytest.raises(ValueError, match="plume length must be > 0"):
         apply_change(resolve(RunConfig()), "injection.plume_length_m", 0.0)
 
 

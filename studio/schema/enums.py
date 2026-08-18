@@ -88,6 +88,31 @@ class BackgroundAerosol(StrEnum):
     AER_GEO = "aer_geo"
 
 
+class EmissionBasis(StrEnum):
+    """Which two quantities the user supplies, and which the schema derives from them.
+
+    Both bases keep the released MASS primary -- that is what the model ultimately consumes, via the
+    initial concentration -- and differ only in how the along-track length is arrived at.
+
+    The distinction exists because the two describe a deployment from opposite ends. The paper
+    ensemble was specified geometrically (1 t into 10 m x 10 m x 15 km), while a deployment is
+    specified operationally: a platform flying at some speed, emitting at some rate. Neither is more
+    correct; they are different things to hold fixed across a sweep.
+
+    Note this is about the TRACK, not the wake. ``L = v.t`` describes the line the platform lays
+    down; the 10 m x 10 m cross-section is vortex dynamics, so if t = 0 turns out to mean
+    post-vortex-breakup (SCIENCE-2, issue #54) the cross-section is not the flight geometry even
+    though the length still is.
+    """
+
+    #: Enter the released mass and the track length; the emission rate is not used. The paper
+    #: ensemble's parameterisation, and the default, so existing configs keep their meaning.
+    MASS_AND_LENGTH = "mass_and_length"
+    #: Enter the released mass, the emission rate and the platform speed. The emission duration
+    #: follows as mass / rate, and the track length as speed x duration.
+    RATE_AND_SPEED = "rate_and_speed"
+
+
 class AxisKind(StrEnum):
     """How a ``RunSet`` axis combines with the others. See ``studio/schema/runset.py``."""
 
@@ -101,4 +126,10 @@ class AxisKind(StrEnum):
     LIST = "list"
 
 
-__all__ = ["AxisKind", "BackgroundAerosol", "DilutionRegime", "PhotolysisMode"]
+__all__ = [
+    "AxisKind",
+    "BackgroundAerosol",
+    "DilutionRegime",
+    "EmissionBasis",
+    "PhotolysisMode",
+]

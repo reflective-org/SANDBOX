@@ -109,12 +109,30 @@ def test_the_schemas_derived_chain() -> None:
     resolver that recomputed in declaration order could use last round's volume.
     """
     graph = DependencyGraph.from_schema()
+    # Four deep since schema 0.3.0: rate -> duration -> length -> volume -> mixing ratio. Declared
+    # order would get this wrong at three separate steps, so the topological requirement is now
+    # load-bearing rather than illustrative.
     assert schema_derived_fields() == (
+        "injection.emission_duration_s",
+        "injection.plume_length_m",
         "injection.plume_volume_cm3",
         "injection.so2_initial_pptv",
     )
     assert "injection.plume_volume_cm3" in graph.dependencies_of("injection.so2_initial_pptv")
     assert graph.downstream_of(["injection.plume_length_m"]) == (
+        "injection.plume_volume_cm3",
+        "injection.so2_initial_pptv",
+    )
+    # The entered track length reaches the mixing ratio through the whole chain.
+    assert graph.downstream_of(["injection.track_length_m"]) == (
+        "injection.plume_length_m",
+        "injection.plume_volume_cm3",
+        "injection.so2_initial_pptv",
+    )
+    # And so does the emission rate, one step further back.
+    assert graph.downstream_of(["injection.emission_rate_kg_s"]) == (
+        "injection.emission_duration_s",
+        "injection.plume_length_m",
         "injection.plume_volume_cm3",
         "injection.so2_initial_pptv",
     )

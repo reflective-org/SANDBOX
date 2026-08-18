@@ -29,6 +29,55 @@ derivations to resolve rather than fixtures.
 
 ---
 
+### 2026-08-17 — Schema 0.3.0: emission rate and platform speed
+
+Raised in use: *"I thought we give the emission rate and the speed of traveling, and by that we
+calculate the length and the volume and consequently the concentration."* That is spec §4.2
+(*"two of [total_mass, emission_rate, …] + platform_speed"*), and it was never implemented — the
+schema inherited mass + length from the ensemble, which specifies the release geometrically and has
+no notion of an aircraft at all. The wizard was faithfully showing what the model does, which is how
+the mismatch surfaced.
+
+`injection.emission_basis` now selects between them:
+
+| | `MASS_AND_LENGTH` (default) | `RATE_AND_SPEED` |
+|---|---|---|
+| entered | mass, track length | mass, rate, speed |
+| derived | — | duration `= M/R`, then length `= v·t` |
+
+Both keep **mass** primary, since that is what reaches the model. The default is unchanged, so every
+existing config keeps its meaning and no archived comparison shifts.
+
+**Why two length fields.** `plume_length_m` is now derived — equal to the entered `track_length_m`
+under one basis, `v·t` under the other. A field cannot be primary under one basis and derived under
+another in a fixed DAG, and the alternative (deriving a *rate* under `MASS_AND_LENGTH`) would
+display numbers that disagree with the run: enter 20 km at 250 m/s and 16.67 kg/s and the rate
+implies 15 km. Under `MASS_AND_LENGTH` the duration is **null**, not a number describing a release
+that is not happening.
+
+**Defaults chosen so switching basis is a no-op:** 1000 kg, 250 m/s, 16.667 kg/s → 60 s → 15 km.
+Agreement is to 1.2e-16 relative rather than bit-exact — `1000/(1000/60)` is `59.99999999999999` in
+IEEE 754 — and the initial mixing ratio, the number the model consumes, is identical to the last
+bit.
+
+**250 m/s is [ASSUMPTION-7], not a measurement.** Nothing in the repo has a platform speed; this is
+a chosen round number with the caveat recorded in the field itself and asserted by a test, so it
+cannot be quietly promoted to fact without a citation.
+
+**The pinned hash moved** (…373ab4 → …7bc31c) and `SCHEMA_VERSION` is 0.3.0. The default *run* is
+unchanged, but the config describing it has four more fields, so it must hash differently — a schema
+that grew a field without moving the hash would be one where two configs share an identity. Five
+tests were updated deliberately, not re-baselined: the derived chain is now four deep
+(rate → duration → length → volume → mixing ratio), and the degenerate-input test now covers both
+layers, since a derived field carries no `gt` of its own.
+
+**No UI code was written.** The five new fields appear on stages 2 and 3 with their units,
+provenance and derivation notes because the form is generated from the schema and the layout
+manifest — which is the thing §8 asked for and the reason `test_every_schema_field_is_laid_out`
+exists.
+
+---
+
 ### 2026-08-17 — The eight-stage wizard, and the page that could not launch a run
 
 **The Phase-0 page was rejecting its own default state.** A `<select>` reports
