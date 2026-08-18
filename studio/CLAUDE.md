@@ -88,6 +88,13 @@ mypy --strict studio/schema studio/science studio/resolve
 ruff check studio/ && black --check studio/
 ```
 
+- **Read the linters' output, not their exit status.** `ruff check` on this machine has exited **0**
+  while printing `Found N errors`, so `ruff check studio/ && black --check studio/ && echo ok` reads
+  as clean and CI — whose step fails properly — does not. This has broken CI twice. Run
+  `.venv/bin/ruff check studio/ 2>&1 | tail -2` and look for `All checks passed!`.
+- **Run the whole-project `mypy`, not only `--strict` on the pure packages.** CI runs both, and the
+  bare `mypy` pass is the one that sees `studio/modelio` importing the model — which CI cannot
+  resolve, because it checks out no submodules.
 - **Every numerical comparison declares a tolerance and a one-line rationale.** "It matches" is not a
   test.
 - Golden fixtures key on the raw `state.npz`, never on `RunSummary` (lossy) and never on the existing
