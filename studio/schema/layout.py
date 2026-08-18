@@ -140,9 +140,9 @@ STAGES: tuple[Stage, ...] = (
                     "injection.emission_rate_kg_s",
                     "injection.plume_length_m",
                 ),
-                note="t = mass / rate and length = speed x duration, so fixing any one of the three "
-                "fixes the others. All three are shown whichever you entered: the rate is the "
-                "number an operator recognises, and the length is what sets the volume.",
+                note="t = mass / rate and length = speed x duration, so fixing any one of the "
+                "three fixes the others. All three are shown whichever you entered: the rate is "
+                "the number an operator recognises, and the length is what sets the volume.",
             ),
             Section(
                 title="Cross-section",
@@ -170,15 +170,15 @@ STAGES: tuple[Stage, ...] = (
             Section(
                 title="In the plume",
                 fields=("injection.so2_initial_pptv",),
-                note="Mass over volume as a mixing ratio at this site's air density -- so it moves "
-                "with temperature and pressure as well as with anything on stage 2. The panel below "
-                "shows how far it moves with the volume: the open t = 0 question made visible.",
+                note="Mass over volume as a mixing ratio at this site's air density -- so it "
+                "moves with temperature and pressure as well as with anything on stage 2. The "
+                "panel below shows how far it moves with the volume: the t = 0 question, visible.",
             ),
             Section(
                 title="In the surrounding air",
                 fields=("background.so2_pptv",),
-                note="Where the two are comparable the plume is indistinguishable from ambient, and "
-                "there is nothing left to resolve.",
+                note="Where the two are comparable the plume is indistinguishable from ambient, "
+                "and there is nothing left to resolve.",
             ),
         ),
     ),
