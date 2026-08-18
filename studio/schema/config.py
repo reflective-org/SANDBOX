@@ -36,7 +36,12 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from studio.schema.enums import BackgroundAerosol, DilutionRegime, EmissionBasis, PhotolysisMode
+from studio.schema.enums import (
+    BackgroundAerosol,
+    DilutionRegime,
+    EmissionInput,
+    PhotolysisMode,
+)
 from studio.schema.fields import Provenance, SciField
 from studio.schema.units import Unit
 
@@ -217,33 +222,17 @@ class Injection(SchemaModel):
         provenance=Provenance.PAPER_ENSEMBLE,
         source="coupled/paper_ensemble/TABLE_microphysics_parameters.md (Injection: 1 t)",
     )
-    emission_basis: EmissionBasis = SciField(
-        default=EmissionBasis.MASS_AND_LENGTH,
+    emission_input: EmissionInput = SciField(
+        default=EmissionInput.TRACK_LENGTH,
         unit=Unit.DIMENSIONLESS,
-        label="Emission basis",
+        label="Specified by",
         description=(
-            "Which quantities are entered and which are derived. MASS_AND_LENGTH takes the track "
-            "length directly (the paper ensemble's parameterisation). RATE_AND_SPEED takes an "
-            "emission rate and a platform speed instead, and derives the duration as mass / rate "
-            "and the length as speed x duration."
+            "Which of rate, duration and track length is entered. The other two are derived from "
+            "it, since t = mass / rate and length = speed x duration leave exactly one degree of "
+            "freedom among the three. Mass and platform speed are always entered."
         ),
         provenance=Provenance.CONVENTION,
-        source="Ali, 2026-08-17: a deployment is specified as a rate and a speed, not a length",
-    )
-    track_length_m: float = SciField(
-        default=15000.0,
-        unit=Unit.METRE,
-        gt=0.0,
-        label="Track length (entered)",
-        description=(
-            "Along-track length, as entered. Used only under the MASS_AND_LENGTH basis; under "
-            "RATE_AND_SPEED the length is derived from speed and duration instead, and this value "
-            "is ignored. The length the model actually uses is plume_length_m."
-        ),
-        provenance=Provenance.PAPER_ENSEMBLE,
-        source="coupled/paper_ensemble/run_ensemble.py:45 (10 m x 10 m x 15 km)",
-        caveat="Only sets the initial concentration; the dynamics are volume-invariant.",
-        examples=[15000.0, 30000.0],
+        source="Ali, 2026-08-17: one degree of freedom -- give one, derive the others",
     )
     platform_speed_m_s: float = SciField(
         default=250.0,
@@ -251,61 +240,105 @@ class Injection(SchemaModel):
         gt=0.0,
         label="Platform speed",
         description=(
-            "Ground speed of the emitting platform. Sets how much track a given emission duration "
-            "covers, and so how dilute the release is. Used only under the RATE_AND_SPEED basis."
+            "Ground speed of the emitting platform. With the emission duration this sets how much "
+            "track the release is spread over, and so how dilute it starts."
         ),
         provenance=Provenance.CONVENTION,
         source="Ali, 2026-08-17 (session decision). NOT from the paper ensemble, which has no "
         "platform speed at all -- it fixes the geometry directly.",
-        caveat="A chosen round number, not an aircraft specification. Revisit with a cited "
-        "airframe and cruise condition before it appears in a published sweep.",
+        caveat="A chosen round number, not an aircraft specification (ASSUMPTION-7). Revisit with "
+        "a cited airframe and cruise condition before it appears in a published sweep.",
     )
-    emission_rate_kg_s: float = SciField(
-        # 1000 kg / (15000 m / 250 m/s) = 16.667 kg/s. Written as the expression rather than as a
-        # rounded literal so the two bases agree on the DEFAULT config: switching basis with
-        # untouched defaults must not silently move the plume length.
+    given_track_length_m: float = SciField(
+        default=15000.0,
+        unit=Unit.METRE,
+        gt=0.0,
+        label="Track length",
+        description=(
+            "Along-track length of the release, as entered. Used when emission_input is "
+            "TRACK_LENGTH; otherwise the length is derived and this value is inert."
+        ),
+        provenance=Provenance.PAPER_ENSEMBLE,
+        source="coupled/paper_ensemble/run_ensemble.py:45 (10 m x 10 m x 15 km)",
+        caveat="Only sets the initial concentration; the dynamics are volume-invariant.",
+        examples=[15000.0, 30000.0],
+    )
+    given_emission_rate_kg_s: float = SciField(
+        # 1000 kg over 15 km at 250 m/s is 60 s of emission, hence 1000/60. Written as the
+        # expression rather than a rounded literal so all three defaults describe the SAME release:
+        # changing which one is entered must not move the plume.
         default=1000.0 / (15000.0 / 250.0),
         unit=Unit.KG_PER_SECOND,
         gt=0.0,
         label="Emission rate",
         description=(
-            "Mass of SO2 released per second while emitting. With the released mass this gives the "
-            "emission duration, and with the platform speed, the track length. Used only under the "
-            "RATE_AND_SPEED basis."
+            "Mass of SO2 released per second while emitting, as entered. Used when emission_input "
+            "is EMISSION_RATE; otherwise the rate is derived and this value is inert."
         ),
         provenance=Provenance.CONVENTION,
-        source="Chosen so the default config is identical under both bases: 1000 kg over the "
-        "ensemble's 15 km at 250 m/s is 60 s of emission, hence 16.667 kg/s.",
+        source="Chosen so all three inputs describe the same default release: 1000 kg over the "
+        "ensemble's 15 km at 250 m/s is 60 s, hence 16.667 kg/s.",
+    )
+    given_emission_duration_s: float = SciField(
+        default=15000.0 / 250.0,
+        unit=Unit.SECOND,
+        gt=0.0,
+        label="Emission duration",
+        description=(
+            "How long the platform emits, as entered. Used when emission_input is "
+            "EMISSION_DURATION; otherwise the duration is derived and this value is inert."
+        ),
+        provenance=Provenance.CONVENTION,
+        source="Chosen so all three inputs describe the same default release: the ensemble's 15 km "
+        "at 250 m/s is 60 s.",
     )
     emission_duration_s: float | None = SciField(
         default=None,
         unit=Unit.SECOND,
-        label="Emission duration",
+        label="Duration (used)",
         description=(
-            "How long the platform emits: mass / rate. Not applicable under the MASS_AND_LENGTH "
-            "basis, where the length is entered directly and no rate is involved -- it is null "
-            "there rather than a number that would not describe the run."
+            "The emission duration the run uses: entered directly, mass / rate, or length / speed, "
+            "according to emission_input."
         ),
         provenance=Provenance.DERIVED,
         derived_from=[
-            "injection.emission_basis",
+            "injection.emission_input",
             "injection.so2_mass_kg",
-            "injection.emission_rate_kg_s",
+            "injection.given_emission_rate_kg_s",
+            "injection.given_emission_duration_s",
+            "injection.given_track_length_m",
+            "injection.platform_speed_m_s",
+        ],
+    )
+    emission_rate_kg_s: float | None = SciField(
+        default=None,
+        unit=Unit.KG_PER_SECOND,
+        label="Rate (used)",
+        description=(
+            "The emission rate the run implies: entered directly, or mass / duration. Reported "
+            "even when it is not the entered quantity, because it is the number an operator would "
+            "recognise."
+        ),
+        provenance=Provenance.DERIVED,
+        derived_from=[
+            "injection.emission_input",
+            "injection.so2_mass_kg",
+            "injection.given_emission_rate_kg_s",
+            "injection.emission_duration_s",
         ],
     )
     plume_length_m: float | None = SciField(
         default=None,
         unit=Unit.METRE,
-        label="Plume length",
+        label="Track length (used)",
         description=(
-            "Along-track length of the initial plume volume, and the one the model uses. Equal to "
-            "the entered track length under MASS_AND_LENGTH, or speed x duration under "
-            "RATE_AND_SPEED."
+            "The along-track length the model uses: entered directly, or speed x duration. This is "
+            "what sets the initial volume, and therefore the initial concentration."
         ),
         provenance=Provenance.DERIVED,
         derived_from=[
-            "injection.emission_basis",
-            "injection.track_length_m",
+            "injection.emission_input",
+            "injection.given_track_length_m",
             "injection.platform_speed_m_s",
             "injection.emission_duration_s",
         ],

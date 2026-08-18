@@ -73,7 +73,10 @@ def test_chained_derivations_resolve_in_order() -> None:
         ("injection.plume_width_m", 20.0, {VOLUME, SO2_PPTV}),
         ("site.temperature_k", 213.0, {SO2_PPTV}),
         ("site.pressure_mbar", 120.0, {SO2_PPTV}),
-        ("injection.so2_mass_kg", 2000.0, {SO2_PPTV}),
+        # Mass reaches the REPORTED emission rate as well since 0.3.0: R = M / t, so twice the mass
+        # over the same track is twice the rate. It does NOT reach the length or the volume, which
+        # is the point of the case -- an edit's closure is what depends on it and nothing more.
+        ("injection.so2_mass_kg", 2000.0, {SO2_PPTV, "injection.emission_rate_kg_s"}),
         ("microphysics.n_bins", 40, set()),
         ("chemistry.so2_ho2_rate", 1e-16, set()),
         ("switches.aerosol_to_j", True, set()),  # heating_to_t cannot be True (schema 0.2.0)

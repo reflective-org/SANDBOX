@@ -88,16 +88,22 @@ class BackgroundAerosol(StrEnum):
     AER_GEO = "aer_geo"
 
 
-class EmissionBasis(StrEnum):
-    """Which two quantities the user supplies, and which the schema derives from them.
+class EmissionInput(StrEnum):
+    """Which one of rate, duration and track length the user supplies.
 
-    Both bases keep the released MASS primary -- that is what the model ultimately consumes, via the
-    initial concentration -- and differ only in how the along-track length is arrived at.
+    The emission is one system with one free choice in it. Given the total released mass M and the
+    platform speed v, the relations
 
-    The distinction exists because the two describe a deployment from opposite ends. The paper
-    ensemble was specified geometrically (1 t into 10 m x 10 m x 15 km), while a deployment is
-    specified operationally: a platform flying at some speed, emitting at some rate. Neither is more
-    correct; they are different things to hold fixed across a sweep.
+        t = M / R        (duration is mass over rate)
+        L = v * t        (track length is speed times duration)
+
+    leave exactly one degree of freedom among {R, t, L}: fix any one and the other two follow. So
+    the schema takes a selector rather than a set of independent fields, and every one of the three
+    always has a consistent value -- there is no state in which the rate on screen describes a
+    different release from the length next to it.
+
+    Mass and speed are always entered. They are not part of the choice: they are what the choice is
+    made against.
 
     Note this is about the TRACK, not the wake. ``L = v.t`` describes the line the platform lays
     down; the 10 m x 10 m cross-section is vortex dynamics, so if t = 0 turns out to mean
@@ -105,12 +111,15 @@ class EmissionBasis(StrEnum):
     though the length still is.
     """
 
-    #: Enter the released mass and the track length; the emission rate is not used. The paper
-    #: ensemble's parameterisation, and the default, so existing configs keep their meaning.
-    MASS_AND_LENGTH = "mass_and_length"
-    #: Enter the released mass, the emission rate and the platform speed. The emission duration
-    #: follows as mass / rate, and the track length as speed x duration.
-    RATE_AND_SPEED = "rate_and_speed"
+    #: Give the track length; duration follows as L/v and rate as M/t. The paper ensemble's
+    #: parameterisation (it fixes 15 km directly), and the default, so existing configs keep their
+    #: meaning.
+    TRACK_LENGTH = "track_length"
+    #: Give the emission rate; duration follows as M/R and length as v*t. How a deployment is
+    #: actually specified.
+    EMISSION_RATE = "emission_rate"
+    #: Give how long the platform emits; rate follows as M/t and length as v*t.
+    EMISSION_DURATION = "emission_duration"
 
 
 class AxisKind(StrEnum):
@@ -130,6 +139,6 @@ __all__ = [
     "AxisKind",
     "BackgroundAerosol",
     "DilutionRegime",
-    "EmissionBasis",
+    "EmissionInput",
     "PhotolysisMode",
 ]

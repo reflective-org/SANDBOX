@@ -145,7 +145,7 @@ otherwise and a reader comparing the two will notice.
 **Where:** `studio/schema/config.py` — `Injection.platform_speed_m_s` (schema 0.3.0).
 
 **What is assumed.** That 250 m/s is a reasonable ground speed for an emitting platform in the
-lower stratosphere, and a defensible default for the `RATE_AND_SPEED` emission basis.
+lower stratosphere, and a defensible default for the emission system on stage 2.
 
 **Why it is an assumption and not a value.** Nothing in this repository carries a platform speed.
 The paper ensemble specifies the release geometrically — 1 t into 10 m × 10 m × 15 km
@@ -153,14 +153,14 @@ The paper ensemble specifies the release geometrically — 1 t into 10 m × 10 m
 speed, or an emission rate. So this default has no upstream source to cite, and 250 m/s is a round
 number chosen in conversation (Ali, 2026-08-17), not an airframe specification.
 
-**What it affects.** Only configurations that select `RATE_AND_SPEED`. Under the default
-`MASS_AND_LENGTH` basis the field is inert, so no existing run or archived comparison is touched.
-Where it does apply it is consequential: the track length is `speed × duration`, so the speed sets
-the dilution of the release linearly, and a 2× error in speed is a 2× error in initial
-concentration.
+**What it affects.** Everything downstream of the emission duration, which is to say the track
+length, the volume and the initial concentration — but only where the length is *derived*. Under the
+default `emission_input = TRACK_LENGTH` the speed only converts the entered length into a duration
+and a reported rate; the plume itself is unchanged, so no existing run or archived comparison is
+touched. Where the length is derived it is consequential and linear: a 2× error in speed is a 2×
+error in initial concentration.
 
 **How to remove it.** Cite an airframe and a cruise condition, and move the field's provenance from
-`CONVENTION` to `LITERATURE` with that citation. `test_the_speed_default_is_marked_as_a_choice_not_a
-_measurement` asserts the caveat is present, so it cannot be quietly dropped without the citation
+`CONVENTION` to `LITERATURE` with that citation. `test_the_speed_default_is_marked_as_a_choice_not_a_measurement` asserts the caveat is present, so it cannot be quietly dropped without the citation
 that would justify dropping it.
 

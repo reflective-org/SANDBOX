@@ -169,12 +169,41 @@ def track_length_m(*, speed_m_s: float, duration_s: float) -> float:
     return speed_m_s * duration_s
 
 
+def duration_from_track(*, length_m: float, speed_m_s: float) -> float:
+    """How long a platform emits to lay a track of ``length_m`` at ``speed_m_s``: ``t = L / v``.
+
+    The inverse of :func:`track_length_m`, and needed because the emission system has one free
+    choice in it: entering the length means the duration is what must be computed.
+    """
+    if speed_m_s <= 0.0:
+        raise ValueError(f"platform speed must be positive, got {speed_m_s} m/s")
+    if length_m <= 0.0:
+        raise ValueError(f"track length must be > 0 m, got {length_m}")
+    return length_m / speed_m_s
+
+
+def rate_from_duration(*, mass_kg: float, duration_s: float) -> float:
+    """The rate implied by releasing ``mass_kg`` over ``duration_s``: ``R = M / t``.
+
+    The inverse of :func:`emission_duration_s`. Reported even when the rate is not what the user
+    entered, because it is the quantity an operator recognises: "1 t over 15 km" means little until
+    it is "16.7 kg/s for a minute".
+    """
+    if duration_s <= 0.0:
+        raise ValueError(f"emission duration must be positive, got {duration_s} s")
+    if mass_kg < 0.0:
+        raise ValueError(f"released mass cannot be negative, got {mass_kg} kg")
+    return mass_kg / duration_s
+
+
 __all__ = [
+    "duration_from_track",
     "emission_duration_s",
     "initial_mixing_ratio_pptv",
     "injected_number_density",
     "number_density_to_pptv",
     "plume_volume_cm3",
     "pptv_to_number_density",
+    "rate_from_duration",
     "track_length_m",
 ]

@@ -29,52 +29,56 @@ derivations to resolve rather than fixtures.
 
 ---
 
-### 2026-08-17 — Schema 0.3.0: emission rate and platform speed
+### 2026-08-17 — Schema 0.3.0: the emission system has one degree of freedom
 
 Raised in use: *"I thought we give the emission rate and the speed of traveling, and by that we
-calculate the length and the volume and consequently the concentration."* That is spec §4.2
-(*"two of [total_mass, emission_rate, …] + platform_speed"*), and it was never implemented — the
-schema inherited mass + length from the ensemble, which specifies the release geometrically and has
-no notion of an aircraft at all. The wizard was faithfully showing what the model does, which is how
-the mismatch surfaced.
+calculate the length and the volume and consequently the concentration."* That is spec §4.2, and it
+was never implemented — the schema inherited mass + length from the paper ensemble, which specifies
+the release geometrically (`run_ensemble.py:45`) and has no notion of an aircraft, a speed or a rate
+anywhere in it. The wizard was faithfully showing what the model does, which is how the mismatch
+surfaced.
 
-`injection.emission_basis` now selects between them:
+**The relations leave exactly one free choice.** With the released mass M and the platform speed v
+entered, `t = M/R` and `L = v·t` mean that fixing any one of {rate, duration, length} fixes the
+other two. So `injection.emission_input` names which one is given:
 
-| | `MASS_AND_LENGTH` (default) | `RATE_AND_SPEED` |
-|---|---|---|
-| entered | mass, track length | mass, rate, speed |
-| derived | — | duration `= M/R`, then length `= v·t` |
+| given | derived |
+|---|---|
+| `TRACK_LENGTH` (default) | `t = L/v`, then `R = M/t` |
+| `EMISSION_RATE` | `t = M/R`, then `L = v·t` |
+| `EMISSION_DURATION` | `R = M/t`, and `L = v·t` |
 
-Both keep **mass** primary, since that is what reaches the model. The default is unchanged, so every
-existing config keeps its meaning and no archived comparison shifts.
+**All three are always shown**, whichever was entered — the rate because it is the number an
+operator recognises, the length because it is what sets the volume. An earlier draft used a two-way
+basis in which the duration was *null* under the geometric one; that was worse, because half the
+stage read as "not applicable" and the rate an operator would want was simply absent.
 
-**Why two length fields.** `plume_length_m` is now derived — equal to the entered `track_length_m`
-under one basis, `v·t` under the other. A field cannot be primary under one basis and derived under
-another in a fixed DAG, and the alternative (deriving a *rate* under `MASS_AND_LENGTH`) would
-display numbers that disagree with the run: enter 20 km at 250 m/s and 16.67 kg/s and the rate
-implies 15 km. Under `MASS_AND_LENGTH` the duration is **null**, not a number describing a release
-that is not happening.
+The three entered values (`given_track_length_m`, `given_emission_rate_kg_s`,
+`given_emission_duration_s`) are kept when not selected, so switching back does not lose what was
+typed. Their defaults are written as expressions of each other, so **every selection describes the
+same default release**: 1000 kg, 250 m/s → 60 s → 16.667 kg/s → 15 km. Two of the three land on
+15 km exactly; entering the *rate* lands 1 ULP off, because `1000/(1000/60)` is `59.99999999999999`
+in IEEE 754. The initial mixing ratio is identical to the last bit in all three cases.
 
-**Defaults chosen so switching basis is a no-op:** 1000 kg, 250 m/s, 16.667 kg/s → 60 s → 15 km.
-Agreement is to 1.2e-16 relative rather than bit-exact — `1000/(1000/60)` is `59.99999999999999` in
-IEEE 754 — and the initial mixing ratio, the number the model consumes, is identical to the last
-bit.
+**Stage 2 became the whole release**, not just the geometry: mass, speed, the selector, the three
+givens, the three derived, the cross-section, and the volume. Stage 3 is now the *result* — the
+initial concentration and the background SO₂ it is compared against. That required one documented
+exception to the placement rule (`DERIVED_WITHOUT_LOCAL_INPUTS`): the initial concentration is
+stage 3's subject and its inputs are by design on the two stages before it. An allowlist rather than
+a weakened rule.
 
-**250 m/s is [ASSUMPTION-7], not a measurement.** Nothing in the repo has a platform speed; this is
-a chosen round number with the caveat recorded in the field itself and asserted by a test, so it
-cannot be quietly promoted to fact without a citation.
+**250 m/s is [ASSUMPTION-7], not a measurement.** Nothing in the repo carries a platform speed; the
+field says so and a test asserts the caveat, so it cannot be quietly promoted to fact.
 
-**The pinned hash moved** (…373ab4 → …7bc31c) and `SCHEMA_VERSION` is 0.3.0. The default *run* is
-unchanged, but the config describing it has four more fields, so it must hash differently — a schema
-that grew a field without moving the hash would be one where two configs share an identity. Five
-tests were updated deliberately, not re-baselined: the derived chain is now four deep
-(rate → duration → length → volume → mixing ratio), and the degenerate-input test now covers both
-layers, since a derived field carries no `gt` of its own.
+**The pinned hash moved twice** in one day (…373ab4 → …7bc31c → …6d3a73) as the design was corrected
+under review. The default *run* never changed; the config describing it did. Six tests were updated
+deliberately rather than re-baselined — the derived chain is five fields deep now, mass reaches the
+reported rate (`R = M/t`) as well as the concentration, and the degenerate-input test covers both
+the schema's `gt=0` on entered fields and the derivations' own guards, since a derived field carries
+no bound of its own.
 
-**No UI code was written.** The five new fields appear on stages 2 and 3 with their units,
-provenance and derivation notes because the form is generated from the schema and the layout
-manifest — which is the thing §8 asked for and the reason `test_every_schema_field_is_laid_out`
-exists.
+**No UI code was written for any of it.** The nine fields appear on stage 2 with units, provenance
+and derivation notes because the form is generated from the schema plus the layout manifest.
 
 ---
 

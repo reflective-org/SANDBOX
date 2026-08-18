@@ -109,11 +109,13 @@ def test_the_schemas_derived_chain() -> None:
     resolver that recomputed in declaration order could use last round's volume.
     """
     graph = DependencyGraph.from_schema()
-    # Four deep since schema 0.3.0: rate -> duration -> length -> volume -> mixing ratio. Declared
-    # order would get this wrong at three separate steps, so the topological requirement is now
+    # Five derived fields since schema 0.3.0, in a chain four steps deep:
+    #   duration -> {rate, length} -> volume -> mixing ratio
+    # Declared order would get this wrong at three separate steps, so the topological requirement is
     # load-bearing rather than illustrative.
     assert schema_derived_fields() == (
         "injection.emission_duration_s",
+        "injection.emission_rate_kg_s",
         "injection.plume_length_m",
         "injection.plume_volume_cm3",
         "injection.so2_initial_pptv",
@@ -123,19 +125,18 @@ def test_the_schemas_derived_chain() -> None:
         "injection.plume_volume_cm3",
         "injection.so2_initial_pptv",
     )
-    # The entered track length reaches the mixing ratio through the whole chain.
-    assert graph.downstream_of(["injection.track_length_m"]) == (
-        "injection.plume_length_m",
-        "injection.plume_volume_cm3",
-        "injection.so2_initial_pptv",
-    )
-    # And so does the emission rate, one step further back.
-    assert graph.downstream_of(["injection.emission_rate_kg_s"]) == (
+    # The entered track length reaches the mixing ratio through the whole chain -- and reaches the
+    # REPORTED rate too, because a longer track at the same mass is a slower release.
+    assert graph.downstream_of(["injection.given_track_length_m"]) == (
         "injection.emission_duration_s",
+        "injection.emission_rate_kg_s",
         "injection.plume_length_m",
         "injection.plume_volume_cm3",
         "injection.so2_initial_pptv",
     )
+    # The platform speed reaches everything except the mass-over-rate duration... which it also
+    # reaches, because entering a LENGTH makes the duration length/speed. One selector, two roles.
+    assert "injection.plume_length_m" in graph.downstream_of(["injection.platform_speed_m_s"])
     assert graph.downstream_of(["site.temperature_k"]) == ("injection.so2_initial_pptv",)
 
 

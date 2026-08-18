@@ -274,10 +274,10 @@ def test_changing_a_field_recomputes_its_dependents(api: Any) -> None:
     start = client.post("/api/config/resolve", json={"config": {}}).json()
     moved = client.post(
         "/api/config/change",
-        json={**start, "path": "injection.track_length_m", "value": 30000.0},
+        json={**start, "path": "injection.given_track_length_m", "value": 30000.0},
     ).json()
     # The ENTERED length; plume_length_m follows it as a derived value under this basis (0.3.0).
-    assert moved["config"]["injection"]["track_length_m"] == 30000.0
+    assert moved["config"]["injection"]["given_track_length_m"] == 30000.0
     assert moved["config"]["injection"]["plume_length_m"] == 30000.0
     assert moved["derived"]["plume_volume_cm3"] == pytest.approx(
         2 * start["derived"]["plume_volume_cm3"]
@@ -307,7 +307,7 @@ def test_editing_a_derived_field_pins_it_and_going_stale_is_reported(api: Any) -
     # rather than about one going stale.
     moved = client.post(
         "/api/config/change",
-        json={**pinned, "path": "injection.track_length_m", "value": 17000.0},
+        json={**pinned, "path": "injection.given_track_length_m", "value": 17000.0},
     ).json()
     assert moved["consistent"] is False
     assert moved["stale_fields"] == ["injection.plume_volume_cm3"]
