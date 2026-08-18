@@ -114,16 +114,42 @@ literature notes in `tomas-jax`. Phase 1 is genuinely new code.
 
 ## Science
 
-### SCIENCE-1 — Climatology sampling convention · **OPEN** · blocks Phase 1 · [#53](https://github.com/reflective-org/SANDBOX/issues/53)
+### SCIENCE-1 — Climatology sampling convention · **ANSWERED** (2026-08-18) · [#53](https://github.com/reflective-org/SANDBOX/issues/53)
 *Zonal mean vs. specific longitude; monthly climatology vs. daily vs. a specific reanalysis timestep.*
 
-These give materially different tropopause heights and temperatures. Note that longitude and date are
-required anyway for the solar zenith angle (`stratchem-jax/solar.py`, and `CoupledScenario.longitude`
-/ `day_of_year` / `start_utc_hour`), so a longitude-resolved option should exist even if the default
-is zonal-mean.
+**Answered (Ali, 2026-08-18): monthly climatology**, selected by the month of the release date. Not a
+daily climatology and not a specific reanalysis timestep — so the product carries a **month** axis of
+12, and the run's date picks the month rather than a date in a particular year.
 
-The reduced climatology's dimensions depend on the answer, so decide before the preprocessing
-pipeline is written, not after.
+Consequences to hold onto:
+
+- **The year is meaningless to the meteorology.** A monthly climatology is an average over years, so
+  a config must not imply it is using the weather of a particular year. Either the date field stays
+  year-free, or a year is accepted and the schema states plainly that it affects nothing but the
+  calendar arithmetic.
+- **Month must be derived, not entered twice.** The solar zenith angle needs the day of year
+  (`solar.py`), and the climatology needs the month; entering both invites a config whose month and
+  day disagree. One is primary and the other is derived — which is the dependency engine's job.
+- **The day↔month mapping needs a stated convention**, because it depends on leap years. Day 172 is
+  21 June in a non-leap year and 20 June in a leap year. Fixing a non-leap mapping keeps the
+  ensemble's `day_of_year = 172` reading as "late June" without introducing a year.
+
+**Answered (Ali, 2026-08-18): zonal-mean**, with a longitude-resolved product possible later. So the
+reduced climatology is **(lat × month × level)** — of order 86k values per field, a few MB, small
+enough to commit with a checksum rather than fetched from anywhere at run time. That is also how the
+paper ensemble reasons: a latitude band, not a place.
+
+Longitude is still a required input, because the solar zenith angle needs it (`solar.py`); it simply
+does not select the meteorology. The convention is recorded in the dataset identifier that goes into
+provenance (ADR-006), so adding a longitude-resolved product later cannot silently reinterpret a
+config made against this one.
+
+**Date entry follows from this** (decided in the same conversation): a calendar date **without a
+year**, entered as month + day of month. `day_of_year` becomes DERIVED — the solar declination needs
+it and the climatology needs the month, and entering both would allow a config whose month and day
+disagree. A monthly climatology is an average over years, so accepting a year would imply we used a
+particular year's weather, which we do not. The day↔month mapping uses a fixed **non-leap** calendar,
+which keeps the ensemble's `day_of_year = 172` as 21 June.
 
 ---
 

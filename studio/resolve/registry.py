@@ -28,6 +28,7 @@ from studio.science import (
     initial_mixing_ratio_pptv,
     plume_volume_cm3,
 )
+from studio.science.calendar import day_of_year as calendar_day_of_year
 from studio.science.plume import (
     duration_from_track,
     emission_duration_s,
@@ -61,6 +62,14 @@ class Derivation:
         if missing:
             raise KeyError(f"derivation is missing declared inputs {missing}")
         return self.fn({path: values[path] for path in self.inputs})
+
+
+def _day_of_year(values: Mapping[str, Any]) -> int:
+    """(month, day) -> day of year on the fixed non-leap calendar (SCIENCE-1)."""
+    return calendar_day_of_year(
+        month=values["schedule.month"],
+        day_of_month=values["schedule.day_of_month"],
+    )
 
 
 def _emission_duration(values: Mapping[str, Any]) -> float:
@@ -155,6 +164,11 @@ def _so2_initial_pptv(values: Mapping[str, Any]) -> float:
 
 #: Derived field path -> how to compute it. Completeness against the schema is enforced by test.
 DERIVATIONS: Final[dict[str, Derivation]] = {
+    "schedule.day_of_year": Derivation(
+        inputs=("schedule.month", "schedule.day_of_month"),
+        fn=_day_of_year,
+        summary="day of year on a fixed non-leap calendar (21 June is day 172)",
+    ),
     "injection.emission_duration_s": Derivation(
         inputs=(
             "injection.emission_input",

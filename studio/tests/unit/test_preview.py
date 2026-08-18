@@ -144,7 +144,7 @@ def test_polar_night_is_reported_as_dark_rather_than_as_a_flat_line() -> None:
     """At 80 S in June the sun never rises, and the panel must say so."""
     from studio.modelio.preview import sza_diurnal
 
-    polar = {"site": {"latitude_deg": -80.0}, "schedule": {"day_of_year": 172}}
+    polar = {"site": {"latitude_deg": -80.0}, "schedule": {"month": 6, "day_of_month": 21}}
     panel = sza_diurnal(RunConfig.model_validate(polar))
     assert panel["sun_up"] is False
     assert panel["daylight_hours"] == 0.0
@@ -176,8 +176,8 @@ def test_the_curves_follow_the_config() -> None:
     short = dilution_curve(RunConfig.model_validate({"schedule": {"duration_days": 2}}))
     assert math.isclose(max(short["days"]), 2.0)
 
-    winter = sza_diurnal(RunConfig.model_validate({"schedule": {"day_of_year": 355}}))
-    summer = sza_diurnal(RunConfig.model_validate({"schedule": {"day_of_year": 172}}))
+    winter = sza_diurnal(RunConfig.model_validate({"schedule": {"month": 12, "day_of_month": 21}}))
+    summer = sza_diurnal(RunConfig.model_validate({"schedule": {"month": 6, "day_of_month": 21}}))
     assert winter["daylight_hours"] < summer["daylight_hours"], "30 N has shorter days in December"
 
 

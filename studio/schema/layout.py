@@ -99,8 +99,15 @@ STAGES: tuple[Stage, ...] = (
             ),
             Section(
                 title="Date and time",
-                fields=("schedule.day_of_year", "schedule.start_utc_hour"),
-                note="Sets the solar zenith angle, and so the photolysis rates.",
+                fields=(
+                    "schedule.month",
+                    "schedule.day_of_month",
+                    "schedule.day_of_year",
+                    "schedule.start_utc_hour",
+                ),
+                note="A date without a year: the climatology is a monthly average over years "
+                "(SCIENCE-1), so there is no year to give. The month selects the climatology; the "
+                "day of year, derived on a non-leap calendar, sets the solar declination.",
             ),
         ),
     ),

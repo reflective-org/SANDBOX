@@ -14,7 +14,7 @@ panels or the comparison view.
 
 | # | Stage | Spec | Fields today | Blocked on |
 |---|---|---|---|---|
-| 1 | Environment | §5.1 | 7 | **SCIENCE-1** — sampling convention, so no climatology-derived p/T or tropopause-relative altitude |
+| 1 | Environment | §5.1 | 8 | SCIENCE-1 **answered** (zonal-mean monthly); the product itself is task 1.1 |
 | 2 | Plume volume and t = 0 | §5.2 | 3 + 1 derived | **SCIENCE-2** — engine exit vs post-vortex breakup changes V₀ by orders of magnitude |
 | 3 | Initial concentration | §5.3 | 1 + 1 derived | — |
 | 4 | Dilution | §5.4 | 6 | SCIENCE-5 answered: `background_evolves` fixed False |
@@ -29,9 +29,16 @@ All 42 schema fields are placed and rendered; `test_layout.py` fails if a new on
 
 - **1.0 Wizard shell** — *done (2026-08-17)*. Layout manifest, generated form, override/stale
   actions, review with diff, submit. React + Vite + TS per ADR-007.
-- **1.1 Climatology product** — reduced ERA5 (or MERRA-2) fields on a stratospheric subset, with
-  checksums recorded in provenance (ADR-006). **Blocked on SCIENCE-1**: the sampling convention
-  decides the product's dimensions, so building it first risks rebuilding it.
+- **1.1 Climatology product** — *unblocked (2026-08-18).* SCIENCE-1 is answered: **zonal-mean,
+  monthly**, so the reduced product is `(lat × month × level)` — of order 86k values per field, a few
+  MB, small enough to **commit with a checksum** rather than fetch at run time. Longitude stays an
+  input for the solar zenith angle but does not select the meteorology, and the convention goes into
+  the dataset identifier recorded in provenance (ADR-006) so a longitude-resolved product added later
+  cannot reinterpret an existing config. Still needs a decision on the **source** (ERA5 vs MERRA-2 vs
+  MLS) — note BLOCKING-5's caveat that reanalysis stratospheric water vapour is biased dry, so H₂O
+  may want a different source from p and T.
+- **1.0b Date entry** — *done (2026-08-18).* Month + day of month entered, `day_of_year` derived on a
+  fixed non-leap calendar. No year, because a monthly climatology is an average over years.
 - **1.2 Environment stage science** — `dataset`, `tropopause_definition`, `altitude_specification`,
   and p/T/H₂O as *derived, overridable* fields. The derivation raises until 1.1 exists
   (ADR-005 — no plausible substitute), and `dataset: USER` keeps today's direct entry working, so

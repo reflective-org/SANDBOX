@@ -83,18 +83,21 @@ def sza_diurnal(config: RunConfig) -> dict[str, Any]:
     release hour sits in that.
     """
     solar = _solar()
-    latitude = config.site.latitude_deg
-    longitude = config.site.longitude_deg
-    day = config.schedule.day_of_year
+    # Resolved first: day_of_year is derived from the month and day (SCIENCE-1), so a raw config has
+    # it as None and the panel would draw a curve for a date nobody chose.
+    resolved = resolve(config).config
+    latitude = resolved.site.latitude_deg
+    longitude = resolved.site.longitude_deg
+    day = resolved.schedule.day_of_year
     hours = [24.0 * i / (_DIURNAL_POINTS - 1) for i in range(_DIURNAL_POINTS)]
     sza = [float(solar.solar_zenith_angle(latitude, longitude, day, h)) for h in hours]
     daylight = [h for h, z in zip(hours, sza, strict=True) if z < 90.0]
     return {
         "hours": hours,
         "sza_deg": sza,
-        "release_hour": config.schedule.start_utc_hour,
+        "release_hour": resolved.schedule.start_utc_hour,
         "release_sza_deg": float(
-            solar.solar_zenith_angle(latitude, longitude, day, config.schedule.start_utc_hour)
+            solar.solar_zenith_angle(latitude, longitude, day, resolved.schedule.start_utc_hour)
         ),
         "min_sza_deg": min(sza),
         # Counted from the sampled points rather than solved for: at ten-minute resolution this is
