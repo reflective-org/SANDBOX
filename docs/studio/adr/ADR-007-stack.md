@@ -29,6 +29,16 @@ Celery, no arq in Phase 0.
 **Frontend.** TypeScript, React, Vite. A plotting library capable of fast interactive updates, chosen
 when the first interactive panel is built rather than now.
 
+**Frontend, activated 2026-08-17.** Phase 0 shipped a single dependency-free HTML page instead of
+the React app specified above — a deliberate stopgap to get one run end to end, flagged for
+overrule rather than recorded as a change of decision. It was overruled. The cost of the stopgap was
+concrete and worth writing down: hand-written, the page drifted from the schema it was supposed to
+render, exposed 10 of 42 fields, and rejected its own default state (#89). The wizard is now
+TypeScript + React + Vite as this ADR always said, and the form is generated from `/api/schema` plus
+a layout manifest (`studio/schema/layout.py`), which is what makes that drift a test failure rather
+than a discovery. Plotting library still unchosen — it is deferred to the first interactive preview
+panel (task 1.3), on the same reasoning as before.
+
 **Packaging.** `uv` with a fully pinned, committed lockfile.
 
 **No Docker Compose in Phase 0.** A local venv and `uvicorn` is the dev loop.

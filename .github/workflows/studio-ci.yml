@@ -94,3 +94,37 @@ jobs:
       # cases take minutes each (ADR-009). It is nightly/manual on a machine that has them.
       - name: pytest (tier A)
         run: .venv/bin/pytest studio/tests -m tier_a -q
+
+  # The wizard (studio/web). A separate job because it shares nothing with the Python lane -- a
+  # broken bundle must not be reported as a Python failure, and vice versa.
+  web:
+    name: web (typecheck, tests, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: studio/web/package-lock.json
+
+      # `ci`, never `install`: it installs exactly the committed lockfile and fails if
+      # package.json and the lockfile disagree. Same reproducibility rule as requirements.lock.
+      - name: Install (locked)
+        run: npm ci
+        working-directory: studio/web
+
+      - name: typecheck
+        run: npm run typecheck
+        working-directory: studio/web
+
+      - name: tests
+        run: npm run test
+        working-directory: studio/web
+
+      # The build is a test: it is what catches a JSX/plugin misconfiguration that tsc alone
+      # cannot see, and it is how the app reaches a deployment.
+      - name: build
+        run: npm run build
+        working-directory: studio/web

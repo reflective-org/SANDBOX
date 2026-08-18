@@ -1,0 +1,894 @@
+/* Copyright (C) 2026 University Corporation for Atmospheric Research
+   SPDX-License-Identifier: Apache-2.0
+
+   A dense instrument panel, not a marketing page: the reader is a scientist checking 42 values
+   before spending four minutes of compute. Three colours carry meaning and nothing else does --
+   blue for the accent and the current stage, amber for an override the user pinned, red for a value
+   that no longer follows from its inputs. Everything else is ink on paper. */
+
+:root {
+  --surface: #ffffff;
+  --raised: #f7f8fa;
+  --sunken: #eef0f4;
+  --line: #d8dce4;
+  --line-strong: #b9c0cc;
+  --ink: #14181f;
+  --ink-2: #4a5260;
+  --ink-3: #79818f;
+  --accent: #2a78d6;
+  --accent-ink: #1b5ba8;
+  --override: #eda100;
+  --override-bg: #fff8e6;
+  --stale: #d43d2f;
+  --stale-bg: #fdf0ee;
+  --ok: #1baf7a;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface: #14171c;
+    --raised: #1b1f26;
+    --sunken: #23282f;
+    --line: #2f353e;
+    --line-strong: #454d59;
+    --ink: #e8ebf0;
+    --ink-2: #aeb6c2;
+    --ink-3: #7d8694;
+    --accent: #5b9ce8;
+    --accent-ink: #8dbcf2;
+    --override: #e8b13b;
+    --override-bg: #2b2413;
+    --stale: #f0705f;
+    --stale-bg: #2d1a17;
+    --ok: #3fca97;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 20px 24px 64px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  grid-template-areas: "header header" "nav nav" "stage runs";
+  gap: 0 28px;
+}
+
+main.loading,
+main.fatal {
+  display: block;
+  padding-top: 60px;
+  color: var(--ink-2);
+}
+
+header {
+  grid-area: header;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+}
+h1 {
+  font-size: 19px;
+  margin: 0 0 3px;
+  letter-spacing: -0.01em;
+}
+.sub {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+.header-stale {
+  color: var(--stale);
+  font-weight: 600;
+}
+
+/* ---- stage navigation ------------------------------------------------------------------ */
+
+nav.stages {
+  grid-area: nav;
+  display: flex;
+  gap: 4px;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+}
+
+.stage-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px 7px 8px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.stage-tab:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+.stage-tab .num {
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--sunken);
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.stage-tab.current {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.stage-tab.current .num {
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
+}
+/* A stale field on a stage the user is not looking at is exactly the case spec section 8 calls
+   "unmissable", so the marker lives in the navigation, not only on the field. */
+.stage-tab.has-stale {
+  border-color: var(--stale);
+  color: var(--stale);
+}
+.stage-tab.has-stale .num {
+  background: var(--stale);
+  color: #fff;
+}
+/* Both at once: `current` paints the background blue and `has-stale` painted the text red, which
+   left red-on-blue and a label you could not read. The stale state wins the whole tab, since it is
+   the more urgent of the two things being said. */
+.stage-tab.current.has-stale {
+  background: var(--stale);
+  border-color: var(--stale);
+  color: #fff;
+  font-weight: 600;
+}
+.stage-tab.current.has-stale .num {
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
+}
+
+/* ---- stage body ------------------------------------------------------------------------ */
+
+section.stage {
+  grid-area: stage;
+  min-width: 0;
+}
+.stage-head {
+  margin-bottom: 20px;
+}
+.stage-head h2 {
+  font-size: 16px;
+  margin: 0 0 4px;
+}
+.blurb {
+  margin: 0 0 5px;
+  color: var(--ink-2);
+  max-width: 68ch;
+}
+.refs {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+.blocked-on {
+  color: var(--override);
+  font-weight: 600;
+}
+
+.section {
+  margin-bottom: 26px;
+}
+.section h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-3);
+  margin: 0 0 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+}
+.note {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--ink-2);
+  max-width: 76ch;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 14px;
+}
+
+/* ---- one field ------------------------------------------------------------------------- */
+
+.field {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px 12px 11px;
+  min-width: 0;
+}
+.field-derived {
+  background: var(--sunken);
+}
+.field-stale {
+  border-color: var(--stale);
+  background: var(--stale-bg);
+}
+
+.field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.field label {
+  font-weight: 600;
+  font-size: 13px;
+}
+.unit {
+  color: var(--ink-3);
+  font-weight: 400;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.badge {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.badge-auto {
+  background: var(--sunken);
+  color: var(--ink-3);
+}
+.badge-override {
+  background: var(--override-bg);
+  color: var(--override);
+  border: 1px solid var(--override);
+}
+.badge-stale {
+  background: var(--stale);
+  color: #fff;
+}
+
+.field input[type="number"],
+.field input[type="text"],
+.field select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  font: 13px var(--mono);
+}
+.field input:focus,
+.field select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+.field input:disabled,
+.field select:disabled {
+  color: var(--ink-3);
+  background: var(--sunken);
+}
+
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.switch input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+
+.fixed-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: var(--sunken);
+  border: 1px dashed var(--line-strong);
+  border-radius: 5px;
+}
+.fixed-value code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.fixed-why {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.field-desc {
+  margin: 7px 0 0;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.field-prov {
+  margin: 5px 0 0;
+  font-size: 10.5px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+/* ---- the stale decision ---------------------------------------------------------------- */
+
+.stale-box {
+  margin-top: 9px;
+  padding: 9px 10px;
+  background: var(--surface);
+  border: 1px solid var(--stale);
+  border-radius: 6px;
+}
+.stale-box p {
+  margin: 0 0 5px;
+  font-size: 12px;
+}
+.stale-values code {
+  font-family: var(--mono);
+  background: var(--sunken);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.stale-actions {
+  display: flex;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+/* ---- buttons --------------------------------------------------------------------------- */
+
+button {
+  font: 500 12.5px/1 inherit;
+  font-family: inherit;
+  padding: 8px 13px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+button.ghost {
+  background: transparent;
+  color: var(--ink-2);
+  border-color: var(--line-strong);
+}
+button.ghost:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+button.primary {
+  padding: 9px 18px;
+  font-weight: 600;
+}
+
+.nav-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 26px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.progress {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+
+.error {
+  margin: 14px 0 0;
+  padding: 9px 11px;
+  background: var(--stale-bg);
+  border: 1px solid var(--stale);
+  border-radius: 6px;
+  color: var(--stale);
+  font-size: 12px;
+  font-family: var(--mono);
+  white-space: pre-wrap;
+}
+
+/* ---- review ---------------------------------------------------------------------------- */
+
+.review-summary {
+  display: flex;
+  gap: 32px;
+  padding: 14px 16px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  margin-bottom: 14px;
+}
+.review-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.big {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.big.ok {
+  color: var(--ok);
+  font-size: 17px;
+}
+.big.bad {
+  color: var(--stale);
+  font-size: 17px;
+}
+.small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.hash {
+  margin: 0 0 16px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.hash code {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+table.diff {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+table.diff th {
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--line);
+  padding: 5px 8px;
+}
+table.diff td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.path {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+td.was {
+  font-family: var(--mono);
+  color: var(--ink-3);
+}
+td.now {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.row-changed td.now {
+  color: var(--accent-ink);
+}
+.all-values {
+  margin: 20px 0 0;
+}
+.all-values summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ink-2);
+  padding: 6px 0;
+}
+.empty {
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+.submit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.submit-row label {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.submit-row input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+}
+.blocked {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--stale);
+  max-width: 76ch;
+}
+
+/* ---- runs rail ------------------------------------------------------------------------- */
+
+aside.runs {
+  grid-area: runs;
+  min-width: 0;
+}
+aside.runs h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-3);
+  margin: 0 0 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+}
+aside.runs ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+aside.runs li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.run-label {
+  font-weight: 600;
+}
+.run-state {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: var(--ink-3);
+}
+.state-succeeded {
+  color: var(--ok);
+}
+.state-failed {
+  color: var(--stale);
+}
+.state-running {
+  color: var(--accent);
+}
+.run-hash {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.dirty {
+  font-size: 10px;
+  color: var(--override);
+  font-weight: 600;
+}
+
+@media (max-width: 940px) {
+  main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "header" "nav" "stage" "runs";
+  }
+  aside.runs {
+    margin-top: 30px;
+  }
+}
+
+/* ---- preview panels -------------------------------------------------------------------- */
+
+.panel {
+  margin-top: 26px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.panel-head h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-3);
+  margin: 0 0 6px;
+  border: 0;
+  padding: 0;
+}
+.panel-status {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+.panel-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+  max-width: 78ch;
+}
+
+figure.chart {
+  margin: 0;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px 12px 6px;
+}
+figure.chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+figure.chart figcaption {
+  font-size: 11px;
+  color: var(--ink-3);
+  padding: 4px 2px 4px;
+  min-height: 1.4em;
+}
+
+/* Grid and axes stay recessive: they are scaffolding, not data. */
+.chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.chart-axis {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.chart-tick {
+  fill: var(--ink-3);
+  font-size: 10px;
+  font-family: var(--mono);
+}
+.chart-axis-label {
+  fill: var(--ink-3);
+  font-size: 10.5px;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.chart-line.muted {
+  stroke: var(--line-strong);
+  stroke-width: 1.25;
+}
+.chart-line.dashed {
+  stroke-dasharray: 5 4;
+}
+
+.chart-series-label {
+  fill: var(--accent-ink);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.chart-series-label.muted {
+  fill: var(--ink-3);
+  font-weight: 400;
+}
+
+/* The band is the only fill on the chart, so it must sit clearly behind the line. */
+.chart-band {
+  fill: var(--sunken);
+}
+.chart-crosshair {
+  stroke: var(--ink-3);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.chart-marker {
+  fill: var(--override);
+  stroke: var(--raised);
+  stroke-width: 2;
+}
+.chart-marker-label {
+  fill: var(--override);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.chart-readout {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--ink-2);
+  padding: 4px 2px;
+  min-height: 1.4em;
+}
+.chart-readout .at {
+  color: var(--ink-3);
+}
+.chart-readout strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.chart-error {
+  margin: 0;
+  padding: 9px 11px;
+  background: var(--stale-bg);
+  border: 1px solid var(--stale);
+  border-radius: 6px;
+  color: var(--stale);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+
+/* ---- parcel diagram -------------------------------------------------------------------- */
+
+.parcel {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 12px 14px;
+  flex-wrap: wrap;
+}
+.parcel svg {
+  width: 320px;
+  max-width: 100%;
+  height: auto;
+}
+.parcel-box {
+  fill: var(--sunken);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.parcel-dim,
+.parcel-caption {
+  fill: var(--ink-3);
+  font-size: 10px;
+  font-family: var(--mono);
+}
+.parcel-facts {
+  flex: 1;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.parcel-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 3px;
+}
+.parcel-facts .k {
+  color: var(--ink-3);
+}
+.parcel-facts .v {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.parcel-note {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+/* ---- species bars ---------------------------------------------------------------------- */
+
+.bars {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.bar-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 76px;
+  gap: 10px;
+  align-items: center;
+  font-size: 11.5px;
+}
+.bar-name {
+  font-family: var(--mono);
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bar-track {
+  background: var(--sunken);
+  border-radius: 3px;
+  height: 12px;
+}
+.bar-fill {
+  background: var(--accent);
+  height: 100%;
+  border-radius: 3px;
+}
+.bar-value {
+  font-family: var(--mono);
+  color: var(--ink);
+  text-align: right;
+}
+
+/* A text field holds a draft until Enter or blur, so a five-digit number is one edit and not five
+   (and does not lose focus after the first keystroke). */
+.draft {
+  position: relative;
+}
+.draft-hint {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  background: var(--surface);
+  padding: 2px 4px;
+  border-radius: 3px;
+  pointer-events: none;
+}
+.draft input {
+  width: 100%;
+}

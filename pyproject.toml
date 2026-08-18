@@ -139,6 +139,9 @@ module = [
     "config",
     "aerosol",
     "background_aerosol_distribution",
+    # The gas model's flat solar module, imported by studio/modelio/preview.py for the SZA panel.
+    # Absent in CI, which checks out no submodules -- the same reason every other entry is here.
+    "solar",
     "tomas_jax.*",
     "tuvx_photolysis.*",
     "yaml",
