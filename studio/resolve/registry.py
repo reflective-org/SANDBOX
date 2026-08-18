@@ -22,10 +22,17 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
+from studio.schema.enums import EmissionInput
 from studio.science import (
     SO2_MOLAR_MASS_G_PER_MOL,
     initial_mixing_ratio_pptv,
     plume_volume_cm3,
+)
+from studio.science.plume import (
+    duration_from_track,
+    emission_duration_s,
+    rate_from_duration,
+    track_length_m,
 )
 
 
@@ -56,6 +63,73 @@ class Derivation:
         return self.fn({path: values[path] for path in self.inputs})
 
 
+def _emission_duration(values: Mapping[str, Any]) -> float:
+    """The duration the run uses, from whichever quantity was entered.
+
+    One free choice among rate, duration and length (see ``EmissionInput``), so this is the first
+    step of the chain and the other two derive from it. Every branch produces a real number: there
+    is deliberately no state in which the duration is unknown, because the rate and the length both
+    depend on it and a null here would propagate as "not applicable" through half the stage.
+    """
+    selected = values["injection.emission_input"]
+    if selected == EmissionInput.EMISSION_DURATION:
+        return float(values["injection.given_emission_duration_s"])
+    if selected == EmissionInput.EMISSION_RATE:
+        return emission_duration_s(
+            mass_kg=values["injection.so2_mass_kg"],
+            rate_kg_s=values["injection.given_emission_rate_kg_s"],
+        )
+    return duration_from_track(
+        length_m=values["injection.given_track_length_m"],
+        speed_m_s=values["injection.platform_speed_m_s"],
+    )
+
+
+def _emission_rate(values: Mapping[str, Any]) -> float:
+    """The rate the run implies: entered, or mass / duration.
+
+    Reported in both cases rather than only when entered, because it is the quantity an operator
+    recognises -- "1 t over 15 km" means little until it is "16.7 kg/s for a minute".
+    """
+    if values["injection.emission_input"] == EmissionInput.EMISSION_RATE:
+        return float(values["injection.given_emission_rate_kg_s"])
+    return rate_from_duration(
+        mass_kg=values["injection.so2_mass_kg"],
+        duration_s=_require_duration(values),
+    )
+
+
+def _plume_length(values: Mapping[str, Any]) -> float:
+    """The length the model uses: entered, or speed x duration.
+
+    Both branches produce the SAME field, which is what keeps the dependency graph static -- the
+    volume derivation downstream reads ``plume_length_m`` and never needs to know which quantity
+    produced it. A field that were primary under one selection and derived under another could not
+    be expressed in a fixed DAG at all.
+    """
+    if values["injection.emission_input"] == EmissionInput.TRACK_LENGTH:
+        return float(values["injection.given_track_length_m"])
+    return track_length_m(
+        speed_m_s=values["injection.platform_speed_m_s"],
+        duration_s=_require_duration(values),
+    )
+
+
+def _require_duration(values: Mapping[str, Any]) -> float:
+    """The upstream duration, or a loud failure if resolution ran out of order.
+
+    Fail loud (ADR-005): falling back to an entered value here would produce a run whose rate and
+    length do not follow from its own inputs, and nothing downstream could detect it.
+    """
+    duration = values["injection.emission_duration_s"]
+    if duration is None:
+        raise ValueError(
+            "injection.emission_duration_s is unresolved; it must be derived before the rate and "
+            "the length, so topological order is broken"
+        )
+    return float(duration)
+
+
 def _plume_volume(values: Mapping[str, Any]) -> float:
     return plume_volume_cm3(
         length_m=values["injection.plume_length_m"],
@@ -81,6 +155,38 @@ def _so2_initial_pptv(values: Mapping[str, Any]) -> float:
 
 #: Derived field path -> how to compute it. Completeness against the schema is enforced by test.
 DERIVATIONS: Final[dict[str, Derivation]] = {
+    "injection.emission_duration_s": Derivation(
+        inputs=(
+            "injection.emission_input",
+            "injection.so2_mass_kg",
+            "injection.given_emission_rate_kg_s",
+            "injection.given_emission_duration_s",
+            "injection.given_track_length_m",
+            "injection.platform_speed_m_s",
+        ),
+        fn=_emission_duration,
+        summary="the entered duration, or mass / rate, or track length / speed",
+    ),
+    "injection.emission_rate_kg_s": Derivation(
+        inputs=(
+            "injection.emission_input",
+            "injection.so2_mass_kg",
+            "injection.given_emission_rate_kg_s",
+            "injection.emission_duration_s",
+        ),
+        fn=_emission_rate,
+        summary="the entered rate, or released mass / duration",
+    ),
+    "injection.plume_length_m": Derivation(
+        inputs=(
+            "injection.emission_input",
+            "injection.given_track_length_m",
+            "injection.platform_speed_m_s",
+            "injection.emission_duration_s",
+        ),
+        fn=_plume_length,
+        summary="the entered track length, or platform speed x emission duration",
+    ),
     "injection.plume_volume_cm3": Derivation(
         inputs=(
             "injection.plume_length_m",

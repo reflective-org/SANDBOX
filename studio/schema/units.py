@@ -44,7 +44,9 @@ class Unit(StrEnum):
     DAY = "d"
     HOUR = "h"
     METRE = "m"
+    METRE_PER_SECOND = "m s^-1"
     KILOGRAM = "kg"
+    KG_PER_SECOND = "kg s^-1"
     CM3 = "cm^3"
     PER_CM3_PER_S = "cm^-3 s^-1"
     CM3_PER_MOLEC_PER_S = "cm^3 molec^-1 s^-1"
@@ -61,6 +63,8 @@ PINT_EXPRESSION: Final[dict[Unit, str | None]] = {
     Unit.DIMENSIONLESS: "dimensionless",
     Unit.KELVIN: "kelvin",
     Unit.MBAR: "millibar",
+    Unit.METRE_PER_SECOND: "meter / second",
+    Unit.KG_PER_SECOND: "kilogram / second",
     Unit.PPMV: None,  # mole fraction x 1e6; by-volume convention, T/p-dependent to a number density
     Unit.PPTV: None,  # mole fraction x 1e12; likewise
     Unit.DEGREE: "degree",

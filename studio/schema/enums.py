@@ -88,6 +88,40 @@ class BackgroundAerosol(StrEnum):
     AER_GEO = "aer_geo"
 
 
+class EmissionInput(StrEnum):
+    """Which one of rate, duration and track length the user supplies.
+
+    The emission is one system with one free choice in it. Given the total released mass M and the
+    platform speed v, the relations
+
+        t = M / R        (duration is mass over rate)
+        L = v * t        (track length is speed times duration)
+
+    leave exactly one degree of freedom among {R, t, L}: fix any one and the other two follow. So
+    the schema takes a selector rather than a set of independent fields, and every one of the three
+    always has a consistent value -- there is no state in which the rate on screen describes a
+    different release from the length next to it.
+
+    Mass and speed are always entered. They are not part of the choice: they are what the choice is
+    made against.
+
+    Note this is about the TRACK, not the wake. ``L = v.t`` describes the line the platform lays
+    down; the 10 m x 10 m cross-section is vortex dynamics, so if t = 0 turns out to mean
+    post-vortex-breakup (SCIENCE-2, issue #54) the cross-section is not the flight geometry even
+    though the length still is.
+    """
+
+    #: Give the track length; duration follows as L/v and rate as M/t. The paper ensemble's
+    #: parameterisation (it fixes 15 km directly), and the default, so existing configs keep their
+    #: meaning.
+    TRACK_LENGTH = "track_length"
+    #: Give the emission rate; duration follows as M/R and length as v*t. How a deployment is
+    #: actually specified.
+    EMISSION_RATE = "emission_rate"
+    #: Give how long the platform emits; rate follows as M/t and length as v*t.
+    EMISSION_DURATION = "emission_duration"
+
+
 class AxisKind(StrEnum):
     """How a ``RunSet`` axis combines with the others. See ``studio/schema/runset.py``."""
 
@@ -101,4 +135,10 @@ class AxisKind(StrEnum):
     LIST = "list"
 
 
-__all__ = ["AxisKind", "BackgroundAerosol", "DilutionRegime", "PhotolysisMode"]
+__all__ = [
+    "AxisKind",
+    "BackgroundAerosol",
+    "DilutionRegime",
+    "EmissionInput",
+    "PhotolysisMode",
+]

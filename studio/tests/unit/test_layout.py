@@ -20,6 +20,7 @@ import pytest
 
 from studio.schema import RunConfig
 from studio.schema.layout import (
+    DERIVED_WITHOUT_LOCAL_INPUTS,
     HIDDEN_FIELDS,
     STAGES,
     laid_out_fields,
@@ -100,6 +101,12 @@ def test_derived_fields_are_placed_with_what_they_derive_from() -> None:
                 continue
             path = f"{name}.{sub}"
             shared = [s for s in sources if stage_of.get(str(s)) == stage_of[path]]
+            if path in DERIVED_WITHOUT_LOCAL_INPUTS:
+                assert not shared, (
+                    f"{path} is on the allowlist but now shares a stage with an input; remove it "
+                    f"from DERIVED_WITHOUT_LOCAL_INPUTS rather than keeping a stale exception"
+                )
+                continue
             assert shared, (
                 f"{path} is derived from {list(sources)} but shares a stage with none of them; "
                 f"it sits on {stage_of[path]!r}"

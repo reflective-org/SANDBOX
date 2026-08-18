@@ -131,10 +131,79 @@ def initial_mixing_ratio_pptv(
     return number_density_to_pptv(number_density, air_number_density(pressure_mbar, temperature_k))
 
 
+def emission_duration_s(*, mass_kg: float, rate_kg_s: float) -> float:
+    """How long a platform emits to release ``mass_kg`` at ``rate_kg_s``.
+
+    ``t = M / R``. Trivial arithmetic, and it lives here rather than inline in the derivation
+    registry for the same reason every other formula does: ``studio/science`` is where a physical
+    relation can be found, cited and tested, and the registry is only wiring.
+
+    Nothing in the model or the paper ensemble carries an emission rate -- the ensemble fixes the
+    geometry directly (``run_ensemble.py:45``). This is a Studio-side parameterisation of the same
+    release, added because a deployment is specified operationally rather than geometrically.
+
+    Raises:
+        ValueError: If the rate is not positive. A zero rate means an infinite emission, which is
+            not a run anyone can mean; refusing beats returning ``inf`` and having it surface three
+            derivations later as a plume the size of the stratosphere.
+    """
+    if rate_kg_s <= 0.0:
+        raise ValueError(f"emission rate must be positive, got {rate_kg_s} kg/s")
+    if mass_kg < 0.0:
+        raise ValueError(f"released mass cannot be negative, got {mass_kg} kg")
+    return mass_kg / rate_kg_s
+
+
+def track_length_m(*, speed_m_s: float, duration_s: float) -> float:
+    """The along-track length a platform lays down: ``L = v.t``.
+
+    This is the TRACK, not the wake. It describes the line the platform flies while emitting; the
+    cross-section of the resulting parcel is vortex dynamics and is not derivable from it. If t = 0
+    is taken to be post-vortex-breakup (SCIENCE-2, issue #54) the cross-section is not the flight
+    geometry -- but the length still is, which is why only the length is derived here.
+    """
+    if speed_m_s <= 0.0:
+        raise ValueError(f"platform speed must be positive, got {speed_m_s} m/s")
+    if duration_s < 0.0:
+        raise ValueError(f"emission duration cannot be negative, got {duration_s} s")
+    return speed_m_s * duration_s
+
+
+def duration_from_track(*, length_m: float, speed_m_s: float) -> float:
+    """How long a platform emits to lay a track of ``length_m`` at ``speed_m_s``: ``t = L / v``.
+
+    The inverse of :func:`track_length_m`, and needed because the emission system has one free
+    choice in it: entering the length means the duration is what must be computed.
+    """
+    if speed_m_s <= 0.0:
+        raise ValueError(f"platform speed must be positive, got {speed_m_s} m/s")
+    if length_m <= 0.0:
+        raise ValueError(f"track length must be > 0 m, got {length_m}")
+    return length_m / speed_m_s
+
+
+def rate_from_duration(*, mass_kg: float, duration_s: float) -> float:
+    """The rate implied by releasing ``mass_kg`` over ``duration_s``: ``R = M / t``.
+
+    The inverse of :func:`emission_duration_s`. Reported even when the rate is not what the user
+    entered, because it is the quantity an operator recognises: "1 t over 15 km" means little until
+    it is "16.7 kg/s for a minute".
+    """
+    if duration_s <= 0.0:
+        raise ValueError(f"emission duration must be positive, got {duration_s} s")
+    if mass_kg < 0.0:
+        raise ValueError(f"released mass cannot be negative, got {mass_kg} kg")
+    return mass_kg / duration_s
+
+
 __all__ = [
+    "duration_from_track",
+    "emission_duration_s",
     "initial_mixing_ratio_pptv",
     "injected_number_density",
     "number_density_to_pptv",
     "plume_volume_cm3",
     "pptv_to_number_density",
+    "rate_from_duration",
+    "track_length_m",
 ]

@@ -257,6 +257,12 @@ function control(
           step={spec.kind === "integer" ? 1 : "any"}
           min={spec.min}
           max={spec.max}
+          // A derived field holding null is a derivation that declined to produce a value -- the
+          // emission duration under the MASS_AND_LENGTH basis, where no rate is in play. An empty
+          // box reads as "not filled in yet"; this says which it is.
+          {...(spec.derived && (value === null || value === undefined)
+            ? { placeholder: "not applicable" }
+            : {})}
           onCommit={emit}
         />
       );

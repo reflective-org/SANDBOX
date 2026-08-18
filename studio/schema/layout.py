@@ -33,6 +33,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+#: Derived fields allowed to sit on a stage that holds none of their inputs.
+#:
+#: The rule they are excused from (``test_derived_fields_are_placed_with_what_they_derive_from``)
+#: exists so a derived value is visibly caused by something on screen. The exception is a derived
+#: value that IS the stage's subject: the initial concentration is the whole point of stage 3, and
+#: its inputs are the previous two stages by design. An allowlist rather than a weakened rule, so
+#: the exception stays singular and visible.
+DERIVED_WITHOUT_LOCAL_INPUTS: frozenset[str] = frozenset({"injection.so2_initial_pptv"})
+
 #: Fields that are never rendered as inputs. ``schema_version`` identifies the config's semantics;
 #: a user editing it would be asserting that their values mean something they do not.
 HIDDEN_FIELDS: frozenset[str] = frozenset({"schema_version"})
@@ -98,25 +107,55 @@ STAGES: tuple[Stage, ...] = (
     Stage(
         id="plume_volume",
         number=2,
-        title="Plume volume and t = 0",
-        blurb="The initial parcel geometry. What counts as t = 0 -- engine exit or post-vortex "
-        "breakup -- changes the initial volume by orders of magnitude and is still open.",
+        title="Release and plume volume",
+        blurb="How much is released, over how much track. The emission has ONE degree of freedom: "
+        "give the rate, the duration or the length, and the other two follow.",
         spec_ref="5.2",
         blocked_on=("SCIENCE-2",),
         sections=(
             Section(
-                title="Parcel geometry",
+                title="Release",
                 fields=(
-                    "injection.plume_length_m",
-                    "injection.plume_width_m",
-                    "injection.plume_height_m",
+                    "injection.so2_mass_kg",
+                    "injection.platform_speed_m_s",
+                    "injection.emission_input",
                 ),
+                note="Mass and speed are always entered; they are what the choice below is made "
+                "against.",
             ),
             Section(
-                title="Derived",
+                title="Give one of these",
+                fields=(
+                    "injection.given_track_length_m",
+                    "injection.given_emission_rate_kg_s",
+                    "injection.given_emission_duration_s",
+                ),
+                note="Only the one named by 'Specified by' is used. The other two are kept but "
+                "inert, so switching back does not lose what you typed.",
+            ),
+            Section(
+                title="And these follow",
+                fields=(
+                    "injection.emission_duration_s",
+                    "injection.emission_rate_kg_s",
+                    "injection.plume_length_m",
+                ),
+                note="t = mass / rate and length = speed x duration, so fixing any one of the "
+                "three fixes the others. All three are shown whichever you entered: the rate is "
+                "the number an operator recognises, and the length is what sets the volume.",
+            ),
+            Section(
+                title="Cross-section",
+                fields=("injection.plume_width_m", "injection.plume_height_m"),
+                note="Wake dynamics, not flight geometry: if t = 0 means post-vortex-breakup "
+                "(SCIENCE-2) the cross-section is not derivable from the track, which is why it is "
+                "entered separately.",
+            ),
+            Section(
+                title="Initial volume",
                 fields=("injection.plume_volume_cm3",),
-                note="length x width x height. The t = 0 definition (SCIENCE-2) decides which "
-                "geometry is the physically right one to enter above.",
+                note="length x width x height. V0 does not enter the dynamics -- the model is "
+                "volume-invariant -- it only turns the released mass into a concentration.",
             ),
         ),
     ),
@@ -124,15 +163,22 @@ STAGES: tuple[Stage, ...] = (
         id="initial_concentration",
         number=3,
         title="Initial concentration",
-        blurb="How much sulfur goes into that volume.",
+        blurb="What the release works out to inside that volume, and how it compares with the air "
+        "it is released into.",
         spec_ref="5.3",
         sections=(
-            Section(title="Emission", fields=("injection.so2_mass_kg",)),
             Section(
-                title="Derived",
+                title="In the plume",
                 fields=("injection.so2_initial_pptv",),
-                note="Mass over volume, as a mixing ratio at the ambient number density -- so it "
-                "moves when temperature, pressure or any geometry field moves.",
+                note="Mass over volume as a mixing ratio at this site's air density -- so it "
+                "moves with temperature and pressure as well as with anything on stage 2. The "
+                "panel below shows how far it moves with the volume: the t = 0 question, visible.",
+            ),
+            Section(
+                title="In the surrounding air",
+                fields=("background.so2_pptv",),
+                note="Where the two are comparable the plume is indistinguishable from ambient, "
+                "and there is nothing left to resolve.",
             ),
         ),
     ),
@@ -187,7 +233,7 @@ STAGES: tuple[Stage, ...] = (
         sections=(
             Section(
                 title="Background gases",
-                fields=("background.so2_pptv", "background.gas_pptv"),
+                fields=("background.gas_pptv",),
                 note="Per-species mixing ratios for the 34-species state vector; anything not "
                 "named takes the mechanism's own initial condition.",
             ),
@@ -294,6 +340,7 @@ def layout_manifest() -> dict[str, object]:
 
 
 __all__ = [
+    "DERIVED_WITHOUT_LOCAL_INPUTS",
     "FIRST_STAGE",
     "HIDDEN_FIELDS",
     "STAGES",

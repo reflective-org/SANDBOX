@@ -29,6 +29,59 @@ derivations to resolve rather than fixtures.
 
 ---
 
+### 2026-08-17 — Schema 0.3.0: the emission system has one degree of freedom
+
+Raised in use: *"I thought we give the emission rate and the speed of traveling, and by that we
+calculate the length and the volume and consequently the concentration."* That is spec §4.2, and it
+was never implemented — the schema inherited mass + length from the paper ensemble, which specifies
+the release geometrically (`run_ensemble.py:45`) and has no notion of an aircraft, a speed or a rate
+anywhere in it. The wizard was faithfully showing what the model does, which is how the mismatch
+surfaced.
+
+**The relations leave exactly one free choice.** With the released mass M and the platform speed v
+entered, `t = M/R` and `L = v·t` mean that fixing any one of {rate, duration, length} fixes the
+other two. So `injection.emission_input` names which one is given:
+
+| given | derived |
+|---|---|
+| `TRACK_LENGTH` (default) | `t = L/v`, then `R = M/t` |
+| `EMISSION_RATE` | `t = M/R`, then `L = v·t` |
+| `EMISSION_DURATION` | `R = M/t`, and `L = v·t` |
+
+**All three are always shown**, whichever was entered — the rate because it is the number an
+operator recognises, the length because it is what sets the volume. An earlier draft used a two-way
+basis in which the duration was *null* under the geometric one; that was worse, because half the
+stage read as "not applicable" and the rate an operator would want was simply absent.
+
+The three entered values (`given_track_length_m`, `given_emission_rate_kg_s`,
+`given_emission_duration_s`) are kept when not selected, so switching back does not lose what was
+typed. Their defaults are written as expressions of each other, so **every selection describes the
+same default release**: 1000 kg, 250 m/s → 60 s → 16.667 kg/s → 15 km. Two of the three land on
+15 km exactly; entering the *rate* lands 1 ULP off, because `1000/(1000/60)` is `59.99999999999999`
+in IEEE 754. The initial mixing ratio is identical to the last bit in all three cases.
+
+**Stage 2 became the whole release**, not just the geometry: mass, speed, the selector, the three
+givens, the three derived, the cross-section, and the volume. Stage 3 is now the *result* — the
+initial concentration and the background SO₂ it is compared against. That required one documented
+exception to the placement rule (`DERIVED_WITHOUT_LOCAL_INPUTS`): the initial concentration is
+stage 3's subject and its inputs are by design on the two stages before it. An allowlist rather than
+a weakened rule.
+
+**250 m/s is [ASSUMPTION-7], not a measurement.** Nothing in the repo carries a platform speed; the
+field says so and a test asserts the caveat, so it cannot be quietly promoted to fact.
+
+**The pinned hash moved twice** in one day (…373ab4 → …7bc31c → …6d3a73) as the design was corrected
+under review. The default *run* never changed; the config describing it did. Six tests were updated
+deliberately rather than re-baselined — the derived chain is five fields deep now, mass reaches the
+reported rate (`R = M/t`) as well as the concentration, and the degenerate-input test covers both
+the schema's `gt=0` on entered fields and the derivations' own guards, since a derived field carries
+no bound of its own.
+
+**No UI code was written for any of it.** The nine fields appear on stage 2 with units, provenance
+and derivation notes because the form is generated from the schema plus the layout manifest.
+
+---
+
 ### 2026-08-17 — The eight-stage wizard, and the page that could not launch a run
 
 **The Phase-0 page was rejecting its own default state.** A `<select>` reports

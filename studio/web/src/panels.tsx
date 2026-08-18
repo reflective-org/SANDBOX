@@ -148,6 +148,10 @@ export function ParcelPanel({ config }: PanelProps) {
   const width = Number(valueAt(config, "injection.plume_width_m") ?? 0);
   const heightM = Number(valueAt(config, "injection.plume_height_m") ?? 0);
   const volume = valueAt(config, "injection.plume_volume_cm3");
+  const duration = valueAt(config, "injection.emission_duration_s");
+  const rate = valueAt(config, "injection.emission_rate_kg_s");
+  const speed = valueAt(config, "injection.platform_speed_m_s");
+  const specifiedBy = String(valueAt(config, "injection.emission_input") ?? "");
 
   // The along-track length dwarfs the cross-section (15 km against 10 m), so a single scale would
   // render the parcel as a line. The two views are scaled independently and each says so.
@@ -185,9 +189,23 @@ export function ParcelPanel({ config }: PanelProps) {
             </span>
           </div>
           <div>
+            <span className="k">emission</span>
+            <span className="v">
+              {display(rate)} kg/s × {display(duration)} s
+            </span>
+          </div>
+          <div>
+            <span className="k">at</span>
+            <span className="v">{display(speed)} m/s</span>
+          </div>
+          <div>
             <span className="k">V₀</span>
             <span className="v">{display(volume)} cm³</span>
           </div>
+          <p className="parcel-note">
+            Given <code>{specifiedBy.replace(/_/g, " ")}</code>; the rest of the emission follows
+            from it.
+          </p>
           <p className="parcel-note">
             What counts as t = 0 — engine exit or post-vortex breakup — changes this volume by orders
             of magnitude (SCIENCE-2). The next stage shows what that does to the concentration.
