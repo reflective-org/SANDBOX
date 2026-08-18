@@ -82,7 +82,6 @@ STAGES: tuple[Stage, ...] = (
         blurb="Where and when the plume sits. Everything downstream that depends on ambient "
         "conditions is derived from this stage.",
         spec_ref="5.1",
-        blocked_on=("SCIENCE-1",),
         sections=(
             Section(
                 title="Location",
@@ -93,9 +92,9 @@ STAGES: tuple[Stage, ...] = (
             Section(
                 title="Ambient state",
                 fields=("site.temperature_k", "site.pressure_mbar", "site.h2o_ppmv"),
-                note="Entered directly today. The spec's tropopause-relative altitude and "
-                "dataset-derived p/T need the climatology product, which is blocked on "
-                "SCIENCE-1 (sampling convention).",
+                note="Entered directly today. SCIENCE-1 is answered (zonal-mean monthly, ERA5), so "
+                "the climatology-derived p/T arrives with the reduced product (task 1.1); until "
+                "then these are typed.",
             ),
             Section(
                 title="Date and time",
@@ -118,7 +117,6 @@ STAGES: tuple[Stage, ...] = (
         blurb="How much is released, over how much track. The emission has ONE degree of freedom: "
         "give the rate, the duration or the length, and the other two follow.",
         spec_ref="5.2",
-        blocked_on=("SCIENCE-2",),
         sections=(
             Section(
                 title="Release",
@@ -154,9 +152,9 @@ STAGES: tuple[Stage, ...] = (
             Section(
                 title="Cross-section",
                 fields=("injection.plume_width_m", "injection.plume_height_m"),
-                note="Wake dynamics, not flight geometry: if t = 0 means post-vortex-breakup "
-                "(SCIENCE-2) the cross-section is not derivable from the track, which is why it is "
-                "entered separately.",
+                note="Wake dynamics, not flight geometry, which is why it is entered separately: "
+                "t = 0 is the moment this volume is defined (SCIENCE-2, answered), and how the "
+                "parcel formed is out of scope.",
             ),
             Section(
                 title="Initial volume",

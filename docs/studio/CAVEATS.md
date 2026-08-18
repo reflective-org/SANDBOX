@@ -30,15 +30,17 @@ particle-loss process, not a thermodynamic response, and this decision says noth
 
 ## Top-level caveats — shown on every results view
 
-### The definition of t = 0 is unresolved, and it dominates particle number
+### The model starts from a defined volume; how the plume got there is out of scope
 
-Tracked as [SCIENCE-2](OPEN_QUESTIONS.md#science-2--definition-of-t--0--open--blocks-phase-2-caveats-all-results).
+Decided 2026-08-18 ([SCIENCE-2](OPEN_QUESTIONS.md#science-2--definition-of-t--0--answered-2026-08-18--54),
+answered): **t = 0 is the moment a volume is defined.** The jet and wake-vortex phases — which dilute
+a real plume by orders of magnitude in the first ~10–100 s — are not modelled, the same way heating
+and buoyancy are not (SCIENCE-4): they need a different model.
 
-The jet and vortex phases dilute a real plume by orders of magnitude within the first ~10–100 s, and
-nucleation is strongly nonlinear in H₂SO₄ concentration. Whether the box starts at the engine exit
-plane or after wake-vortex breakup changes resulting particle number **more than most parameters in
-stages 4–7**. Until `t0_definition` is settled and an early-regime parameterisation is cited, every
-absolute particle-number result carries this uncertainty.
+The consequence for reading results: nucleation is strongly nonlinear in H₂SO₄, so **absolute
+particle numbers are conditional on the chosen initial concentration**. Comparisons within an
+ensemble that shares a V₀ convention are clean; a claim about an actual aircraft plume would need the
+early dilution this model deliberately does not represent.
 
 ### Initial plume volume does not affect the dynamics
 

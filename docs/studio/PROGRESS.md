@@ -29,6 +29,35 @@ derivations to resolve rather than fixtures.
 
 ---
 
+### 2026-08-18 — SCIENCE-2 and SCIENCE-3 answered; ERA5 confirmed
+
+Three decisions in one message, closing every science question that gated Phases 1–4 (only
+SCIENCE-4's sedimentation half and SCIENCE-6's ion-pair derivation remain open):
+
+**SCIENCE-2 (t = 0): it is the moment a volume is defined.** Engine exit and wake-vortex breakup are
+out of scope — the model starts from a user-specified parcel and says nothing about how it came to
+be. No `t0_definition` field, no early-regime parameterisation; the same reasoning as
+heating/buoyancy, since a wake treatment needs a different model. The caveat changes character
+rather than disappearing: absolute particle numbers are conditional on the chosen initial
+concentration, and `CAVEATS.md` now says so as a scope boundary. ASSUMPTION-5 (golden-run defaults)
+becomes permanent; stage 2 loses its *blocked on* label; the stage-3 sensitivity panel stays, now
+framed as "your result's sensitivity to a choice the model does not make for you".
+
+**SCIENCE-3 (composition): pure sulfate, by assumption, revisitable.** Recorded as **ASSUMPTION-8**
+with the code location — the backgrounds were already seeded sulfate-only, so this converts what the
+code did implicitly into a decision with a date. No meteoric material, no organics, no mixing-state
+question. The per-dataset dry/ambient diameter basis survives as a data-description point inside the
+assumption record.
+
+**Climatology source: ERA5**, confirming BLOCKING-5's 2026-08-13 answer. Alternatives get their own
+issue (#94) — notably **MLS for H₂O**, since reanalysis stratospheric water vapour is biased dry and
+H₂O is the field the sulfate microphysics is most sensitive to. Task 1.1 proceeds on ERA5.
+
+Follow-through: stages 1 and 2 lose their `blocked_on` labels, and every docstring and panel hint
+that described SCIENCE-2 as open now states the answer. Issues #53/#54/#55 retitled ANSWERED.
+
+---
+
 ### 2026-08-18 — SCIENCE-1 answered, and the date became a date
 
 **Answered (Ali): zonal-mean, monthly climatology**, selected by the month of the release. So the

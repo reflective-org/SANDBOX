@@ -23,7 +23,8 @@
 
 The divergence that matters is the **15 km vs 30 km track**: a factor of two in V0, and therefore a
 factor of two in initial concentration for the same injected mass. Which is right depends on what
-t = 0 means, which is SCIENCE-2 (issue #54) and unresolved. Phase 0 follows the 810-run ensemble
+t = 0 means. SCIENCE-2 is answered (2026-08-18): t = 0 is the moment the volume is defined, and
+the jet/vortex phases are out of scope. Phase 0 follows the 810-run ensemble
 (ASSUMPTION-5); this module implements the derivation, not the choice of inputs.
 
 **V0 does not enter the dynamics.** The model is intensive and volume-invariant
@@ -158,9 +159,9 @@ def track_length_m(*, speed_m_s: float, duration_s: float) -> float:
     """The along-track length a platform lays down: ``L = v.t``.
 
     This is the TRACK, not the wake. It describes the line the platform flies while emitting; the
-    cross-section of the resulting parcel is vortex dynamics and is not derivable from it. If t = 0
-    is taken to be post-vortex-breakup (SCIENCE-2, issue #54) the cross-section is not the flight
-    geometry -- but the length still is, which is why only the length is derived here.
+    cross-section of the resulting parcel is wake dynamics and is entered separately. t = 0 is the
+    moment the volume is defined (SCIENCE-2, answered 2026-08-18) and how the parcel formed is out
+    of scope -- but the length IS flight geometry, which is why it alone is derived here.
     """
     if speed_m_s <= 0.0:
         raise ValueError(f"platform speed must be positive, got {speed_m_s} m/s")

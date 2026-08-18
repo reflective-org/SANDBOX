@@ -15,10 +15,10 @@ panels or the comparison view.
 | # | Stage | Spec | Fields today | Blocked on |
 |---|---|---|---|---|
 | 1 | Environment | §5.1 | 8 | SCIENCE-1 **answered** (zonal-mean monthly); the product itself is task 1.1 |
-| 2 | Plume volume and t = 0 | §5.2 | 3 + 1 derived | **SCIENCE-2** — engine exit vs post-vortex breakup changes V₀ by orders of magnitude |
+| 2 | Release and plume volume | §5.2 | 9 + 3 derived | SCIENCE-2 **answered**: t = 0 is when the volume is defined; jet/vortex out of scope |
 | 3 | Initial concentration | §5.3 | 1 + 1 derived | — |
 | 4 | Dilution | §5.4 | 6 | SCIENCE-5 answered: `background_evolves` fixed False |
-| 5 | Background aerosol | §5.5 | 1 | SCIENCE-3 — composition and mixing state |
+| 5 | Background aerosol | §5.5 | 1 | SCIENCE-3 **answered**: pure sulfate (ASSUMPTION-8) |
 | 6 | Emitted and background species | §5.5 | 2 | — |
 | 7 | Chemistry, nucleation, numerics | §5.6–5.8 | 19 | — |
 | 8 | Review | §8 | — | — |
@@ -34,8 +34,7 @@ All 42 schema fields are placed and rendered; `test_layout.py` fails if a new on
   MB, small enough to **commit with a checksum** rather than fetch at run time. Longitude stays an
   input for the solar zenith angle but does not select the meteorology, and the convention goes into
   the dataset identifier recorded in provenance (ADR-006) so a longitude-resolved product added later
-  cannot reinterpret an existing config. Still needs a decision on the **source** (ERA5 vs MERRA-2 vs
-  MLS) — note BLOCKING-5's caveat that reanalysis stratospheric water vapour is biased dry, so H₂O
+  cannot reinterpret an existing config. Source decided 2026-08-18: **ERA5** (confirming BLOCKING-5); alternatives tracked in their own issue — note BLOCKING-5's caveat that reanalysis stratospheric water vapour is biased dry, so H₂O
   may want a different source from p and T.
 - **1.0b Date entry** — *done (2026-08-18).* Month + day of month entered, `day_of_year` derived on a
   fixed non-leap calendar. No year, because a monthly climatology is an average over years.

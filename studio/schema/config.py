@@ -253,9 +253,9 @@ class Injection(SchemaModel):
     below exists only to turn an injected mass into an initial concentration. Presenting it as a
     plume shape that the physics responds to would be a lie of layout.
 
-    What t = 0 means -- engine exit plane or post-vortex-breakup -- is SCIENCE-2 (issue #54) and is
-    the most consequential open question in the project, because it moves the initial concentration
-    by orders of magnitude.
+    What t = 0 means is ANSWERED (SCIENCE-2, 2026-08-18): it is the moment this volume is defined.
+    Jet and wake-vortex dynamics are out of scope -- they need a different model -- so the volume is
+    a modelling choice, and results are conditional on the initial concentration it implies.
     """
 
     so2_mass_kg: float = SciField(

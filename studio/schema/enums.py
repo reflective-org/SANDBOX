@@ -67,7 +67,8 @@ class BackgroundAerosol(StrEnum):
 
     Wet-vs-dry matters here and is per-dataset rather than declared: ``AER_GEO`` and ``CESM_G6_AMB``
     are specified at AMBIENT conditions and skip the STP->ambient factor on seeding, the others are
-    at STP. Making that an explicit field is SCIENCE-3 (issue #55).
+    at STP. SCIENCE-3 (issue #55) is answered -- all aerosol is pure sulfate by ASSUMPTION-8 --
+    and the dry/ambient basis stays a per-dataset property recorded there.
     """
 
     #: Marianna's tabulated distribution. The model's default.
@@ -106,9 +107,9 @@ class EmissionInput(StrEnum):
     made against.
 
     Note this is about the TRACK, not the wake. ``L = v.t`` describes the line the platform lays
-    down; the 10 m x 10 m cross-section is vortex dynamics, so if t = 0 turns out to mean
-    post-vortex-breakup (SCIENCE-2, issue #54) the cross-section is not the flight geometry even
-    though the length still is.
+    down; the 10 m x 10 m cross-section is wake dynamics and is entered separately. t = 0 is the
+    moment the volume is defined (SCIENCE-2, answered 2026-08-18); how the parcel formed is out of
+    scope.
     """
 
     #: Give the track length; duration follows as L/v and rate as M/t. The paper ensemble's
