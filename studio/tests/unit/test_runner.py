@@ -285,7 +285,7 @@ class TestLocalSubprocessRunner:
         import subprocess
 
         bad = tmp_path / "bad.json"
-        bad.write_text('{"config": {"site": {"temperature_k": -5}}}', encoding="utf-8")
+        bad.write_text('{"config": {"site": {"given_temperature_k": -5}}}', encoding="utf-8")
         proc = subprocess.run(
             [sys.executable, "-m", "studio.cli.run", str(bad), str(tmp_path / "out")],
             capture_output=True,

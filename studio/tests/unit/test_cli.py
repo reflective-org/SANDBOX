@@ -117,7 +117,7 @@ def test_planned_runs_have_distinct_identities(sweep_file: Path) -> None:
     [
         ("not: [valid", "not valid"),
         ("- a\n- b\n", "must contain a mapping"),
-        ("site:\n  temperature_k: -5\n", "not a valid configuration"),
+        ("site:\n  given_temperature_k: -5\n", "not a valid configuration"),
     ],
 )
 def test_a_bad_config_file_exits_two_with_a_message(

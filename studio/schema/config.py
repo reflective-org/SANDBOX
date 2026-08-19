@@ -38,6 +38,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from studio.schema.enums import (
     BackgroundAerosol,
+    ClimatologyDataset,
     DilutionRegime,
     EmissionInput,
     PhotolysisMode,
@@ -48,7 +49,7 @@ from studio.schema.units import Unit
 #: The schema's own version. Bumped on any change to field names, semantics or defaults, because
 #: those change the config hash and therefore run identity (ADR-006). Old configs are never silently
 #: reinterpreted under new semantics.
-SCHEMA_VERSION = "0.3.0"
+SCHEMA_VERSION = "0.4.0"
 
 #: Stratospheric background gas composition [pptv] used by the 810-run ensemble
 #: (``run_ensemble.py:56-57``). Module-level so the default is one object with one source, and so a
@@ -80,9 +81,12 @@ class SchemaModel(BaseModel):
 class Site(SchemaModel):
     """Where the box is, and the thermodynamic state it sits in.
 
-    Phase 0 takes T and p as user input. Phase 1 derives them from climatology at a chosen
-    (lat, lon, altitude-or-tropopause-relative) point -- which is why they are primary fields now
-    and become ``derived_from`` targets later, not the other way round.
+    The ambient state has a selectable source (Phase 1): under ``dataset = USER`` the given values
+    are used as typed; under ``ERA5`` temperature and water vapour are derived from the committed
+    zonal-mean monthly climatology (SCIENCE-1) at this latitude, month and pressure. Pressure is
+    always entered -- it is what places the box, so it is the coordinate of the lookup rather than
+    a result of it. Same structure as the emission system: entered ``given_*`` values that are kept
+    but inert when unselected, and derived used-values the model reads.
     """
 
     latitude_deg: float = SciField(
@@ -110,15 +114,28 @@ class Site(SchemaModel):
         provenance=Provenance.PAPER_ENSEMBLE,
         source="coupled/paper_ensemble/run_ensemble.py:98",
     )
-    temperature_k: float = SciField(
+    dataset: ClimatologyDataset = SciField(
+        default=ClimatologyDataset.USER,
+        unit=Unit.DIMENSIONLESS,
+        label="Ambient state from",
+        description=(
+            "Source of temperature and water vapour. USER takes the given values as typed; ERA5 "
+            "derives both from the committed zonal-mean monthly climatology (1991-2020) at this "
+            "latitude, month and pressure. Pressure is always entered: it places the box, so it "
+            "is the lookup's coordinate, not its result."
+        ),
+        provenance=Provenance.CONVENTION,
+        source="SCIENCE-1 (issue #53), answered 2026-08-18: zonal-mean monthly, ERA5",
+    )
+    given_temperature_k: float = SciField(
         default=210.0,
         unit=Unit.KELVIN,
         gt=0.0,
-        label="Temperature",
+        label="Temperature (entered)",
         description=(
-            "Box temperature. The box is isobaric and ISOTHERMAL: the temperature feedback is "
-            "refused while the radiative calculation has no longwave component, so this value "
-            "holds for the whole run. See switches.heating_to_t and SCIENCE-4 (issue #56)."
+            "Box temperature as typed. Used when dataset is USER; under ERA5 the temperature is "
+            "derived and this value is inert. The box is isobaric and ISOTHERMAL either way "
+            "(SCIENCE-4): whatever the source, the value holds for the whole run."
         ),
         provenance=Provenance.PAPER_ENSEMBLE,
         source="coupled/paper_ensemble/TABLE_microphysics_parameters.md (Site: 210 K, 55 hPa)",
@@ -131,27 +148,63 @@ class Site(SchemaModel):
         label="Pressure",
         description=(
             "Box pressure, the model's native pressure unit (mbar == hPa). Also sets the box "
-            "altitude used to place the aerosol in the TUV-x radiation column."
+            "altitude used to place the aerosol in the TUV-x radiation column, and is the "
+            "vertical coordinate of the climatology lookup when dataset is ERA5."
         ),
         provenance=Provenance.PAPER_ENSEMBLE,
         source="coupled/paper_ensemble/TABLE_microphysics_parameters.md (Site: 210 K, 55 hPa)",
         examples=[55.0, 120.0],
     )
-    h2o_ppmv: float = SciField(
+    given_h2o_ppmv: float = SciField(
         default=6.9104,
         unit=Unit.PPMV,
         ge=0.0,
-        label="Water vapour",
+        label="Water vapour (entered)",
         description=(
-            "Water vapour mixing ratio. The ensemble value is RH = 3% precomputed at 210 K / "
-            "55 hPa; it is a decimal in native units on purpose (ADR-003) -- do not round-trip it "
-            "through SI."
+            "Water vapour mixing ratio as typed. Used when dataset is USER; under ERA5 it is "
+            "derived and this value is inert. The ensemble value is RH = 3% precomputed at "
+            "210 K / 55 hPa, a decimal in native units on purpose (ADR-003)."
         ),
         provenance=Provenance.PAPER_ENSEMBLE,
         source="coupled/paper_ensemble/run_ensemble.py:62 (LAT_ALT WTR column, RH = 3%)",
+    )
+    temperature_k: float | None = SciField(
+        default=None,
+        unit=Unit.KELVIN,
+        label="Temperature (used)",
+        description=(
+            "The temperature the run uses: the entered value, or the ERA5 zonal-mean monthly "
+            "climatology interpolated to this latitude, month and pressure. Isothermal for the "
+            "whole run (SCIENCE-4)."
+        ),
+        provenance=Provenance.DERIVED,
+        derived_from=[
+            "site.dataset",
+            "site.given_temperature_k",
+            "site.latitude_deg",
+            "site.pressure_mbar",
+            "schedule.month",
+        ],
+    )
+    h2o_ppmv: float | None = SciField(
+        default=None,
+        unit=Unit.PPMV,
+        label="Water vapour (used)",
+        description=(
+            "The water vapour the run uses: the entered value, or ERA5 specific humidity "
+            "converted to a volume mixing ratio at this latitude, month and pressure."
+        ),
+        provenance=Provenance.DERIVED,
+        derived_from=[
+            "site.dataset",
+            "site.given_h2o_ppmv",
+            "site.latitude_deg",
+            "site.pressure_mbar",
+            "schedule.month",
+        ],
         caveat=(
-            "Reanalysis stratospheric water vapour is biased dry, so ERA5 is not the recommended "
-            "source for this field when Phase 1 lands (BLOCKING-5)."
+            "Reanalysis stratospheric water vapour is biased dry (BLOCKING-5), so the ERA5 value "
+            "is a floor more than an estimate; MLS as a dedicated H2O source is issue #94."
         ),
     )
 
@@ -853,7 +906,7 @@ class RunConfig(SchemaModel):
     physics, and two runs whose only difference is a name are the same computation.
     """
 
-    schema_version: Literal["0.3.0"] = SciField(
+    schema_version: Literal["0.4.0"] = SciField(
         default=SCHEMA_VERSION,
         unit=Unit.DIMENSIONLESS,
         label="Schema version",

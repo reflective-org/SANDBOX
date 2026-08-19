@@ -63,7 +63,9 @@ def studio_scenario() -> Any:
 def test_the_golden_case_is_the_schemas_default(build_scenario: Any) -> None:
     """``RunConfig()`` with no arguments IS the golden case; nothing has to be set up to get it."""
     reference = build_scenario(GOLDEN_AXES)
-    config = RunConfig()
+    # temperature_k is DERIVED since 0.4.0 (dataset selector), so the default config resolves it;
+    # under the default USER dataset it must equal the entered value, which is the golden case's.
+    config = resolve(RunConfig()).config
     assert config.site.temperature_k == reference.T
     assert config.site.pressure_mbar == reference.P
     assert config.background.aerosol is BackgroundAerosol.SABR_220

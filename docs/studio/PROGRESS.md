@@ -29,6 +29,44 @@ derivations to resolve rather than fixtures.
 
 ---
 
+### 2026-08-19 — Task 1.1: ERA5 is in the product, the schema, and the wizard
+
+Raised in use: *"I do not see ERA5 data being utilized"* — correct; the decisions existed and the
+pipeline did not. Now:
+
+**The committed product.** `data/pipelines/era5_zonal_monthly.py` fetches ERA5 monthly means
+(1991–2020, the WMO normal; 15 levels, 300–5 hPa; 2.5° grid — ASSUMPTION-9) and reduces 343 MB of
+raw fields to a **0.1 MB** `(month × level × lat)` npz, committed at
+`studio/science/data/era5_zonal_monthly_v1.npz` with a sha256 manifest. Raw ERA5 is not
+redistributed; the derived product is, with attribution (BLOCKING-5).
+
+**The schema (0.4.0).** `site.dataset` (USER | ERA5) with the emission-system structure: entered
+`given_temperature_k` / `given_h2o_ppmv` kept-but-inert, `temperature_k` / `h2o_ppmv` derived.
+Pressure stays entered — it places the box, so it is the lookup's coordinate. Default USER, so every
+existing config resolves byte-identically. Provenance records the dataset id + checksum
+automatically for ERA5 runs (`ProvenanceRecord.datasets`, empty since Phase 0, now used).
+
+**The wizard.** Stage 1 gains the ERA5 temperature-profile panel with the box marked on it; under
+USER it is context, under ERA5 the marker is the run's value.
+
+**The physics check that paid for itself twice.** The acceptance tests assert the stratosphere looks
+like the stratosphere (tropical cold point 185–205 K, summer pole warmer than winter, H₂O single-digit
+ppmv). The first cut of the pipeline shipped CDS's *descending* pressure levels into an interpolation
+that assumed ascending — every lookup silently read the 300 hPa row, and T(55 hPa) came back 240 K
+with 414 ppmv of water. Plausible numbers at a glance; impossible as a stratosphere. Fixed in the
+pipeline (both axes sorted ascending) and refused in the loader (a non-monotonic axis raises rather
+than being reordered, since the checksum pins what was read).
+
+**The headline.** ERA5 says **209.42 K** at the ensemble's site (30°N, June, 55 hPa) where the
+ensemble typed **210 K** — the paper's number confirmed to half a kelvin by 30 years of reanalysis.
+H₂O comes out 4.15 ppmv against the typed 6.91 (RH = 3% assumption), consistent with the known dry
+bias (MLS is issue #94). Tropical cold point: 191.4 K.
+
+357 Python Tier-A (+11, all running in CI — the product is committed, so the climatology is the
+first substantive science whose tests CI executes), 55 vitest.
+
+---
+
 ### 2026-08-18 — SCIENCE-2 and SCIENCE-3 answered; ERA5 confirmed
 
 Three decisions in one message, closing every science question that gated Phases 1–4 (only

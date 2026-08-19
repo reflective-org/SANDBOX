@@ -226,9 +226,12 @@ def concentration_sensitivity(config: RunConfig) -> dict[str, Any]:
 
     resolved = resolve(config).config
     volume = resolved.injection.plume_volume_cm3
-    if volume is None or volume <= 0.0:
-        raise ValueError("plume_volume_cm3 is unresolved; resolve the config before previewing")
-    air = air_number_density(resolved.site.pressure_mbar, resolved.site.temperature_k)
+    temperature = resolved.site.temperature_k
+    if volume is None or volume <= 0.0 or temperature is None:
+        raise ValueError(
+            "plume_volume_cm3 / temperature_k are unresolved; resolve the config before previewing"
+        )
+    air = air_number_density(resolved.site.pressure_mbar, temperature)
     decades = 3.0
     volumes = np.logspace(
         math.log10(volume) - decades, math.log10(volume) + decades, _CURVE_POINTS // 3
@@ -239,7 +242,7 @@ def concentration_sensitivity(config: RunConfig) -> dict[str, Any]:
             molar_mass_g_per_mol=SO2_MOLAR_MASS_G_PER_MOL,
             volume_cm3=float(v),
             pressure_mbar=resolved.site.pressure_mbar,
-            temperature_k=resolved.site.temperature_k,
+            temperature_k=temperature,
         )
         for v in volumes
     ]
@@ -253,10 +256,37 @@ def concentration_sensitivity(config: RunConfig) -> dict[str, Any]:
     }
 
 
+def climatology_profile(config: RunConfig) -> dict[str, Any]:
+    """The ERA5 zonal-mean monthly profile at this latitude and month (stage 1).
+
+    Drawn whatever the dataset selection: under USER it is context ("here is what ERA5 thinks this
+    place looks like") with the typed values marked against it; under ERA5 the marker IS the derived
+    value. Pure product read -- no model, no JAX.
+    """
+    from studio.science.climatology import DATASET_ID, load, profile
+
+    resolved = resolve(config).config
+    month = resolved.schedule.month
+    latitude = resolved.site.latitude_deg
+    data = profile(month=month, latitude_deg=latitude)
+    return {
+        **data,
+        "dataset_id": DATASET_ID,
+        "sha256_12": load().sha256[:12],
+        "month": month,
+        "latitude_deg": latitude,
+        "selected_dataset": resolved.site.dataset.value,
+        "box_pressure_mbar": resolved.site.pressure_mbar,
+        "box_temperature_k": resolved.site.temperature_k,
+        "box_h2o_ppmv": resolved.site.h2o_ppmv,
+    }
+
+
 #: Panel name -> builder. The API exposes exactly these, so a typo in a panel name is a 404 naming
 #: the ones that exist rather than an empty chart.
 PANELS = {
     "sza": sza_diurnal,
+    "climatology": climatology_profile,
     "dilution": dilution_curve,
     "size-distribution": size_distribution,
     "bins": bin_grid,

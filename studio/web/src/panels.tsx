@@ -142,6 +142,43 @@ export function SzaPanel({ config, load }: PanelProps) {
   );
 }
 
+
+/** Stage 1b — the ERA5 profile this latitude and month imply, with the box marked on it. */
+export function ClimatologyPanel({ config, load }: PanelProps) {
+  const { data, error, loading } = usePanel("climatology", config, load);
+  const levels = nums(data, "level_hpa");
+  const temperature = nums(data, "temperature_k");
+  const boxP = typeof data?.box_pressure_mbar === "number" ? data.box_pressure_mbar : null;
+  const boxT = typeof data?.box_temperature_k === "number" ? data.box_temperature_k : null;
+  const selected = typeof data?.selected_dataset === "string" ? data.selected_dataset : "user";
+
+  return (
+    <Frame
+      title="ERA5 temperature profile"
+      hint={
+        data
+          ? `Zonal-mean monthly climatology (1991–2020), ${String(data.dataset_id)} · ` +
+            `${selected === "era5" ? "the marked point IS the run's temperature" : "context — the run uses the typed values (dataset: user)"}`
+          : undefined
+      }
+      loading={loading}
+      {...(error ? { error } : {})}
+    >
+      <Chart
+        series={[{ name: "T", xs: temperature, ys: levels, label: "ERA5 T" }]}
+        xLabel="temperature (K)"
+        yLabel="pressure (hPa)"
+        yLog
+        yDomain={[5, 300]}
+        height={280}
+        markers={boxP !== null && boxT !== null ? [{ x: boxT, y: boxP, label: "the box" }] : []}
+        format={(v) => v.toFixed(1)}
+        caption="Pressure increases downward, as altitude decreases. The box marker moves with latitude, month and pressure."
+      />
+    </Frame>
+  );
+}
+
 /** Stage 2 — the parcel, drawn to scale. The config itself, not a computation over it. */
 export function ParcelPanel({ config }: PanelProps) {
   const length = Number(valueAt(config, "injection.plume_length_m") ?? 0);
@@ -424,8 +461,17 @@ export function BinsPanel({ config, load }: PanelProps) {
 }
 
 /** Stage id -> panel. Stages absent from here have no honest plot yet, and show nothing. */
+function EnvironmentPanels(props: PanelProps) {
+  return (
+    <>
+      <ClimatologyPanel {...props} />
+      <SzaPanel {...props} />
+    </>
+  );
+}
+
 export const PANELS_BY_STAGE: Record<string, (props: PanelProps) => React.ReactElement> = {
-  environment: SzaPanel,
+  environment: EnvironmentPanels,
   plume_volume: ParcelPanel,
   initial_concentration: ConcentrationPanel,
   dilution: DilutionPanel,

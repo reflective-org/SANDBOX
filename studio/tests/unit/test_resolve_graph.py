@@ -119,6 +119,8 @@ def test_the_schemas_derived_chain() -> None:
     assert schema_derived_fields() == (
         "injection.emission_duration_s",
         "schedule.day_of_year",
+        "site.h2o_ppmv",
+        "site.temperature_k",
         "injection.emission_rate_kg_s",
         "injection.plume_length_m",
         "injection.plume_volume_cm3",
@@ -126,6 +128,8 @@ def test_the_schemas_derived_chain() -> None:
     )
     order = schema_derived_fields()
     for earlier, later in (
+        # The mixing ratio reads the DERIVED temperature (0.4.0), so the site must resolve first.
+        ("site.temperature_k", "injection.so2_initial_pptv"),
         ("injection.emission_duration_s", "injection.emission_rate_kg_s"),
         ("injection.emission_duration_s", "injection.plume_length_m"),
         ("injection.plume_length_m", "injection.plume_volume_cm3"),

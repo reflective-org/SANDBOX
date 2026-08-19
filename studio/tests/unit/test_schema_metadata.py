@@ -142,9 +142,9 @@ def test_bounded_quantities_declare_their_range() -> None:
     must_be_bounded = {
         "site.latitude_deg",
         "site.longitude_deg",
-        "site.temperature_k",
+        "site.given_temperature_k",
         "site.pressure_mbar",
-        "site.h2o_ppmv",
+        "site.given_h2o_ppmv",
         "schedule.month",
         "schedule.day_of_month",
         "schedule.start_utc_hour",
@@ -167,7 +167,7 @@ def test_bounded_quantities_declare_their_range() -> None:
     ("path", "value"),
     [
         ("site.latitude_deg", 91.0),
-        ("site.temperature_k", 0.0),
+        ("site.given_temperature_k", 0.0),
         ("site.pressure_mbar", -1.0),
         ("schedule.month", 13),
         ("schedule.day_of_month", 32),

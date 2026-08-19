@@ -53,7 +53,7 @@ def test_declared_inputs_match_derived_from_exactly() -> None:
 @pytest.mark.tier_a
 def test_an_unregistered_field_raises_rather_than_returning_none() -> None:
     with pytest.raises(NotImplementedError, match="no derivation registered"):
-        derivation_for("site.temperature_k")
+        derivation_for("site.pressure_mbar")
 
 
 @pytest.mark.tier_a

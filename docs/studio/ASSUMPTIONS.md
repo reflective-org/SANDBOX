@@ -191,3 +191,25 @@ observations in ways this repository does not quantify. Per-dataset caveat that 
 each background's diameters are **dry or ambient** is implicit in the dataset
 (`AMBIENT_BACKGROUNDS` in `coupled/backgrounds.py`) rather than a declared field.
 
+## ASSUMPTION-9 — Climatology product conventions: 1991–2020, 2.5°, 15 levels, no extrapolation
+
+**Made:** 2026-08-19 · **Affects:** `era5_zonal_monthly_v1` (the committed product), and every run
+with `site.dataset = ERA5` · **Tracks:** SCIENCE-1 (answered), #94 (other platforms)
+
+Four choices inside SCIENCE-1's answer that the answer itself did not fix:
+
+- **Years 1991–2020** — the WMO standard climate normal, so "the June climatology" cites a standard
+  rather than a habit.
+- **2.5° retrieval grid.** The zonal mean over 144 longitudes is insensitive to this; it keeps the
+  raw download ~10² MB instead of gigabytes. The product's latitude resolution is therefore 2.5°,
+  interpolated linearly at lookup.
+- **15 pressure levels, 300–5 hPa** — the lower-to-middle stratosphere the box lives in. Linear
+  interpolation in **log-pressure** between levels.
+- **No extrapolation, ever.** Outside 300–5 hPa the derivation raises (ADR-005). A plausible
+  temperature for 400 hPa from a stratospheric product is exactly the fabricated number this
+  project forbids.
+
+**How to revisit.** Regenerate with `data/pipelines/era5_zonal_monthly.py` after editing its
+constants; the product version in the filename and the manifest's sha256 change together, and
+provenance pins which product each run used, so old runs stay attributable.
+

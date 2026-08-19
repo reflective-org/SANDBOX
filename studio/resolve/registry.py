@@ -22,7 +22,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
-from studio.schema.enums import EmissionInput
+from studio.schema.enums import ClimatologyDataset, EmissionInput
 from studio.science import (
     SO2_MOLAR_MASS_G_PER_MOL,
     initial_mixing_ratio_pptv,
@@ -62,6 +62,36 @@ class Derivation:
         if missing:
             raise KeyError(f"derivation is missing declared inputs {missing}")
         return self.fn({path: values[path] for path in self.inputs})
+
+
+def _site_temperature(values: Mapping[str, Any]) -> float:
+    """The temperature the run uses: entered, or the ERA5 climatology at (lat, month, p).
+
+    The import is inside the branch on purpose: under USER (the default) the climatology product is
+    never touched, so a checkout without it still resolves every existing config.
+    """
+    if values["site.dataset"] != ClimatologyDataset.ERA5:
+        return float(values["site.given_temperature_k"])
+    from studio.science.climatology import temperature_k
+
+    return temperature_k(
+        month=values["schedule.month"],
+        latitude_deg=values["site.latitude_deg"],
+        pressure_mbar=values["site.pressure_mbar"],
+    )
+
+
+def _site_h2o(values: Mapping[str, Any]) -> float:
+    """The water vapour the run uses: entered, or ERA5 specific humidity as ppmv."""
+    if values["site.dataset"] != ClimatologyDataset.ERA5:
+        return float(values["site.given_h2o_ppmv"])
+    from studio.science.climatology import h2o_ppmv
+
+    return h2o_ppmv(
+        month=values["schedule.month"],
+        latitude_deg=values["site.latitude_deg"],
+        pressure_mbar=values["site.pressure_mbar"],
+    )
 
 
 def _day_of_year(values: Mapping[str, Any]) -> int:
@@ -164,6 +194,29 @@ def _so2_initial_pptv(values: Mapping[str, Any]) -> float:
 
 #: Derived field path -> how to compute it. Completeness against the schema is enforced by test.
 DERIVATIONS: Final[dict[str, Derivation]] = {
+    "site.temperature_k": Derivation(
+        inputs=(
+            "site.dataset",
+            "site.given_temperature_k",
+            "site.latitude_deg",
+            "site.pressure_mbar",
+            "schedule.month",
+        ),
+        fn=_site_temperature,
+        summary="the entered temperature, or the ERA5 zonal-mean monthly climatology at "
+        "(latitude, month, pressure)",
+    ),
+    "site.h2o_ppmv": Derivation(
+        inputs=(
+            "site.dataset",
+            "site.given_h2o_ppmv",
+            "site.latitude_deg",
+            "site.pressure_mbar",
+            "schedule.month",
+        ),
+        fn=_site_h2o,
+        summary="the entered water vapour, or ERA5 specific humidity converted to ppmv",
+    ),
     "schedule.day_of_year": Derivation(
         inputs=("schedule.month", "schedule.day_of_month"),
         fn=_day_of_year,

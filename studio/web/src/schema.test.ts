@@ -23,7 +23,7 @@ const schema: JsonSchema = {
       properties: {
         // Exactly as /api/schema emits it: `gt=0` becomes exclusiveMinimum, and there is NO upper
         // bound (see issue on physical ranges -- 9999 K currently validates).
-        temperature_k: {
+        given_temperature_k: {
           type: "number",
           default: 210.0,
           title: "Temperature",
@@ -143,7 +143,7 @@ describe("coerce -- the #89 regression", () => {
   });
 
   it("parses a number, and refuses to invent one from an empty box", () => {
-    const spec = fieldSpec(schema, "site.temperature_k");
+    const spec = fieldSpec(schema, "site.given_temperature_k");
     expect(coerce(spec, "212.5")).toBe(212.5);
     expect(coerce(spec, "")).toBeUndefined();
     expect(coerce(spec, "not a number")).toBeUndefined();
@@ -171,7 +171,7 @@ describe("coerce -- the #89 regression", () => {
 
 describe("fieldSpec", () => {
   it("carries unit, label, range and provenance from x-studio", () => {
-    const spec = fieldSpec(schema, "site.temperature_k");
+    const spec = fieldSpec(schema, "site.given_temperature_k");
     expect(spec.unit).toBe("K");
     expect(spec.label).toBe("Temperature");
     expect(spec.min).toBe(0);
@@ -238,9 +238,9 @@ describe("display", () => {
 });
 
 describe("valueAt", () => {
-  const config = { site: { temperature_k: 210 }, injection: { plume_volume_cm3: null } };
+  const config = { site: { given_temperature_k: 210 }, injection: { plume_volume_cm3: null } };
   it("reads a nested path", () => {
-    expect(valueAt(config, "site.temperature_k")).toBe(210);
+    expect(valueAt(config, "site.given_temperature_k")).toBe(210);
     expect(valueAt(config, "injection.plume_volume_cm3")).toBeNull();
   });
   it("returns undefined for a path that is not there, without throwing", () => {
@@ -265,6 +265,6 @@ describe("bounds", () => {
   });
 
   it("reports no upper bound where the schema declares none", () => {
-    expect(fieldSpec(schema, "site.temperature_k").max).toBeUndefined();
+    expect(fieldSpec(schema, "site.given_temperature_k").max).toBeUndefined();
   });
 });

@@ -34,7 +34,10 @@ from studio.schema.hashing import CANONICAL_FORM_VERSION
 #: * ...46cbe3 -> ...373ab4 (0.2.0) when the temperature feedback was refused. The VALUE of
 #:   heating_to_t did not change -- False either way -- but schema_version is part of the hashed
 #:   payload, which is what makes "old configs are never silently reinterpreted" true.
-#: * ...6d3a73 -> the value below, still 0.3.0 and unmerged, when the release date became a month
+#: * 0.3.0 -> 0.4.0 when the ambient state gained its dataset selector (SCIENCE-1 implemented):
+#:   given_temperature_k / given_h2o_ppmv entered, temperature_k / h2o_ppmv derived. The default RUN
+#:   is unchanged -- USER dataset, the same 210 K -- but the config has three more fields.
+#: * ...6d3a73 -> ...7813ae, still 0.3.0 and unmerged, when the release date became a month
 #:   and a day with day_of_year derived (SCIENCE-1: the climatology is a monthly average, so there
 #:   is no year, and the month must not be enterable twice).
 #: * ...373ab4 -> ...6d3a73 (0.3.0) when the emission system arrived: a selector for which
@@ -44,7 +47,7 @@ from studio.schema.hashing import CANONICAL_FORM_VERSION
 #:   the last bit -- but the config that describes it now has four more fields, so it is a different
 #:   configuration and must hash differently. A schema that grew a field without moving the hash
 #:   would be one where two different configs could share an identity.
-GOLDEN_DEFAULT_HASH = "a201086e2dc9039fe95b0d11bd184a7fccad39b5c9cbca83ee83c766957813ae"
+GOLDEN_DEFAULT_HASH = "b8ca6becb22b49668e22d1f2dce8451b79bd3159c82fb0966cce182ccdd35ba6"
 
 
 @pytest.mark.tier_a

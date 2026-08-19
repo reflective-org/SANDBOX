@@ -42,7 +42,7 @@ def test_metadata_survives_the_export() -> None:
     """Unit, provenance and source must reach the client, or the form cannot explain a field."""
     schema = run_config_json_schema()
     site = schema["$defs"]["Site"]["properties"]
-    temperature = site["temperature_k"][EXTENSION_KEY]
+    temperature = site["given_temperature_k"][EXTENSION_KEY]
     assert temperature["unit"] == "K"
     assert temperature["provenance"] == "paper_ensemble"
     assert "TABLE_microphysics_parameters.md" in temperature["source"]
