@@ -153,45 +153,49 @@ which keeps the ensemble's `day_of_year = 172` as 21 June.
 
 ---
 
-### SCIENCE-2 — Definition of t = 0 · **OPEN** · blocks Phase 2, caveats **all** results · [#54](https://github.com/reflective-org/SANDBOX/issues/54)
+### SCIENCE-2 — Definition of t = 0 · **ANSWERED** (2026-08-18) · [#54](https://github.com/reflective-org/SANDBOX/issues/54)
 *Does the box start at the engine exit plane, or after wake-vortex breakup?*
 
-The most consequential unresolved item in the specification. The jet and vortex phases dilute the
-plume by orders of magnitude within the first ~10–100 s, and nucleation is strongly nonlinear in
-H₂SO₄ concentration, so this choice changes resulting particle number more than most parameters in
-stages 4–7.
+**Answered (Ali, 2026-08-18): neither. t = 0 is the moment a volume is defined.** The jet and vortex
+phases are **out of scope**: the model starts from a user-specified parcel — a mass in a volume — and
+says nothing about how that parcel came to be. There is no `t0_definition` field, no engine-exit
+option, and no early-regime parameterisation to cite, because the question the spec posed is not one
+this model answers.
 
-Requirements once answered:
-- `t0_definition` is an explicit, **required** schema field.
-- If `ENGINE_EXIT`, the early dilution regime needs a *citable* parameterisation, not the same curve
-  used for the later diffusive regime. The existing regimes (`coupled/dilution.py:39`) follow a
-  Schumann et al. (1998) volume expansion `V(t)/V₀ = max(1, t^0.8)` for t ≤ 10⁴ s — which is already
-  a two-stage form, but is not a jet/vortex treatment.
-- Appears as a top-level caveat in every results view and in `CAVEATS.md`.
+What this settles and what it costs:
 
-**Complication found in the code:** the initial plume volume V₀ **does not enter the dynamics at
-all**. It only sets the initial SO₂ concentration; the model is intensive and volume-invariant
-(`coupled/tests/test_boxvol_invariance.py`; the box-size sweep `run_boxsize.py:43` works purely by
-scaling the initial concentration). So the t=0 question is entirely a question about the *initial
-concentration*, and the UI must not imply a geometric dependence that does not exist.
-
-**Existing geometry is inconsistent with the spec.** The spec proposes a 10 m × 30 m cross-section;
-the 810-run ensemble uses 10 m × 10 m × 15 km (`run_ensemble.py:45`) and the D1 flagship a 30 km
-track (`run_dilution_d1_clean.py:61`). Phase 0 defaults follow the golden runs.
+- **The initial volume is a modelling choice, not a physical claim.** The wizard already says so
+  (stage 2: "V₀ does not enter the dynamics"), and the stage-3 concentration-vs-volume panel is the
+  sensitivity of results to that choice, made visible. That panel stays: it is no longer "the open
+  t = 0 question" but it is exactly the sweep a careful user should look at.
+- **The caveat changes character rather than disappearing.** Results are conditional on the chosen
+  initial concentration; comparisons *within* an ensemble sharing a V₀ convention are clean, and
+  absolute particle numbers still inherit the choice. `CAVEATS.md` states it as a scope boundary now,
+  not an unresolved question.
+- **ASSUMPTION-5 loses its tracker.** The defaults follow the golden runs permanently, not "until
+  SCIENCE-2 resolves"; the spec's 10 m × 30 m cross-section is simply not adopted.
+- Same reasoning as the heating/buoyancy decision (SCIENCE-4): a wake-dynamics treatment needs a
+  different model, and pretending otherwise with a plausible parameterisation is the failure mode
+  this project exists to avoid.
 
 ---
 
-### SCIENCE-3 — Aerosol composition, mixing state, meteoric material · **OPEN** · blocks Phase 4 · [#55](https://github.com/reflective-org/SANDBOX/issues/55)
+### SCIENCE-3 — Aerosol composition, mixing state, meteoric material · **ANSWERED** (2026-08-18) · [#55](https://github.com/reflective-org/SANDBOX/issues/55)
 
-Required per background distribution: diameter basis (dry vs ambient, and at what water content if
-ambient), composition and mixing state (internal vs external, sulfate mass fraction), and whether
-meteoric material is represented at all.
+**Answered (Ali, 2026-08-18): pure sulfate, by assumption, to keep things simple — revisitable.**
+All aerosol, background and plume alike, is sulfate–water; there is no meteoric material, no organics
+and no mixing-state question, because with one composition everything is internally mixed by
+construction.
 
-**Partially constrained by the code already:** `coupled/backgrounds.py` defines six named
-lognormal backgrounds, seeded as sulfate-only (`Mk[:, SRTSO4]` in `tomas_bridge._seed_lognormal`),
-and `AMBIENT_BACKGROUNDS` marks which mode sets are specified at ambient vs STP — so the
-dry/ambient distinction exists but is per-dataset and implicit rather than a declared field. Meteoric
-material is **not** represented.
+This converts what the code already did implicitly into a stated assumption: the backgrounds are
+seeded sulfate-only (`Mk[:, SRTSO4]` in `tomas_bridge._seed_lognormal`), and the microphysics
+carries a single condensed composition. Recorded as **ASSUMPTION-8** with the code location, so
+"might change it later" has a single place to start from.
+
+Still per-dataset and worth keeping visible: the **dry vs ambient** diameter basis of each background
+(`AMBIENT_BACKGROUNDS` in `coupled/backgrounds.py`) is implicit in the dataset rather than a declared
+field. That is a data-description question, not a composition question, so it survives this answer —
+folded into the ASSUMPTION-8 record rather than kept as an open science item.
 
 ---
 

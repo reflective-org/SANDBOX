@@ -213,10 +213,10 @@ def bin_grid(config: RunConfig) -> dict[str, Any]:
 def concentration_sensitivity(config: RunConfig) -> dict[str, Any]:
     """Initial SO2 mixing ratio against plume volume, with this config marked (stage 3).
 
-    The point of the panel is SCIENCE-2. The t = 0 definition moves V0 by orders of magnitude, and
-    on a log-log axis that is a straight line the reader can walk along -- so "we have not decided
-    whether t = 0 is engine exit or vortex breakup" becomes a visible range of initial
-    concentrations rather than an abstract caveat.
+    The panel is the SCIENCE-2 caveat made visible. t = 0 is the moment the volume is defined
+    (answered 2026-08-18), so V0 is a modelling choice -- and on a log-log axis its consequence is a
+    straight line the reader can walk along: this is the sensitivity of the initial concentration to
+    a choice the model does not make for you.
 
     Pure ``studio.science``: no model import, so this panel costs nothing and needs no JAX.
     """

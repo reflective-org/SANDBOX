@@ -207,8 +207,9 @@ export function ParcelPanel({ config }: PanelProps) {
             from it.
           </p>
           <p className="parcel-note">
-            What counts as t = 0 — engine exit or post-vortex breakup — changes this volume by orders
-            of magnitude (SCIENCE-2). The next stage shows what that does to the concentration.
+            t = 0 is the moment this volume is defined (SCIENCE-2, answered); how the parcel formed
+            is out of scope. The volume is a modelling choice — the next stage shows what it does to
+            the concentration.
           </p>
         </div>
       </div>
@@ -240,7 +241,7 @@ export function ConcentrationPanel({ config, load }: PanelProps) {
   return (
     <Frame
       title="Initial SO₂ against plume volume"
-      hint="A straight line on log–log: the same mass in ten times the volume is a tenth the mixing ratio. The span is the open t = 0 question made visible (SCIENCE-2)."
+      hint="A straight line on log–log: the same mass in ten times the volume is a tenth the mixing ratio. The initial volume is a modelling choice (SCIENCE-2, answered) — this is your result's sensitivity to it."
       loading={loading}
       {...(error ? { error } : {})}
     >

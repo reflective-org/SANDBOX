@@ -7,7 +7,7 @@ repository, and this is the one cited, tested implementation:
 
 * **Plume volume and injected mass -> initial concentration** (``plume.py``). Six copies today, and
   they disagree: the ensemble uses a 15 km track and the D1 flagship a 30 km one -- a factor of two
-  in V0 for the same injected mass. Which is right depends on what t = 0 means (SCIENCE-2, #54).
+  in V0 for the same injected mass. t = 0 is the moment the volume is defined (SCIENCE-2, #54).
 * **dN/dlogDp and bin mid-points** (``size_distribution.py``). Four copies, written two ways which
   turn out to be algebraically identical -- measured agreement to a few ULP.
 * **Air number density** (``air.py``). A deliberate MIRROR of the model's, because this package may
