@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { HelpTip } from "./HelpTip";
 import { type FieldSpec, coerce, display } from "./schema";
 import type { StaleField } from "./types";
 
@@ -163,13 +164,18 @@ export function Field({
           {spec.label}
           {spec.unit ? <span className="unit"> ({spec.unit})</span> : null}
         </label>
-        {stateLabel ? <span className={`badge badge-${stateLabel}`}>{stateLabel}</span> : null}
+        <span className="field-head-right">
+          {stateLabel ? <span className={`badge badge-${stateLabel}`}>{stateLabel}</span> : null}
+          {spec.description || provenanceNote(spec) ? (
+            <HelpTip label={`about ${spec.label}`}>
+              {spec.description ? <span className="tip-desc">{spec.description}</span> : null}
+              <span className="tip-prov">{provenanceNote(spec)}</span>
+            </HelpTip>
+          ) : null}
+        </span>
       </div>
 
       {control(spec, value, disabled, emit)}
-
-      {spec.description ? <p className="field-desc">{spec.description}</p> : null}
-      <p className="field-prov">{provenanceNote(spec)}</p>
 
       {stale ? (
         <div className="stale-box">

@@ -15,6 +15,7 @@
 
 import { useEffect, useState } from "react";
 import { Chart, type Series } from "./Chart";
+import { HelpTip } from "./HelpTip";
 import { display, valueAt } from "./schema";
 import { tickLabel } from "./scales";
 
@@ -61,14 +62,17 @@ function usePanel(
 function Frame({
   title,
   hint,
+  help,
   loading,
   error,
   children,
 }: {
   title: string;
-  // `| undefined` rather than only `?`: exactOptionalPropertyTypes is on, so a caller passing
-  // `hint={maybeUndefined}` is different from a caller omitting it, and both are fine here.
+  // `hint` is VISIBLE and for data (totals, extremes -- numbers the reader scans for). `help` is
+  // the explanation, behind a CircleHelp hover per the design review: boxes hold controls and
+  // numbers, not paragraphs. `| undefined` because exactOptionalPropertyTypes is on.
   hint?: string | undefined;
+  help?: React.ReactNode;
   loading?: boolean | undefined;
   error?: string | undefined;
   children?: React.ReactNode;
@@ -76,7 +80,10 @@ function Frame({
   return (
     <section className="panel">
       <div className="panel-head">
-        <h3>{title}</h3>
+        <h3>
+          {title}
+          {help ? <HelpTip label={`about ${title}`}>{help}</HelpTip> : null}
+        </h3>
         {loading ? <span className="panel-status">computing…</span> : null}
       </div>
       {hint ? <p className="panel-hint">{hint}</p> : null}
@@ -116,10 +123,11 @@ export function SzaPanel({ config, load }: PanelProps) {
       hint={
         daylight === null
           ? undefined
-          : `${daylight} h of daylight; minimum SZA ${tickLabel(
+          : `${daylight} h of daylight · minimum SZA ${tickLabel(
               typeof data?.min_sza_deg === "number" ? data.min_sza_deg : 0,
-            )}°. Shaded is night, where photolysis stops.`
+            )}°`
       }
+      help="Photolysis follows the sun: this is what the configured day and latitude mean for the chemistry. Shaded bands are night, where photolysis stops. The release marker shows the solar angle the plume first sees."
       loading={loading}
       {...(error ? { error } : {})}
     >
@@ -164,8 +172,14 @@ export function ClimatologyPanel({ config, load }: PanelProps) {
       title="ERA5 temperature profile"
       hint={
         data
-          ? `Zonal-mean monthly climatology (1991–2020), ${String(data.dataset_id)} · ` +
-            `${selected === "era5" ? "the marked point IS the run's temperature" : "context — the run uses the typed values (dataset: user)"}`
+          ? selected === "era5"
+            ? "the marked point IS the run's temperature"
+            : "context — this run uses the typed values (dataset: user)"
+          : undefined
+      }
+      help={
+        data
+          ? `ERA5 zonal-mean monthly climatology, 1991–2020 (${String(data.dataset_id)}). The profile is drawn at this latitude and month; switch "Ambient state from" to era5 and the run derives its temperature and water vapour from it.`
           : undefined
       }
       loading={loading}
@@ -213,7 +227,7 @@ export function ParcelPanel({ config }: PanelProps) {
   return (
     <Frame
       title="Parcel geometry"
-      hint="Drawn from the values entered, at two different scales — the along-track length is three orders of magnitude larger than the cross-section."
+      help="Drawn from the values entered, at two different scales — the along-track length is three orders of magnitude larger than the cross-section. t = 0 is the moment this volume is defined; how the parcel formed is out of scope (SCIENCE-2)."
     >
       <div className="parcel">
         <svg viewBox="0 0 320 130" role="img" aria-label="parcel cross-section">
@@ -257,11 +271,7 @@ export function ParcelPanel({ config }: PanelProps) {
             Given <code>{specifiedBy.replace(/_/g, " ")}</code>; the rest of the emission follows
             from it.
           </p>
-          <p className="parcel-note">
-            t = 0 is the moment this volume is defined (SCIENCE-2, answered); how the parcel formed
-            is out of scope. The volume is a modelling choice — the next stage shows what it does to
-            the concentration.
-          </p>
+
         </div>
       </div>
     </Frame>
@@ -292,7 +302,7 @@ export function ConcentrationPanel({ config, load }: PanelProps) {
   return (
     <Frame
       title="Initial SO₂ against plume volume"
-      hint="A straight line on log–log: the same mass in ten times the volume is a tenth the mixing ratio. The initial volume is a modelling choice (SCIENCE-2, answered) — this is your result's sensitivity to it."
+      help="A straight line on log–log: the same mass in ten times the volume is a tenth the mixing ratio. The initial volume is a modelling choice (SCIENCE-2) — this panel is your result's sensitivity to it. Where the dashed background line crosses, the plume is indistinguishable from ambient."
       loading={loading}
       {...(error ? { error } : {})}
     >
@@ -337,11 +347,10 @@ export function DilutionPanel({ config, load }: PanelProps) {
       title="Volume expansion V(t)/V₀"
       hint={
         usesCurve
-          ? "Every regime drawn; the selected one is solid. The gap between D2 and D3 is a factor of three in dilution rate — easier to judge as two curves than as two names."
-          : `The CONSTANT regime ignores these curves and dilutes at a fixed ${display(
-              data?.constant_rate_per_s,
-            )} s⁻¹.`
+          ? undefined
+          : `CONSTANT regime: fixed ${display(data?.constant_rate_per_s)} s⁻¹ — these curves are not used.`
       }
+      help="Every regime is drawn; the selected one is solid. The gap between D2 and D3 is a factor of three in dilution rate — far easier to judge as two curves than as two names. Hover to read V/V₀ at a given time."
       loading={loading}
       {...(error ? { error } : {})}
     >
@@ -373,10 +382,9 @@ export function SizeDistributionPanel({ config, load }: PanelProps) {
       hint={
         total === null
           ? undefined
-          : `${tickLabel(total)} cm⁻³ total, seeded into ${display(
-              data?.n_bins,
-            )} bins. Dry diameters — SA and radius are wet.`
+          : `${tickLabel(total)} cm⁻³ total · ${display(data?.n_bins)} bins`
       }
+      help="The background distribution TOMAS is actually seeded with — the condensation sink the fresh plume competes against for H₂SO₄. Diameters are DRY; surface area and radius in results are wet."
       loading={loading}
       {...(error ? { error } : {})}
     >
@@ -417,7 +425,7 @@ export function SpeciesPanel({ config }: PanelProps) {
   return (
     <Frame
       title="Background gas composition"
-      hint="Log scale: these span orders of magnitude, and the oxidants at the bottom set how fast SO₂ becomes H₂SO₄."
+      help="Log scale: these span orders of magnitude, and the oxidants at the bottom set how fast SO₂ becomes H₂SO₄. Species not listed start at the mechanism's own initial condition."
     >
       <div className="bars">
         {entries.map(([name, value]) => (
@@ -457,7 +465,7 @@ export function BinsPanel({ config, load }: PanelProps) {
   return (
     <Frame
       title="Size resolution"
-      hint="Bin width in decades of diameter across a FIXED range (1.7 nm – 17.5 µm). Doubling the bins halves the width; the range does not move."
+      help="Bin width in decades of diameter across a FIXED range (1.7 nm – 17.5 µm). Doubling the bins halves the width; the range does not move. Narrower bins resolve a nucleation burst that a coarse grid smears across one bin."
       loading={loading}
       {...(error ? { error } : {})}
     >
