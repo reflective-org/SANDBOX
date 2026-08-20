@@ -169,11 +169,12 @@ export function ClimatologyPanel({ config, load }: PanelProps) {
         xLabel="temperature (K)"
         yLabel="pressure (hPa)"
         yLog
+        yReverse
         yDomain={[5, 300]}
         height={280}
         markers={boxP !== null && boxT !== null ? [{ x: boxT, y: boxP, label: "the box" }] : []}
         format={(v) => v.toFixed(1)}
-        caption="Pressure increases downward, as altitude decreases. The box marker moves with latitude, month and pressure."
+        caption="Up on the chart is up in the atmosphere: pressure falls with altitude, so 5 hPa is the top of the frame. The box marker moves with latitude, month and pressure."
       />
     </Frame>
   );

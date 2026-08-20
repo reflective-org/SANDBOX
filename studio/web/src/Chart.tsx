@@ -51,6 +51,12 @@ interface Props {
   markers?: Marker[];
   xDomain?: [number, number];
   yDomain?: [number, number];
+  /**
+   * Draw the y axis with the LARGER value at the bottom. For pressure as a vertical coordinate:
+   * pressure falls with altitude, so a profile reads correctly only when 300 hPa sits at the
+   * bottom of the frame and 5 hPa at the top -- the atmosphere the way anyone pictures it.
+   */
+  yReverse?: boolean;
   /** How a hovered value is written in the tooltip. */
   format?: (value: number) => string;
   caption?: string;
@@ -89,6 +95,7 @@ export function Chart({
   markers = [],
   xDomain,
   yDomain,
+  yReverse = false,
   format = (v) => tickLabel(v),
   caption,
 }: Props) {
@@ -114,7 +121,13 @@ export function Chart({
   };
 
   const x = makeScale(xd, [PAD.left, WIDTH - PAD.right], xLog);
-  const y = makeScale(yd, [height - PAD.bottom, PAD.top], yLog);
+  // The default puts the domain minimum at the bottom (SVG y grows downward, so the pixel range is
+  // inverted). yReverse swaps the pixel range instead of the domain, so ticks stay ascending.
+  const y = makeScale(
+    yd,
+    yReverse ? [PAD.top, height - PAD.bottom] : [height - PAD.bottom, PAD.top],
+    yLog,
+  );
   if (!x || !y) {
     return (
       <p className="chart-error">
