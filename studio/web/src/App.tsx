@@ -13,14 +13,37 @@
  * stage 3 cannot lose anything, because there was never a second copy to lose it from.
  */
 
+import {
+  Atom,
+  ClipboardCheck,
+  CloudHail,
+  FlaskConical,
+  SlidersHorizontal,
+  ThermometerSun,
+  Waves,
+  Wind,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, type ConfigState } from "./api";
 import { Field } from "./Field";
+import { HelpTip } from "./HelpTip";
 import { Review } from "./Review";
 import { PANELS_BY_STAGE } from "./panels";
 import { type FieldSpec, fieldSpec } from "./schema";
 import { valueAt } from "./schema";
 import type { JsonSchema, LayoutManifest, ResolvedPayload, RunBrief } from "./types";
+
+/** One lucide icon per stage, the way the SAI simulator's builder marks its sections. */
+const STAGE_ICONS: Record<string, React.ComponentType<{ size?: number | string }>> = {
+  environment: ThermometerSun,
+  plume_volume: Wind,
+  initial_concentration: FlaskConical,
+  dilution: Waves,
+  background_aerosol: CloudHail,
+  background_species: Atom,
+  physics: SlidersHorizontal,
+  review: ClipboardCheck,
+};
 
 export function App() {
   const [schema, setSchema] = useState<JsonSchema | null>(null);
@@ -216,6 +239,7 @@ export function App() {
           const staleHere = s.sections.some((section) =>
             section.fields.some((f) => staleByPath.has(f)),
           );
+          const Icon = STAGE_ICONS[s.id];
           return (
             <button
               key={s.id}
@@ -223,7 +247,7 @@ export function App() {
               className={`stage-tab${s.id === stage.id ? " current" : ""}${staleHere ? " has-stale" : ""}`}
               onClick={() => goTo(s.id)}
             >
-              <span className="num">{s.number}</span>
+              <span className="num">{Icon ? <Icon size={14} /> : s.number}</span>
               <span className="name">{s.title}</span>
             </button>
           );
@@ -256,34 +280,43 @@ export function App() {
             onSubmit={onSubmit}
           />
         ) : (
-          stage.sections.map((section) => (
-            <div className="section" key={section.title}>
-              <h3>{section.title}</h3>
-              {section.note ? <p className="note">{section.note}</p> : null}
-              <div className="fields">
-                {section.fields.map((path) => {
-                  const spec = specs.get(path);
-                  if (!spec) return null;
-                  return (
-                    <Field
-                      key={path}
-                      spec={spec}
-                      value={valueAt(payload.config, path)}
-                      overridden={Object.hasOwn(payload.overrides, path)}
-                      stale={staleByPath.get(path)}
-                      disabled={busy}
-                      onChange={onChange}
-                      onAccept={onAccept}
-                      onKeep={onKeep}
-                    />
-                  );
-                })}
-              </div>
+          <div className="stage-grid">
+            <div className="controls">
+              {stage.sections.map((section) => (
+                <div className="section" key={section.title}>
+                  <h3>
+                    {section.title}
+                    {section.note ? (
+                      <HelpTip label={`about ${section.title}`}>{section.note}</HelpTip>
+                    ) : null}
+                  </h3>
+                  <div className="fields">
+                    {section.fields.map((path) => {
+                      const spec = specs.get(path);
+                      if (!spec) return null;
+                      return (
+                        <Field
+                          key={path}
+                          spec={spec}
+                          value={valueAt(payload.config, path)}
+                          overridden={Object.hasOwn(payload.overrides, path)}
+                          stale={staleByPath.get(path)}
+                          disabled={busy}
+                          onChange={onChange}
+                          onAccept={onAccept}
+                          onKeep={onKeep}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))
+            <div className="viz">
+              {StagePanel ? <StagePanel config={payload.config} load={loadPanel} /> : null}
+            </div>
+          </div>
         )}
-
-        {StagePanel ? <StagePanel config={payload.config} load={loadPanel} /> : null}
 
         {error ? <p className="error">{error}</p> : null}
 
