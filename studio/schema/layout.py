@@ -235,7 +235,8 @@ STAGES: tuple[Stage, ...] = (
             Section(
                 title="Reference distribution",
                 fields=("background.aerosol",),
-                note="Three SABRE sets, the geoengineered stratosphere, or CUSTOM. Reference "
+                note="The three SABRE campaign sets, the geoengineered stratosphere, or CUSTOM. "
+                "Reference "
                 "distributions are ordinary inputs here; the spec's plan to make them reference "
                 "*runs* arrives with ensembles (Phase 7).",
             ),
@@ -251,7 +252,7 @@ STAGES: tuple[Stage, ...] = (
                     "background.custom_sigma2",
                 ),
                 note="Two lognormal modes (N, Dp, sigma), used only when the background is "
-                "CUSTOM. Defaults are SABR-220's single mode with N\u2082 = 0, so custom starts "
+                "CUSTOM. Defaults are SABRE-220's single mode with N\u2082 = 0, so custom starts "
                 "citable and unimodal; the panel redraws as you type.",
             ),
         ),

@@ -97,7 +97,8 @@ function Frame({
         {loading ? <span className="panel-status">computing…</span> : null}
       </div>
       {hint ? <p className="panel-hint">{hint}</p> : null}
-      {error ? <p className="chart-error">{error}</p> : children}
+      {error ? <p className="chart-error">{error}</p> : null}
+      {children}
     </section>
   );
 }
@@ -365,17 +366,41 @@ export function DilutionPanel({ config, load, onChange }: PanelProps) {
   >;
   const selected = typeof data?.selected === "string" ? data.selected : "";
   const usesCurve = data?.uses_curve !== false;
+  const [kError, setKError] = useState("");
   const equation = (data?.equation ?? null) as {
     early: string;
     late: string;
     k_unit: string;
+    k_min: number;
+    k_max: number;
   } | null;
   const custom = (data?.custom ?? null) as { k: number; volume_ratio: number[] } | null;
   const selectedK = regimes[selected]?.k ?? null;
 
   const commitK = () => {
+    if (kDraft.trim() === "") {
+      setKError("");
+      setExploreK(null);
+      return;
+    }
     const value = Number(kDraft);
-    setExploreK(kDraft.trim() !== "" && Number.isFinite(value) && value > 0 ? value : null);
+    if (!Number.isFinite(value)) {
+      setKError("not a number — e.g. 1.5e-8");
+      setExploreK(null);
+      return;
+    }
+    // Validate against the bounds the server declared, BEFORE any request: a bad k previously
+    // came back as a panel-level 422 that replaced the panel body, taking this very input with
+    // it -- an error state with no way out short of reloading. Reported from use.
+    if (equation && (value < equation.k_min || value > equation.k_max)) {
+      setKError(
+        `k must be within ${equation.k_min.toExponential(0)} … ${equation.k_max.toExponential(0)}`,
+      );
+      setExploreK(null);
+      return;
+    }
+    setKError("");
+    setExploreK(value);
   };
 
   const series: Series[] = Object.entries(regimes).map(([name, regime]) => ({
@@ -453,6 +478,7 @@ export function DilutionPanel({ config, load, onChange }: PanelProps) {
             inputMode="decimal"
             placeholder="e.g. 1.5e-8"
             value={kDraft}
+            className={kError ? "invalid" : ""}
             onChange={(e) => setKDraft(e.target.value)}
             onBlur={commitK}
             onKeyDown={(e) => {
@@ -462,6 +488,7 @@ export function DilutionPanel({ config, load, onChange }: PanelProps) {
               }
             }}
           />
+          {kError ? <span className="explore-error">{kError}</span> : null}
         </span>
       </div>
 

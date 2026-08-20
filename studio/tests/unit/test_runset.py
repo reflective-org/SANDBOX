@@ -71,14 +71,14 @@ PAPER_AXES = (
             AxisPoint(
                 label="sabr330",
                 assignments={
-                    "background.aerosol": BackgroundAerosol.SABR_330,
+                    "background.aerosol": BackgroundAerosol.SABRE_330,
                     "background.so2_pptv": 20.0,
                 },
             ),
             AxisPoint(
                 label="sabr220",
                 assignments={
-                    "background.aerosol": BackgroundAerosol.SABR_220,
+                    "background.aerosol": BackgroundAerosol.SABRE_220,
                     "background.so2_pptv": 20.0,
                 },
             ),
@@ -169,7 +169,7 @@ def test_the_golden_case_resolves_to_the_ensembles_values() -> None:
     assert config.site.temperature_k == 210.0
     assert config.site.pressure_mbar == 55.0
     assert config.site.h2o_ppmv == 6.9104
-    assert config.background.aerosol is BackgroundAerosol.SABR_220
+    assert config.background.aerosol is BackgroundAerosol.SABRE_220
     assert config.background.so2_pptv == 20.0
     assert config.dilution.regime is DilutionRegime.D2
     assert config.microphysics.condensation_alpha == 1.0

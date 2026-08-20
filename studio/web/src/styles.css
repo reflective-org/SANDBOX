@@ -1125,3 +1125,14 @@ figure.chart figcaption {
     color: #0c1424;
   }
 }
+
+/* Inline validation for the k explorer: the message sits AT the input, and the panel keeps its
+   content -- an error must never take away the control that would fix it. */
+.explore input.invalid {
+  border-color: var(--stale);
+}
+.explore-error {
+  font-size: 10.5px;
+  color: var(--stale);
+  font-family: var(--mono);
+}

@@ -57,7 +57,10 @@ class DilutionRegime(StrEnum):
 class BackgroundAerosol(StrEnum):
     """Background aerosol size distribution seeded into the initial TOMAS state.
 
-    Values match ``coupled.tomas_bridge.BACKGROUND_MODES`` keys, plus ``redcircles`` (the tabulated
+    SABRE values are spelled after the campaign -- Stratospheric Aerosol processes, Budget and
+    Radiative Effects -- and ``studio/modelio`` translates them to the model's internal ``sabr_*``
+    keys at the seam (the bridge's naming is the model's own). The remaining values match
+    ``coupled.tomas_bridge.BACKGROUND_MODES`` keys directly, plus ``redcircles`` (the tabulated
     loader, which is the model's default and is not in that dict).
 
     The lognormal mode sets are DIGITIZED from source plots, and the number concentrations are
@@ -74,12 +77,12 @@ class BackgroundAerosol(StrEnum):
     #: Marianna's tabulated distribution. The model's default.
     REDCIRCLES = "redcircles"
     #: SABRE young air (high N2O), one mode, peak dN/dlogDp ~1000 cm^-3.
-    SABR_330 = "sabr_330"
+    SABRE_330 = "sabre_330"
     #: SABRE mid air (310-320 ppbv N2O), peak ~320 cm^-3.
-    SABR_310 = "sabr_310"
+    SABRE_310 = "sabre_310"
     #: SABRE aged air (220-230 ppbv N2O), Dg = 0.12 um, sigma_g = 1.6. The paper ensemble's clean
     #: background, and the one used by the golden case.
-    SABR_220 = "sabr_220"
+    SABRE_220 = "sabre_220"
     #: CESM G6 SAI, three modes, read at STP.
     CESM_G6 = "cesm_g6"
     #: CESM G6 with the source plot read as AMBIENT. Kept separate so ``CESM_G6`` stays

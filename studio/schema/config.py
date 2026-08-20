@@ -503,12 +503,13 @@ class Background(SchemaModel):
     """The air the plume is diluted into, and the aerosol it entrains."""
 
     aerosol: BackgroundAerosol = SciField(
-        default=BackgroundAerosol.SABR_220,
+        default=BackgroundAerosol.SABRE_220,
         unit=Unit.DIMENSIONLESS,
         label="Background aerosol",
         description=(
             "Background aerosol size distribution seeded into the initial TOMAS state and "
-            "entrained thereafter. The picker offers the three SABRE sets, the geoengineered "
+            "entrained thereafter. The picker offers the three SABRE campaign sets, the "
+            "geoengineered "
             "stratosphere (aer_geo, Pierce et al. AER 2D), and CUSTOM (two lognormal modes "
             "entered below). The lognormal sets are digitized from source plots, not published "
             "parameters."
@@ -537,7 +538,7 @@ class Background(SchemaModel):
         ge=0.0,
         label="N\u2081",
         description=(
-            "Mode 1 number concentration. Defaults are SABR-220's single mode, so CUSTOM starts "
+            "Mode 1 number concentration. Defaults are SABRE-220's single mode, so CUSTOM starts "
             "as a citable distribution rather than an invented one; zero removes the mode."
         ),
         provenance=Provenance.PAPER_ENSEMBLE,

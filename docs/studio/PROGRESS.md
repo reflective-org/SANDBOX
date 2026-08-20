@@ -63,7 +63,15 @@ shorter mode list at the seam, not a zero entry.
 Also: the max-wall-time description now says what it means instead of citing "BLOCKING-4" bare —
 raised in review as confusing, which it was.
 
-371 Python Tier-A (+7 net), 60 vitest (+2). Hash …d35ba6 → …2c09c6 (0.5.0).
+**Corrected in review, same day:** the campaign is **SABRE** (Stratospheric Aerosol processes,
+Budget and Radiative Effects), not SABR — enum values are now `sabre_*` and the seam translates to
+the model's internal `sabr_*` keys, which are the model's to rename, not the seam's. And the
+explorer's error handling had a trap: a rejected k replaced the panel body, taking the input that
+would fix it — unrecoverable without a reload. Errors now render above panel content, and k is
+validated against the served bounds *before* any request, with the message inline at the input.
+
+371 Python Tier-A, 60 vitest. Hash …d35ba6 → …2c09c6 → …d1656e (0.5.0; the SABRE respelling moved
+it again pre-merge).
 
 ---
 

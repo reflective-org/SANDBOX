@@ -46,6 +46,17 @@ _REGIME_TO_MODEL: dict[DilutionRegime, str] = {
 }
 
 
+#: Studio's SABRE values -> the bridge's internal keys. The campaign is SABRE (Stratospheric
+#: Aerosol processes, Budget and Radiative Effects); the model's BACKGROUND_MODES keys predate the
+#: correction and stay as they are -- renaming a model-internal key is not the seam's call.
+#: Values absent here pass through unchanged.
+_BACKGROUND_KEYS: dict[str, str] = {
+    "sabre_330": "sabr_330",
+    "sabre_310": "sabr_310",
+    "sabre_220": "sabr_220",
+}
+
+
 def _custom_modes(run: RunConfig) -> tuple[tuple[float, float, float], ...]:
     """The CUSTOM background's modes, zero-N entries dropped, at least one remaining.
 
@@ -152,7 +163,7 @@ def to_scenario(config: RunConfig | ResolvedConfig) -> CoupledScenario:
             # mode", which at the seam is a shorter mode list rather than a zero entry.
             _custom_modes(run)
             if run.background.aerosol is BackgroundAerosol.CUSTOM
-            else run.background.aerosol.value
+            else _BACKGROUND_KEYS.get(run.background.aerosol.value, run.background.aerosol.value)
         ),
         background_modes_basis=(
             run.background.custom_basis.value

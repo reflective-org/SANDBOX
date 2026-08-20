@@ -99,15 +99,16 @@ def test_named_backgrounds_carry_no_basis(repo_root: Path) -> None:
     from studio.modelio.scenario import to_scenario
 
     scenario = to_scenario(resolve(RunConfig()).config)
+    # The seam translates the campaign spelling to the model's internal key.
     assert scenario.background_dist == "sabr_220"
     assert scenario.background_modes_basis == ""
 
 
 @pytest.mark.tier_a
-def test_the_default_custom_distribution_is_sabr_220(repo_root: Path) -> None:
+def test_the_default_custom_distribution_is_sabre_220(repo_root: Path) -> None:
     """CUSTOM with untouched defaults seeds the SAME distribution as sabr_220, bin for bin.
 
-    The defaults are SABR-220's mode with N2 = 0, so switching to CUSTOM starts from a citable
+    The defaults are SABRE-220's mode with N2 = 0, so switching to CUSTOM starts from a citable
     distribution rather than an invented one -- and this is the test that the zero mode really
     contributes nothing.
     """
