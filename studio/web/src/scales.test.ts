@@ -136,3 +136,23 @@ describe("extent", () => {
     expect(extent([], true)).toEqual([1, 10]);
   });
 });
+
+describe("minor log gridlines", () => {
+  it("marks 2..9 within each decade, inside the domain only", () => {
+    const scale = logScale([5, 300], [0, 1]);
+    const minors = scale.minorTicks ? scale.minorTicks() : [];
+    expect(minors).toContain(20);
+    expect(minors).toContain(90);
+    expect(minors).toContain(200);
+    expect(minors).not.toContain(2); // below the domain
+    expect(minors).not.toContain(400); // above it
+    // Majors are not minors: the decades belong to ticks(), labelled.
+    expect(minors).not.toContain(10);
+    expect(minors).not.toContain(100);
+  });
+
+  it("linear scales have none -- sub-decade structure is a log-axis concept", () => {
+    expect(linearScale([0, 10], [0, 1]).minorTicks).toBeUndefined();
+  });
+});
+

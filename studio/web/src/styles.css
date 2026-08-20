@@ -1017,3 +1017,111 @@ figure.chart figcaption {
     margin-top: 30px;
   }
 }
+
+/* ---- dilution equation + regime chips ---------------------------------------------------- */
+
+.equation-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+.equation {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.equation code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.equation-k {
+  font-size: 12px;
+  color: var(--ink-2);
+  font-family: var(--mono);
+}
+.equation-k strong {
+  color: var(--navy);
+}
+
+.regime-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 6px 11px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink-2);
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.chip:hover {
+  border-color: var(--steel);
+  color: var(--ink);
+}
+.chip.current {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: var(--surface);
+}
+.chip-name {
+  font: 700 12px/1 var(--sans);
+}
+.chip-k {
+  font: 400 9.5px/1 var(--mono);
+  opacity: 0.8;
+}
+.explore {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.explore label {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.explore input {
+  width: 110px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--raised);
+  color: var(--ink);
+  font: 12px var(--mono);
+}
+
+/* Sub-decade gridlines on log axes: present enough to read against, never as dark as majors. */
+.chart-grid.minor {
+  opacity: 0.4;
+  stroke-dasharray: 1 3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .chip {
+    color: var(--ink-2);
+  }
+  :root:not([data-theme="light"]) .chip:hover {
+    color: var(--ink);
+  }
+  :root:not([data-theme="light"]) .chip.current {
+    color: #0c1424;
+  }
+}

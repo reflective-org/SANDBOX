@@ -176,7 +176,8 @@ export function App() {
   // Passed to the panels so they never import the API client themselves. Stable, so a panel's
   // effect refires when the CONFIG changes and not merely because App re-rendered.
   const loadPanel = useCallback(
-    (panel: string, signal: AbortSignal) => api.preview(panel, payloadRef.current, signal),
+    (panel: string, signal: AbortSignal, params?: Record<string, unknown>) =>
+      api.preview(panel, payloadRef.current, signal, params),
     [],
   );
   const onKeep = useCallback((path: string) => void run((s) => api.keep(s, path)), [run]);
@@ -313,7 +314,9 @@ export function App() {
               ))}
             </div>
             <div className="viz">
-              {StagePanel ? <StagePanel config={payload.config} load={loadPanel} /> : null}
+              {StagePanel ? (
+                <StagePanel config={payload.config} load={loadPanel} onChange={onChange} />
+              ) : null}
             </div>
           </div>
         )}

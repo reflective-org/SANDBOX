@@ -36,6 +36,7 @@ from __future__ import annotations
 import math
 import os
 import sys
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import numpy as np
@@ -107,11 +108,56 @@ def sza_diurnal(config: RunConfig) -> dict[str, Any]:
     }
 
 
-def dilution_curve(config: RunConfig) -> dict[str, Any]:
+def _two_piece_k(segments: Any) -> float | None:
+    """The Kz coefficient of a two-piece regime, read out of the model's own segment tuples.
+
+    Introspected rather than re-typed, so a change to ``coupled/dilution.py`` cannot leave this
+    module quoting constants the model no longer uses. ``None`` for regimes that are not the
+    two-piece form (burst's four segments have three k values, not one).
+    """
+    if len(segments) != 2:
+        return None
+    _, (kind, _amplitude, k, _t0, _q) = segments[1]
+    return float(k) if kind == "exp" else None
+
+
+def _custom_two_piece_curve(seconds: np.ndarray, k: float) -> np.ndarray:
+    """V(t)/V0 for the two-piece form at an arbitrary Kz coefficient ``k``.
+
+    Built from the model's OWN pieces -- ``dilution._two_piece`` supplies the segments (so the
+    1585 continuity prefactor, the t^0.8 early phase and the 1.5 exponent are all the model's) and
+    ``dilution._eval_segment`` evaluates them. Only the piecewise dispatch below is repeated from
+    ``volume_ratio``, which takes a regime NAME and so cannot be called with a custom k.
+
+    Exploration only: the schema runs named regimes (or a constant rate), so a custom k here is a
+    picture of the family, never a runnable configuration -- the panel says so.
+    """
+    from coupled import dilution
+
+    time = np.maximum(np.asarray(seconds, dtype=float), 0.0)
+    conditions, values, t_start = [], [], 0.0
+    for t_end, segment in dilution._two_piece(k):
+        conditions.append((time >= t_start) & (time < t_end))
+        values.append(dilution._eval_segment(time, segment))
+        t_start = t_end
+    return np.select(conditions, values, default=values[-1])
+
+
+#: Bounds for the exploration k [s^-1.5]. An order of magnitude beyond the named regimes each way:
+#: wide enough to see the family's behaviour, narrow enough that exp(k * t^1.5) stays finite.
+_EXPLORE_K_MIN = 1e-10
+_EXPLORE_K_MAX = 1e-6
+
+
+def dilution_curve(config: RunConfig, params: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """V(t)/V0 for the configured regime, with every other regime for comparison (stage 4).
 
     The others are drawn because the choice between them is the point of the stage: D2 against D3
     is a factor of three in dilution rate, far easier to judge as two curves than as two names.
+
+    ``params["explore_k"]`` adds one more curve at an arbitrary Kz coefficient -- the interactive
+    "turn the constant and watch the family move" the panel offers. The equation and each regime's
+    k are reported so the panel can show WHAT the constant is, not just that there is one.
     """
     from coupled import dilution
 
@@ -119,17 +165,32 @@ def dilution_curve(config: RunConfig) -> dict[str, Any]:
     seconds = np.linspace(0.0, days * 86400.0, _CURVE_POINTS)
     regimes = {}
     for name in dilution.DILUTION_REGIMES:
+        label, segments = dilution.DILUTION_REGIMES[name]
         ratio = np.asarray(dilution.volume_ratio(seconds, name), dtype=float)
         regimes[name] = {
-            "label": str(dilution.DILUTION_REGIMES[name][0]),
+            "label": str(label),
             "volume_ratio": [float(v) for v in ratio],
             "final": float(ratio[-1]),
+            "k": _two_piece_k(segments),
         }
     selected = (
         config.dilution.regime.value
         if hasattr(config.dilution.regime, "value")
         else str(config.dilution.regime)
     )
+
+    custom = None
+    explore_k = (params or {}).get("explore_k")
+    if explore_k is not None:
+        k = float(explore_k)
+        if not _EXPLORE_K_MIN <= k <= _EXPLORE_K_MAX:
+            raise ValueError(
+                f"explore_k must be within [{_EXPLORE_K_MIN:g}, {_EXPLORE_K_MAX:g}] s^-1.5, "
+                f"got {k:g} -- an order of magnitude beyond the named regimes each way"
+            )
+        ratio = _custom_two_piece_curve(seconds, k)
+        custom = {"k": k, "volume_ratio": [float(v) for v in ratio], "final": float(ratio[-1])}
+
     return {
         "hours": [float(s) / 3600.0 for s in seconds],
         "days": [float(s) / 86400.0 for s in seconds],
@@ -139,6 +200,16 @@ def dilution_curve(config: RunConfig) -> dict[str, Any]:
         # rather than highlighting a curve that will not be used.
         "uses_curve": selected != "constant",
         "constant_rate_per_s": config.dilution.rate_per_s,
+        "custom": custom,
+        # The model's own two-piece form (coupled/dilution.py). The prefactor 1585 = (1e4)^0.8
+        # makes the pieces continuous at the break.
+        "equation": {
+            "early": "V/V\u2080 = t^0.8   (t \u2264 10\u2074 s)",
+            "late": "V/V\u2080 = 1585 \u00b7 exp(k \u00b7 (t \u2212 10\u2074)^1.5)",
+            "k_unit": "s^-1.5",
+            "k_min": _EXPLORE_K_MIN,
+            "k_max": _EXPLORE_K_MAX,
+        },
     }
 
 
@@ -301,8 +372,9 @@ def climatology_profile(config: RunConfig) -> dict[str, Any]:
 
 
 #: Panel name -> builder. The API exposes exactly these, so a typo in a panel name is a 404 naming
-#: the ones that exist rather than an empty chart.
-PANELS = {
+#: the ones that exist rather than an empty chart. ``Callable[..., ...]`` because one builder (the
+#: dilution explorer) takes panel parameters and the rest do not.
+PANELS: dict[str, Callable[..., dict[str, Any]]] = {
     "sza": sza_diurnal,
     "climatology": climatology_profile,
     "dilution": dilution_curve,
