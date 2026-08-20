@@ -203,3 +203,45 @@ def test_the_cheap_panels_need_no_jax() -> None:
         [sys.executable, "-c", script], capture_output=True, text=True, check=True
     )
     assert result.stdout.strip() == "False", "the SZA/concentration panels must not import JAX"
+
+
+@pytest.mark.tier_a
+def test_the_dilution_panel_reports_the_equation_and_each_regimes_k() -> None:
+    """The constant is INTROSPECTED from the model's segment tuples, never re-typed.
+
+    Compared against the same tuples here, so if coupled/dilution.py changes a coefficient this
+    fails on the spot rather than the panel quoting a k the model no longer uses.
+    """
+    from coupled import dilution
+    from studio.modelio.preview import dilution_curve
+
+    panel = dilution_curve(RunConfig())
+    assert "t^0.8" in panel["equation"]["early"]
+    assert "exp(k" in panel["equation"]["late"]
+    for name, (_, segments) in dilution.DILUTION_REGIMES.items():
+        expected = float(segments[1][1][2]) if len(segments) == 2 else None
+        assert panel["regimes"][name]["k"] == expected, name
+
+
+@pytest.mark.tier_a
+def test_the_explored_k_uses_the_models_own_machinery() -> None:
+    """At a named regime's k the custom curve must equal that regime's curve BIT FOR BIT.
+
+    This is the assertion that the explorer is the model's `_two_piece` + `_eval_segment` and not a
+    lookalike formula: a re-derivation would agree to a tolerance, not to the last bit.
+    """
+    from studio.modelio.preview import dilution_curve
+
+    panel = dilution_curve(RunConfig(), {"explore_k": 8.89e-9})
+    assert panel["custom"]["k"] == 8.89e-9
+    assert panel["custom"]["volume_ratio"] == panel["regimes"]["D2"]["volume_ratio"]
+
+
+@pytest.mark.tier_a
+def test_an_unphysical_exploration_k_is_refused() -> None:
+    """exp(k t^1.5) at k=1 over ten days is an overflow, not a curve (ADR-005)."""
+    from studio.modelio.preview import dilution_curve
+
+    with pytest.raises(ValueError, match="explore_k must be within"):
+        dilution_curve(RunConfig(), {"explore_k": 1.0})
+    assert dilution_curve(RunConfig(), {})["custom"] is None, "no params, no custom curve"

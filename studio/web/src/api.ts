@@ -78,10 +78,15 @@ export const api = {
    * A stage's preview panel. The first call in a server process imports JAX (~1.2 s); the rest are
    * about a millisecond, so the panels are cheap enough to refetch on every edit.
    */
-  preview: (panel: string, config: Record<string, unknown>, signal: AbortSignal) =>
+  preview: (
+    panel: string,
+    config: Record<string, unknown>,
+    signal: AbortSignal,
+    params?: Record<string, unknown>,
+  ) =>
     request<Record<string, unknown>>(`/api/preview/${panel}`, {
       method: "POST",
-      body: JSON.stringify({ config }),
+      body: JSON.stringify({ config, params: params ?? {} }),
       signal,
     }),
 

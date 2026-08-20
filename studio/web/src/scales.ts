@@ -20,6 +20,8 @@ export interface Scale {
   /** Range [min, max] in pixels. */
   range: [number, number];
   ticks: (count?: number) => number[];
+  /** Sub-decade positions (2..9 per decade) for a log scale; absent on linear scales. */
+  minorTicks?: () => number[];
   /** Inverse, for turning a pointer position back into a data value. */
   invert: (pixel: number) => number;
 }
@@ -78,6 +80,18 @@ export function logScale(domain: [number, number], range: [number, number]): Sca
   scale.domain = domain;
   scale.range = range;
   scale.invert = (pixel: number) => Math.pow(10, l0 + ((pixel - r0) / (r1 - r0 || 1)) * span);
+  scale.minorTicks = () => {
+    // 2..9 within each decade of the domain -- the sub-decade gridlines a log axis is read by.
+    // Lines only, no labels: labelled minors would crowd the axis into noise.
+    const out: number[] = [];
+    for (let power = Math.floor(l0) - 1; power <= Math.ceil(l1); power++) {
+      for (let mantissa = 2; mantissa <= 9; mantissa++) {
+        const value = mantissa * Math.pow(10, power);
+        if (value >= d0 && value <= d1) out.push(value);
+      }
+    }
+    return out;
+  };
   scale.ticks = (count = 6) => {
     const first = Math.floor(l0);
     const last = Math.ceil(l1);
