@@ -41,6 +41,7 @@ from studio.schema.enums import (
     ClimatologyDataset,
     DilutionRegime,
     EmissionInput,
+    ModeBasis,
     PhotolysisMode,
 )
 from studio.schema.fields import Provenance, SciField
@@ -49,7 +50,7 @@ from studio.schema.units import Unit
 #: The schema's own version. Bumped on any change to field names, semantics or defaults, because
 #: those change the config hash and therefore run identity (ADR-006). Old configs are never silently
 #: reinterpreted under new semantics.
-SCHEMA_VERSION = "0.4.0"
+SCHEMA_VERSION = "0.5.0"
 
 #: Stratospheric background gas composition [pptv] used by the 810-run ensemble
 #: (``run_ensemble.py:56-57``). Module-level so the default is one object with one source, and so a
@@ -507,11 +508,88 @@ class Background(SchemaModel):
         label="Background aerosol",
         description=(
             "Background aerosol size distribution seeded into the initial TOMAS state and "
-            "entrained thereafter. The lognormal sets are digitized from source plots, not "
-            "published parameters."
+            "entrained thereafter. The picker offers the three SABRE sets, the geoengineered "
+            "stratosphere (aer_geo, Pierce et al. AER 2D), and CUSTOM (two lognormal modes "
+            "entered below). The lognormal sets are digitized from source plots, not published "
+            "parameters."
         ),
         provenance=Provenance.PAPER_ENSEMBLE,
         source="coupled/paper_ensemble/TABLE_dilution_parameters.md (Background: SABRE aged air)",
+        # Valid for archived configs (Tier B's curated cases use cesm_g6), not offered for new
+        # ones -- curated by review 2026-08-20.
+        hidden_choices=["redcircles", "cesm_g6", "cesm_g6_amb"],
+    )
+    custom_basis: ModeBasis = SciField(
+        default=ModeBasis.STP,
+        unit=Unit.DIMENSIONLESS,
+        label="Custom modes quoted at",
+        description=(
+            "Whether the custom modes' number concentrations are per cm^3 at STP (the SABRE "
+            "sets' convention) or at the box's own T and p (aer_geo's). Only read when the "
+            "background is CUSTOM; the bridge refuses a custom mode list without it."
+        ),
+        provenance=Provenance.CONVENTION,
+        source="coupled/backgrounds.py MODE_BASES; per-dataset basis caveat in ASSUMPTION-8",
+    )
+    custom_n1_cm3: float = SciField(
+        default=49.0,
+        unit=Unit.PER_CM3,
+        ge=0.0,
+        label="N\u2081",
+        description=(
+            "Mode 1 number concentration. Defaults are SABR-220's single mode, so CUSTOM starts "
+            "as a citable distribution rather than an invented one; zero removes the mode."
+        ),
+        provenance=Provenance.PAPER_ENSEMBLE,
+        source="coupled/backgrounds.py BACKGROUND_MODES['sabr_220'] (49 cm^-3, 0.12 um, 1.6)",
+    )
+    custom_dg1_um: float = SciField(
+        default=0.12,
+        unit=Unit.MICROMETRE,
+        gt=0.0,
+        label="Dp\u2081",
+        description="Mode 1 geometric-mean (mode) diameter.",
+        provenance=Provenance.PAPER_ENSEMBLE,
+        source="coupled/backgrounds.py BACKGROUND_MODES['sabr_220']",
+    )
+    custom_sigma1: float = SciField(
+        default=1.6,
+        unit=Unit.DIMENSIONLESS,
+        gt=1.0,
+        label="\u03c3\u2081",
+        description="Mode 1 geometric standard deviation (> 1; 1 would be monodisperse).",
+        provenance=Provenance.PAPER_ENSEMBLE,
+        source="coupled/backgrounds.py BACKGROUND_MODES['sabr_220']",
+    )
+    custom_n2_cm3: float = SciField(
+        default=0.0,
+        unit=Unit.PER_CM3,
+        ge=0.0,
+        label="N\u2082",
+        description=(
+            "Mode 2 number concentration. Zero by default, so the custom distribution is "
+            "unimodal until a second mode is deliberately added."
+        ),
+        provenance=Provenance.CONVENTION,
+        source="zero = no second mode; a nonzero default would invent a coarse mode",
+    )
+    custom_dg2_um: float = SciField(
+        default=0.9,
+        unit=Unit.MICROMETRE,
+        gt=0.0,
+        label="Dp\u2082",
+        description="Mode 2 geometric-mean diameter. Inert while N\u2082 is zero.",
+        provenance=Provenance.CONVENTION,
+        source="a coarse-mode placeholder (aer_geo's coarse mode is 0.9 um); inert at N2 = 0",
+    )
+    custom_sigma2: float = SciField(
+        default=1.4,
+        unit=Unit.DIMENSIONLESS,
+        gt=1.0,
+        label="\u03c3\u2082",
+        description="Mode 2 geometric standard deviation. Inert while N\u2082 is zero.",
+        provenance=Provenance.CONVENTION,
+        source="a typical coarse-mode width; inert at N2=0",
     )
     so2_pptv: float = SciField(
         default=20.0,
@@ -858,11 +936,13 @@ class Termination(SchemaModel):
         gt=0.0,
         label="Max wall time",
         description=(
-            "Wall-clock cap enforced by the runner (task 0.6). 3600 s covers the measured 3-5 min "
-            "for a 10-day/80-bin case and 30-40 min for 60 days (BLOCKING-4), with headroom."
+            "Wall-clock cap enforced by the runner: the job is terminated past this, whatever the "
+            "simulation state. 3600 s covers the measured 3-5 min for a 10-day/80-bin case and "
+            "30-40 min for 60 days, with headroom."
         ),
         provenance=Provenance.CONVENTION,
-        source="docs/studio/ASSUMPTIONS.md ASSUMPTION-4",
+        source="the spec's wall-time budget question (BLOCKING-4), answered 2026-08-13: one hour "
+        "per run; recorded as ASSUMPTION-4",
     )
     max_sim_time_days: float | None = SciField(
         default=None,
@@ -906,7 +986,7 @@ class RunConfig(SchemaModel):
     physics, and two runs whose only difference is a name are the same computation.
     """
 
-    schema_version: Literal["0.4.0"] = SciField(
+    schema_version: Literal["0.5.0"] = SciField(
         default=SCHEMA_VERSION,
         unit=Unit.DIMENSIONLESS,
         label="Schema version",

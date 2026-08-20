@@ -34,6 +34,9 @@ from studio.schema.hashing import CANONICAL_FORM_VERSION
 #: * ...46cbe3 -> ...373ab4 (0.2.0) when the temperature feedback was refused. The VALUE of
 #:   heating_to_t did not change -- False either way -- but schema_version is part of the hashed
 #:   payload, which is what makes "old configs are never silently reinterpreted" true.
+#: * 0.4.0 -> 0.5.0 when the background picker was curated (redcircles/cesm hidden, not removed --
+#:   Tier B's archived cases stay valid) and CUSTOM arrived with its two lognormal modes. Default
+#:   run unchanged: sabr_220 either way.
 #: * 0.3.0 -> 0.4.0 when the ambient state gained its dataset selector (SCIENCE-1 implemented):
 #:   given_temperature_k / given_h2o_ppmv entered, temperature_k / h2o_ppmv derived. The default RUN
 #:   is unchanged -- USER dataset, the same 210 K -- but the config has three more fields.
@@ -47,7 +50,7 @@ from studio.schema.hashing import CANONICAL_FORM_VERSION
 #:   the last bit -- but the config that describes it now has four more fields, so it is a different
 #:   configuration and must hash differently. A schema that grew a field without moving the hash
 #:   would be one where two different configs could share an identity.
-GOLDEN_DEFAULT_HASH = "b8ca6becb22b49668e22d1f2dce8451b79bd3159c82fb0966cce182ccdd35ba6"
+GOLDEN_DEFAULT_HASH = "08616600e0ae51a2d7a7afa6578b282f9b188a75872ecf63c056a049e32c09c6"
 
 
 @pytest.mark.tier_a

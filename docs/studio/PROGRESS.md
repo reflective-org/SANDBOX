@@ -29,6 +29,44 @@ derivations to resolve rather than fixtures.
 
 ---
 
+### 2026-08-20 — Interactive dilution, full-profile hover, curated backgrounds, custom modes
+
+Four review requests in one message, all landed (schema 0.4.0 → 0.5.0):
+
+**The dilution tab is now the equation.** The model's two-piece form is displayed — `V/V₀ = t^0.8`
+then `1585·exp(k·(t−10⁴)^1.5)` — with the selected regime's k beside it. The regimes are clickable
+chips carrying their k values (introspected from `coupled/dilution.py`'s own segment tuples; a test
+compares against the same tuples). Clicking a chip sets `dilution.regime` for the run; a "try k" box
+draws any k in [1e-10, 1e-6] as a dashed gold curve using the model's own `_two_piece`/
+`_eval_segment` machinery — at a named regime's k the custom curve equals that regime's **bit for
+bit**, the test that proves it is not a lookalike formula. Custom k is a picture, not a runnable
+config, and says so.
+
+**The ERA5 profile hover reads the whole level** — p, z, T *and H₂O* — tracking the pointer along
+the pressure axis (charts gained `hoverAxis="y"`). This also retired a latent defect: x-tracking
+hover assumed sorted xs, which a temperature profile does not have. Log axes gained faint sub-decade
+gridlines (2–9 per decade).
+
+**The background picker is curated: hidden is not removed.** Offered: SABR-220/310/330, aer_geo
+(the geoengineered stratosphere), CUSTOM. Hidden: redcircles, cesm_g6, cesm_g6_amb — still *valid*,
+because Tier B's archived cases use cesm_g6 and a schema that refused them would disconnect the
+archive from its own configurations. `hidden_choices` in SciField metadata is what the generator
+filters on; an archival value still displays, marked "(archival)".
+
+**CUSTOM is a bimodal lognormal**: (N₁, Dp₁, σ₁) and (N₂, Dp₂, σ₂) plus an explicit STP/ambient
+basis (the bridge refuses a custom mode list without one — SCIENCE-3's per-dataset trap made a
+required field). Defaults are SABR-220's mode with N₂ = 0, so custom starts citable and unimodal;
+with untouched defaults it seeds the *same bins* as sabr_220, asserted bin-for-bin. **The seam
+filters zero-N modes** — found by test: the model refuses N ≤ 0 outright, so "no second mode" is a
+shorter mode list at the seam, not a zero entry.
+
+Also: the max-wall-time description now says what it means instead of citing "BLOCKING-4" bare —
+raised in review as confusing, which it was.
+
+371 Python Tier-A (+7 net), 60 vitest (+2). Hash …d35ba6 → …2c09c6 (0.5.0).
+
+---
+
 ### 2026-08-19 — The Reflective redesign
 
 Requested in review: cleaner, more intuitive controls; explanations behind a hoverable question

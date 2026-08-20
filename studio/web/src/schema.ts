@@ -35,6 +35,8 @@ export interface FieldSpec {
   kind: ControlKind;
   /** Choices for `enum`, with the value's real type preserved (40, not "40"). */
   choices: unknown[];
+  /** Valid-but-unoffered choices: archived configs keep them; the picker hides them. */
+  hiddenChoices: string[];
   /** The single accepted value for `fixed`. */
   fixedValue?: unknown;
   default: unknown;
@@ -127,6 +129,7 @@ export function fieldSpec(root: JsonSchema, path: string): FieldSpec {
     unit: meta.unit === "1" ? "" : (meta.unit ?? ""),
     kind,
     choices: node.enum ?? [],
+    hiddenChoices: meta.hidden_choices ?? [],
     default: node.default,
     provenance: meta.provenance,
     source: meta.source ?? "",

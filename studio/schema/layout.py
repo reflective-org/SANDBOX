@@ -235,8 +235,24 @@ STAGES: tuple[Stage, ...] = (
             Section(
                 title="Reference distribution",
                 fields=("background.aerosol",),
-                note="Reference distributions are ordinary inputs here; the spec's plan to make "
-                "them reference *runs* arrives with ensembles (Phase 7).",
+                note="Three SABRE sets, the geoengineered stratosphere, or CUSTOM. Reference "
+                "distributions are ordinary inputs here; the spec's plan to make them reference "
+                "*runs* arrives with ensembles (Phase 7).",
+            ),
+            Section(
+                title="Custom modes",
+                fields=(
+                    "background.custom_basis",
+                    "background.custom_n1_cm3",
+                    "background.custom_dg1_um",
+                    "background.custom_sigma1",
+                    "background.custom_n2_cm3",
+                    "background.custom_dg2_um",
+                    "background.custom_sigma2",
+                ),
+                note="Two lognormal modes (N, Dp, sigma), used only when the background is "
+                "CUSTOM. Defaults are SABR-220's single mode with N\u2082 = 0, so custom starts "
+                "citable and unimodal; the panel redraws as you type.",
             ),
         ),
     ),

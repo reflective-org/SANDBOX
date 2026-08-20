@@ -75,6 +75,7 @@ def SciField(
     gt: float | None = None,
     lt: float | None = None,
     examples: Sequence[Any] | None = None,
+    hidden_choices: Sequence[str] = (),
 ) -> Any:
     """A pydantic field carrying Studio's scientific metadata.
 
@@ -129,6 +130,11 @@ def SciField(
         "unit": unit.value,
         "provenance": provenance.value,
         "derived_from": list(derived_from),
+        # Enum members that stay VALID but are not offered by the picker. Archived configurations
+        # keep their meaning (a Tier B case that used cesm_g6 must still resolve), while the UI
+        # offers only the curated set. The form generator filters these out unless one is the
+        # field's current value.
+        "hidden_choices": list(hidden_choices),
     }
     for key, value in (("label", label), ("source", source), ("cite", cite), ("caveat", caveat)):
         if value is not None:

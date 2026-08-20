@@ -48,6 +48,8 @@ class Unit(StrEnum):
     KILOGRAM = "kg"
     KG_PER_SECOND = "kg s^-1"
     CM3 = "cm^3"
+    PER_CM3 = "cm^-3"
+    MICROMETRE = "um"
     PER_CM3_PER_S = "cm^-3 s^-1"
     CM3_PER_MOLEC_PER_S = "cm^3 molec^-1 s^-1"
     UM2_PER_CM3 = "um^2 cm^-3"
@@ -74,6 +76,8 @@ PINT_EXPRESSION: Final[dict[Unit, str | None]] = {
     Unit.METRE: "meter",
     Unit.KILOGRAM: "kilogram",
     Unit.CM3: "centimeter ** 3",
+    Unit.PER_CM3: "1 / centimeter ** 3",
+    Unit.MICROMETRE: "micrometer",
     Unit.PER_CM3_PER_S: "1 / centimeter ** 3 / second",
     Unit.CM3_PER_MOLEC_PER_S: None,  # `molec` is a molecule count; pint has no such unit
     Unit.UM2_PER_CM3: "micrometer ** 2 / centimeter ** 3",

@@ -140,6 +140,8 @@ def test_which_numeric_fields_have_no_upper_bound() -> None:
             unbounded.append(path)
     # 0.4.0: temperature and water vapour left the census (derived fields carry no bound of
     # their own); their entered given_* twins joined it. Net count unchanged at 20.
-    assert len(unbounded) == 20, f"the set of unbounded fields changed: {unbounded}"
+    # 0.5.0 added the six custom-mode numerics (N, Dp, sigma x2), all lower-bounded only --
+    # deliberately part of the same open question (#91) as the rest.
+    assert len(unbounded) == 26, f"the set of unbounded fields changed: {unbounded}"
     assert "injection.platform_speed_m_s" in unbounded, "added in 0.3.0, still unbounded above"
     assert "site.given_temperature_k" in unbounded

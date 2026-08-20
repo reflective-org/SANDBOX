@@ -14,6 +14,8 @@ export interface XStudio {
   source?: string;
   cite?: string;
   derived_from?: string[];
+  /** Enum values that stay valid (archived configs) but are not offered by the picker. */
+  hidden_choices?: string[];
   /**
    * The field's constraint, as the comparison operators Pydantic was given: `{gt: 0}`,
    * `{ge: -90, le: 90}`, `{ge: 0, lt: 366}`. A dict, **not** a `[min, max]` tuple -- typing it as a

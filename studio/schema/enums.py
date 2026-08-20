@@ -86,7 +86,11 @@ class BackgroundAerosol(StrEnum):
     #: reproducible.
     CESM_G6_AMB = "cesm_g6_amb"
     #: AER 2D geoengineered stratosphere (Pierce et al., 5 Mt-S/yr, 95 nm case), ambient basis.
+    #: The curated picker's "geoengineering" option (the spec's GEOENG reference case).
     AER_GEO = "aer_geo"
+    #: User-supplied bimodal lognormal: two (N, Dg, sigma) modes entered on stage 5. Seeded through
+    #: the same bridge path as the named sets (tomas_bridge handles an explicit mode list).
+    CUSTOM = "custom"
 
 
 class EmissionInput(StrEnum):
@@ -121,6 +125,20 @@ class EmissionInput(StrEnum):
     EMISSION_RATE = "emission_rate"
     #: Give how long the platform emits; rate follows as M/t and length as v*t.
     EMISSION_DURATION = "emission_duration"
+
+
+class ModeBasis(StrEnum):
+    """Whether a custom background's number concentrations are quoted at STP or ambient.
+
+    Mirrors ``coupled.backgrounds.MODE_BASES`` -- the bridge refuses a custom mode list without an
+    explicit basis, precisely because the named sets differ on it silently (SCIENCE-3's per-dataset
+    caveat, recorded in ASSUMPTION-8).
+    """
+
+    #: dN/dlogDp quoted per cm^3 at standard temperature and pressure (the SABR sets' convention).
+    STP = "stp"
+    #: Quoted at the box's own T and p (the AER_GEO convention).
+    AMBIENT = "ambient"
 
 
 class ClimatologyDataset(StrEnum):
@@ -160,5 +178,6 @@ __all__ = [
     "ClimatologyDataset",
     "DilutionRegime",
     "EmissionInput",
+    "ModeBasis",
     "PhotolysisMode",
 ]
