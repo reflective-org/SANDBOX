@@ -57,6 +57,13 @@ interface Props {
    * bottom of the frame and 5 hPa at the top -- the atmosphere the way anyone pictures it.
    */
   yReverse?: boolean;
+  /**
+   * A second LABELING of the y axis on the right edge -- the same positions in different units
+   * (altitude for a pressure axis), never an independent second scale. Each tick names a position
+   * in the PRIMARY y domain.
+   */
+  rightTicks?: { y: number; label: string }[];
+  rightLabel?: string;
   /** How a hovered value is written in the tooltip. */
   format?: (value: number) => string;
   caption?: string;
@@ -96,6 +103,8 @@ export function Chart({
   xDomain,
   yDomain,
   yReverse = false,
+  rightTicks = [],
+  rightLabel,
   format = (v) => tickLabel(v),
   caption,
 }: Props) {
@@ -244,6 +253,34 @@ export function Chart({
             {s.label}
           </text>
         ))}
+
+        {rightTicks.map((tick) => (
+          <g key={`right-${tick.label}`}>
+            <line
+              className="chart-axis"
+              x1={WIDTH - PAD.right}
+              x2={WIDTH - PAD.right + 5}
+              y1={y(tick.y)}
+              y2={y(tick.y)}
+            />
+            <text
+              className="chart-tick"
+              x={WIDTH - PAD.right + 8}
+              y={y(tick.y)}
+              dy="0.32em"
+            >
+              {tick.label}
+            </text>
+          </g>
+        ))}
+        {rightLabel && rightTicks.length ? (
+          <text
+            className="chart-axis-label"
+            transform={`translate(${WIDTH - 10} ${PAD.top + 4}) rotate(90)`}
+          >
+            {rightLabel}
+          </text>
+        ) : null}
 
         {markers.map((marker) => (
           <g key={marker.label}>

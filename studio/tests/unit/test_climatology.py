@@ -161,3 +161,43 @@ def test_era5_runs_record_the_dataset_in_provenance(repo_root: object) -> None:
     record = record_for(resolve(_era5()), repo_root=root)
     assert record.datasets == {climatology.DATASET_ID: climatology.load().sha256}
     assert record_for(resolve(RunConfig()), repo_root=root).datasets == {}
+
+
+@pytest.mark.tier_a
+def test_altitude_and_pressure_agree_with_the_site_name() -> None:
+    """The ensemble's site is literally labelled ``30N_20km`` at 55 hPa; the product must agree.
+
+    Bounds are generous (19-22 km) because the 55 hPa surface moves with season and latitude --
+    but a wrong-axis or wrong-units bug lands kilometres away, not hundreds of metres.
+    """
+    z = climatology.geopotential_height_m(month=6, latitude_deg=30.0, pressure_mbar=55.0)
+    assert 19_000.0 < z < 22_000.0, f"{z} m is not ~20 km"
+
+
+@pytest.mark.tier_a
+def test_height_falls_as_pressure_rises() -> None:
+    """Monotonicity across the whole level range -- the relation the right axis relies on."""
+    heights = [
+        climatology.geopotential_height_m(month=6, latitude_deg=30.0, pressure_mbar=float(p))
+        for p in (5, 30, 100, 300)
+    ]
+    assert heights == sorted(heights, reverse=True)
+
+
+@pytest.mark.tier_a
+def test_the_profile_panel_carries_the_altitude_labeling(repo_root: object) -> None:
+    """Round-km ticks placed at their true pressures, and the box's own altitude."""
+    from studio.modelio.preview import climatology_profile
+
+    panel = climatology_profile(RunConfig())
+    assert panel["box_altitude_km"] == pytest.approx(20.2, abs=0.5)
+    ticks = panel["altitude_ticks"]
+    assert [t["km"] for t in ticks] == sorted({t["km"] for t in ticks}), "ascending, no duplicates"
+    assert all(t["km"] % 5 == 0 for t in ticks), "round kilometres only"
+    for tick in ticks:
+        back = climatology.geopotential_height_m(
+            month=6, latitude_deg=30.0, pressure_mbar=tick["pressure_hpa"]
+        )
+        # Round-trip through the inverse interpolation: the tick must sit where it claims, within
+        # the interpolation's own error (log-p linear both ways).
+        assert back / 1000.0 == pytest.approx(tick["km"], abs=0.1)

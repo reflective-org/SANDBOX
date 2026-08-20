@@ -191,19 +191,39 @@ def h2o_ppmv(*, month: int, latitude_deg: float, pressure_mbar: float) -> float:
     return specific_humidity_to_ppmv(q)
 
 
+def geopotential_height_m(*, month: int, latitude_deg: float, pressure_mbar: float) -> float:
+    """Climatological geopotential height at (month, latitude, pressure).
+
+    The product's own z field (ERA5 geopotential / g0), so pressure-to-altitude is the atmosphere's
+    actual relation at this latitude and month rather than a standard-atmosphere approximation --
+    the 55 hPa surface is ~500 m higher in the tropics than at the pole, and this carries that.
+    """
+    c = load()
+    return _interpolate(
+        c.geopotential_height_m,
+        month=month,
+        latitude_deg=latitude_deg,
+        pressure_mbar=pressure_mbar,
+        climatology=c,
+    )
+
+
 def profile(*, month: int, latitude_deg: float) -> dict[str, list[float]]:
     """T and H2O against pressure at (month, latitude) -- the stage-1 preview panel's data."""
     c = load()
-    out_t, out_q = [], []
+    out_t, out_q, out_z = [], [], []
     for level in c.level_hpa:
-        out_t.append(
-            temperature_k(month=month, latitude_deg=latitude_deg, pressure_mbar=float(level))
+        pressure = float(level)
+        out_t.append(temperature_k(month=month, latitude_deg=latitude_deg, pressure_mbar=pressure))
+        out_q.append(h2o_ppmv(month=month, latitude_deg=latitude_deg, pressure_mbar=pressure))
+        out_z.append(
+            geopotential_height_m(month=month, latitude_deg=latitude_deg, pressure_mbar=pressure)
         )
-        out_q.append(h2o_ppmv(month=month, latitude_deg=latitude_deg, pressure_mbar=float(level)))
     return {
         "level_hpa": [float(level) for level in c.level_hpa],
         "temperature_k": out_t,
         "h2o_ppmv": out_q,
+        "geopotential_height_m": out_z,
     }
 
 
@@ -213,6 +233,7 @@ __all__ = [
     "MOLAR_MASS_WATER_G_PER_MOL",
     "Climatology",
     "ClimatologyUnavailableError",
+    "geopotential_height_m",
     "h2o_ppmv",
     "load",
     "profile",

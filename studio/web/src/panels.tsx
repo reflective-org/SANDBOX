@@ -150,7 +150,14 @@ export function ClimatologyPanel({ config, load }: PanelProps) {
   const temperature = nums(data, "temperature_k");
   const boxP = typeof data?.box_pressure_mbar === "number" ? data.box_pressure_mbar : null;
   const boxT = typeof data?.box_temperature_k === "number" ? data.box_temperature_k : null;
+  const boxKm = typeof data?.box_altitude_km === "number" ? data.box_altitude_km : null;
   const selected = typeof data?.selected_dataset === "string" ? data.selected_dataset : "user";
+  const altitudeTicks = Array.isArray(data?.altitude_ticks)
+    ? (data.altitude_ticks as { km: number; pressure_hpa: number }[]).map((tick) => ({
+        y: tick.pressure_hpa,
+        label: `${tick.km}`,
+      }))
+    : [];
 
   return (
     <Frame
@@ -165,16 +172,22 @@ export function ClimatologyPanel({ config, load }: PanelProps) {
       {...(error ? { error } : {})}
     >
       <Chart
-        series={[{ name: "T", xs: temperature, ys: levels, label: "ERA5 T" }]}
+        series={[{ name: "T", xs: temperature, ys: levels }]}
         xLabel="temperature (K)"
         yLabel="pressure (hPa)"
         yLog
         yReverse
         yDomain={[5, 300]}
         height={280}
-        markers={boxP !== null && boxT !== null ? [{ x: boxT, y: boxP, label: "the box" }] : []}
+        rightTicks={altitudeTicks}
+        rightLabel="altitude (km)"
+        markers={
+          boxP !== null && boxT !== null
+            ? [{ x: boxT, y: boxP, label: boxKm !== null ? `the box · ${boxKm.toFixed(1)} km` : "the box" }]
+            : []
+        }
         format={(v) => v.toFixed(1)}
-        caption="Up on the chart is up in the atmosphere: pressure falls with altitude, so 5 hPa is the top of the frame. The box marker moves with latitude, month and pressure."
+        caption="Up on the chart is up in the atmosphere. Altitude on the right is the same axis in kilometres — the product's own geopotential at this latitude and month, not a standard atmosphere."
       />
     </Frame>
   );
