@@ -94,4 +94,21 @@ export const api = {
     post<{ run_id: string; config_hash: string; state: string }>("/api/runs", { config, label }),
 
   runs: () => request<RunBrief[]>("/api/runs"),
+
+  /** A finished run's RunSummary (ADR-004: figures read this, never the raw npz). */
+  summary: (runId: string) => request<Record<string, unknown>>(`/api/runs/${runId}/summary`),
+
+  /**
+   * Follow one run's state over the API's Server-Sent Events stream. The server pushes a
+   * RunBrief-shaped payload on every state change and closes after the terminal one; network
+   * errors also close the source so a dead stream cannot look like a run stuck in `running`.
+   */
+  watch: (runId: string, onUpdate: (run: RunBrief) => void): (() => void) => {
+    const source = new EventSource(`/api/events/runs/${runId}`);
+    source.addEventListener("state", (event) => {
+      onUpdate(JSON.parse((event as MessageEvent).data) as RunBrief);
+    });
+    source.onerror = () => source.close();
+    return () => source.close();
+  },
 };

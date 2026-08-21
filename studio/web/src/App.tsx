@@ -27,6 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, type ConfigState } from "./api";
 import { Field } from "./Field";
 import { HelpTip } from "./HelpTip";
+import { Results, type RunSummaryPayload } from "./Results";
 import { Review } from "./Review";
 import { PANELS_BY_STAGE } from "./panels";
 import { type FieldSpec, fieldSpec } from "./schema";
@@ -56,6 +57,8 @@ export function App() {
   const [submitting, setSubmitting] = useState(false);
   const [runs, setRuns] = useState<RunBrief[]>([]);
   const [reference, setReference] = useState<Record<string, unknown>>({});
+  const [selectedRun, setSelectedRun] = useState<string | null>(null);
+  const [summaries, setSummaries] = useState<Record<string, RunSummaryPayload>>({});
 
   /**
    * Navigate. Assigning the hash rather than calling `history.replaceState` is deliberate: it
@@ -98,6 +101,62 @@ export function App() {
       }
     })();
   }, []);
+
+  // Every non-terminal run gets one SSE subscription, opened when it first appears and closed on
+  // its terminal state (the server closes the stream; the cleanup below covers unmount). This is
+  // what makes the rail move without a reload: the server has pushed states since Phase 0, the
+  // wizard just never listened.
+  // Sockets live in a ref and are closed ONLY on the run's terminal state or unmount. The first
+  // version closed them in the effect's own cleanup -- which runs on every `runs` change, i.e. on
+  // the very first pushed update -- while the already-watched set prevented reopening. Net effect:
+  // each stream died the moment it delivered once, and the rail froze at `running` while the
+  // server had long since said `succeeded`. Found by driving a real run and comparing against the
+  // API's answer.
+  const sockets = useRef(new Map<string, () => void>());
+  useEffect(() => {
+    for (const run of runs) {
+      const terminal = ["succeeded", "failed", "cancelled", "terminated_on_limit"].includes(
+        run.state,
+      );
+      const close = sockets.current.get(run.run_id);
+      if (terminal) {
+        if (close) {
+          close();
+          sockets.current.delete(run.run_id);
+        }
+        continue;
+      }
+      if (close) continue;
+      sockets.current.set(
+        run.run_id,
+        api.watch(run.run_id, (update) => {
+          setRuns((current) =>
+            current.map((r) => (r.run_id === update.run_id ? { ...r, ...update } : r)),
+          );
+        }),
+      );
+    }
+  }, [runs]);
+  useEffect(() => {
+    const open = sockets.current;
+    return () => open.forEach((close) => close());
+  }, []);
+
+  // A selected run's summary, fetched when it exists -- and refetched when the run SUCCEEDS while
+  // being watched, which is the moment the summary appears.
+  const selected = runs.find((r) => r.run_id === selectedRun) ?? null;
+  useEffect(() => {
+    if (!selectedRun || summaries[selectedRun] || selected?.state !== "succeeded") return;
+    void api
+      .summary(selectedRun)
+      .then((payload) =>
+        setSummaries((current) => ({
+          ...current,
+          [selectedRun]: payload as unknown as RunSummaryPayload,
+        })),
+      )
+      .catch(() => undefined); // 404 = not finished yet; the watcher will flip state and retry
+  }, [selectedRun, selected?.state, summaries]);
 
   // Follow the hash while the page is open, not only at mount. Without this, browser back/forward
   // moves the URL and leaves the view where it was -- and a hash typed into the address bar does
@@ -189,8 +248,8 @@ export function App() {
       try {
         const accepted = await api.submit(payload.config, label);
         setRuns(await api.runs());
+        setSelectedRun(accepted.run_id);
         setError("");
-        console.info(`submitted ${accepted.run_id} (${accepted.state})`);
       } catch (err) {
         setError(err instanceof ApiError ? err.message : String(err));
       } finally {
@@ -256,7 +315,14 @@ export function App() {
       </nav>
 
       <section className="stage">
-        <div className="stage-head">
+        {selected ? (
+          <Results
+            run={selected}
+            summary={summaries[selected.run_id] ?? null}
+            onClose={() => setSelectedRun(null)}
+          />
+        ) : null}
+        <div className="stage-head" hidden={!!selected}>
           <h2>
             {stage.number}. {stage.title}
           </h2>
@@ -269,7 +335,7 @@ export function App() {
           </p>
         </div>
 
-        {stage.id === "review" ? (
+        {selected ? null : stage.id === "review" ? (
           <Review
             layout={layout}
             specs={specs}
@@ -323,7 +389,7 @@ export function App() {
 
         {error ? <p className="error">{error}</p> : null}
 
-        <div className="nav-row">
+        <div className="nav-row" hidden={!!selected}>
           <button
             type="button"
             className="ghost"
@@ -357,10 +423,16 @@ export function App() {
           <ul>
             {runs.map((r) => (
               <li key={r.run_id}>
-                <span className="run-label">{r.label || r.run_id.slice(0, 8)}</span>
-                <span className={`run-state state-${r.state}`}>{r.state}</span>
-                <code className="run-hash">{r.config_hash.slice(0, 12)}</code>
-                {r.reproducible ? null : <span className="dirty">dirty checkout</span>}
+                <button
+                  type="button"
+                  className={`run-open${r.run_id === selectedRun ? " current" : ""}`}
+                  onClick={() => setSelectedRun(r.run_id)}
+                >
+                  <span className="run-label">{r.label || r.run_id.slice(0, 8)}</span>
+                  <span className={`run-state state-${r.state}`}>{r.state}</span>
+                  <code className="run-hash">{r.config_hash.slice(0, 12)}</code>
+                  {r.reproducible ? null : <span className="dirty">dirty checkout</span>}
+                </button>
               </li>
             ))}
           </ul>
