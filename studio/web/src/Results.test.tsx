@@ -64,17 +64,49 @@ const summary: RunSummaryPayload = {
     total_number_cm3: 11227.3,
     basis: "dry",
   },
+  size_distribution_history: {
+    time_days: [0, 0.5, 1],
+    diameter_um: [0.01, 0.05, 0.2],
+    dn_dlogdp_cm3: [
+      [1e6, 10, 1], // nucleation burst in the smallest bin, early
+      [100, 20000, 50],
+      [10, 5000, 400],
+    ],
+    basis: "dry",
+    stride: 1,
+  },
 };
 
 describe("Results", () => {
-  it("shows the headline from the RUN and all three charts from the summary", () => {
+  it("shows the headline from the RUN, the time series, and the distribution explorer", () => {
     act(() => root.render(<Results run={run} summary={summary} onClose={() => {}} />));
     const tiles = [...container.querySelectorAll(".stat-value")].map((el) => el.textContent);
     expect(tiles.join(" | ")).toContain("15.05 pptv");
     expect(tiles.join(" | ")).not.toContain("0 pptv"); // the confident-zeros regression
-    expect(container.querySelectorAll(".results-charts figure.chart")).toHaveLength(3);
     expect(container.textContent).toContain("open_system_dilution");
-    expect(container.textContent).toContain("11227.3");
+    // The banana plot renders cells, and the slider + log/linear toggle exist.
+    expect(container.querySelectorAll("figure.heatmap rect").length).toBeGreaterThan(5);
+    expect(container.querySelector("#time-slider")).not.toBeNull();
+    expect(container.textContent).toContain("log y");
+  });
+
+  it("the slider changes which spectrum is drawn, and shows nucleation early", () => {
+    act(() => root.render(<Results run={run} summary={summary} onClose={() => {}} />));
+    const slider = container.querySelector("#time-slider") as HTMLInputElement;
+    // Default is the LAST time; move to t=0, where the fixture's nucleation burst lives.
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(slider, "0");
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+      slider.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.textContent).toContain("t = 0.00 d");
+  });
+
+  it("the surface-area spectrum is pi Dp^2 times the number spectrum, dry basis", () => {
+    act(() => root.render(<Results run={run} summary={summary} onClose={() => {}} />));
+    // Stated on the chart itself, so nobody mistakes it for the model's wet SA series.
+    expect(container.textContent).toContain("π·Dp²·dN/dlogDp at the DRY diameter");
   });
 
   it("says what is happening while there is no summary, instead of an empty shell", () => {

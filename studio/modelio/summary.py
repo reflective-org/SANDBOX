@@ -36,7 +36,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 #: Bumped whenever the reduction changes shape or meaning. Stored in every summary so a comparison
 #: view can refuse to plot two runs reduced under different rules rather than plotting them anyway.
-SUMMARY_SCHEMA_VERSION = "0.1.0"
+SUMMARY_SCHEMA_VERSION = "0.2.0"
 
 #: Seconds per day, for the time axis. Named rather than inline (studio/CLAUDE.md).
 SECONDS_PER_DAY = 86400.0
@@ -100,6 +100,31 @@ class SizeDistribution(BaseModel):
     total_number_cm3: float
 
 
+class SizeDistributionHistory(BaseModel):
+    """The number spectrum over time: dN/dlogDp on (time x bin), DRY diameters.
+
+    Added in summary 0.2.0, prompted by review: the final spectrum alone hides nucleation, because
+    by the end of a run the burst has grown and coagulated out of the small bins -- the reviewer
+    read that as "no nucleation" when the npz showed dN/dlogDp peaking at 1.9e7 cm^-3 twelve hours
+    in. This carries what a banana plot and a time slider need.
+
+    Time is decimated by a UNIFORM stride (never a coarsening grid -- CAVEATS.md: non-uniform
+    resampling aliases the morning number spikes by up to 8x), capped so a 60-day run stays a few
+    hundred kB of JSON. ``stride`` says what was kept, so nobody mistakes the sampling for the
+    model's own resolution.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    time_days: tuple[float, ...]
+    diameter_um: tuple[float, ...]
+    #: Row i is dN/dlogDp [cm^-3] across the bins at time_days[i].
+    dn_dlogdp_cm3: tuple[tuple[float, ...], ...]
+    basis: Basis = Basis.DRY
+    #: Every ``stride``-th stored step was kept (1 = everything).
+    stride: int
+
+
 class ConservationCheck(BaseModel):
     """A budget check, or an explicit statement that it does not apply.
 
@@ -137,6 +162,7 @@ class RunSummary(BaseModel):
     time_days: tuple[float, ...] = ()
     series: dict[str, Series] = Field(default_factory=dict)
     final_size_distribution: SizeDistribution | None = None
+    size_distribution_history: SizeDistributionHistory | None = None
     sulfur_conservation: ConservationCheck | None = None
 
     def write(self, path: Path) -> Path:
@@ -171,6 +197,35 @@ _DIRECT_SERIES: tuple[tuple[str, str, Basis, str], ...] = (
     ("total_n", "cm^-3", Basis.DRY, "total particle number concentration"),
     ("V_ratio", "1", Basis.NOT_APPLICABLE, "plume volume expansion V(t)/V0"),
 )
+
+
+def _particle_mass_series(data: dict[str, Any]) -> Series | None:
+    """Dry particulate mass as H2SO4-equivalent [ug m^-3], from the stored sulfur count.
+
+    ``particulate_S`` is molecules of S per cm^3 in the particle phase. Under ASSUMPTION-8 (all
+    aerosol is pure sulfate) every particulate S atom sits in one H2SO4 unit, so mass follows from
+    the molar mass and Avogadro alone -- a unit conversion, not new physics, which is why it is
+    allowed to live here. DRY mass: the water the wet particle carries is deliberately excluded,
+    and the name says so.
+
+        ug/m^3 = molec/cm^3 * (M_H2SO4 / N_A) [g] * 1e6 [ug/g] * 1e6 [cm^3/m^3]
+    """
+    if "particulate_S" not in data:
+        return None
+    from studio.science.constants import AVOGADRO, H2SO4_MOLAR_MASS_G_PER_MOL
+
+    count = np.asarray(data["particulate_S"], dtype=np.float64)
+    mass = count * (H2SO4_MOLAR_MASS_G_PER_MOL / AVOGADRO) * 1e12
+    return Series(
+        values=tuple(float(v) for v in mass),
+        unit="ug m^-3",
+        basis=Basis.DRY,
+        description=(
+            "particulate mass as dry H2SO4-equivalent (ASSUMPTION-8: pure sulfate; excludes "
+            "aerosol water)"
+        ),
+    )
+
 
 #: Species whose number density IS its sulfur content -- each carries exactly one S atom. Used for
 #: the closed-box budget check. ``particulate_S`` is added separately; it is already a sulfur count.
@@ -234,6 +289,23 @@ def summarise_state_npz(
     if diluting:
         flags.append(SummaryFlag.OPEN_SYSTEM_DILUTION)
 
+    mass_series = _particle_mass_series(data)
+    if mass_series is not None:
+        series["particle_mass_ug_m3"] = mass_series
+
+    # Particulate sulfur as a mixing ratio, converted with the SAME air number density the gas
+    # series use -- so "H2SO4 in gas and in particles" is one quantity on one axis (pptv), instead
+    # of pptv and molec cm^-3 sharing a scale, which is the dual-axis lie in disguise. The raw
+    # molec cm^-3 series stays alongside for anyone comparing against the npz.
+    if "particulate_S" in data:
+        particulate = np.asarray(data["particulate_S"], dtype=np.float64)
+        series["particulate_S_pptv"] = Series(
+            values=tuple(float(v) for v in particulate / air_number_density * 1e12),
+            unit="pptv",
+            basis=Basis.NOT_APPLICABLE,
+            description="particle-phase sulfur as a mixing ratio (per S atom, ASSUMPTION-8)",
+        )
+
     return RunSummary(
         config_hash=config_hash,
         label=label,
@@ -242,7 +314,29 @@ def summarise_state_npz(
         time_days=tuple(time_s / SECONDS_PER_DAY),
         series=series,
         final_size_distribution=_final_size_distribution(data),
+        size_distribution_history=_size_distribution_history(data),
         sulfur_conservation=_sulfur_budget(data, species, state, diluting=diluting),
+    )
+
+
+#: Cap on kept time samples in the history. 240 keeps a 60-day run's spectrum near 350 kB of JSON
+#: while a 10-minute-step 1-day run (147 steps) passes through whole.
+_HISTORY_MAX_SAMPLES = 240
+
+
+def _size_distribution_history(data: dict[str, Any]) -> SizeDistributionHistory | None:
+    """The (time x bin) spectrum, uniformly strided to at most ``_HISTORY_MAX_SAMPLES`` rows."""
+    if "dNdlogDp" not in data or "dp_mid_um" not in data or "t" not in data:
+        return None
+    spectrum = np.asarray(data["dNdlogDp"], dtype=float)
+    times = np.asarray(data["t"], dtype=float) / 86400.0
+    stride = max(1, int(np.ceil(len(times) / _HISTORY_MAX_SAMPLES)))
+    kept = slice(None, None, stride)
+    return SizeDistributionHistory(
+        time_days=tuple(float(v) for v in times[kept]),
+        diameter_um=tuple(float(v) for v in np.asarray(data["dp_mid_um"], dtype=float)),
+        dn_dlogdp_cm3=tuple(tuple(float(v) for v in row) for row in spectrum[kept]),
+        stride=stride,
     )
 
 

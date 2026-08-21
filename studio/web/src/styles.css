@@ -1220,3 +1220,41 @@ figure.chart figcaption {
 aside.runs li:has(.run-open.current) {
   border-color: var(--steel);
 }
+
+/* ---- distribution explorer ----------------------------------------------------------------- */
+
+.results-distributions {
+  margin-top: 18px;
+}
+.results-distributions .banana {
+  margin-bottom: 14px;
+}
+.dist-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+.dist-controls label {
+  font: 600 12px/1 var(--mono);
+  color: var(--navy);
+  min-width: 150px;
+}
+.dist-controls input[type="range"] {
+  flex: 1;
+  min-width: 200px;
+  accent-color: var(--steel);
+}
+.dist-toggle {
+  display: inline-flex;
+  gap: 6px;
+}
+figure.heatmap {
+  padding-bottom: 10px;
+}
