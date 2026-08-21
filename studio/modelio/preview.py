@@ -226,9 +226,12 @@ def concentration_sensitivity(config: RunConfig) -> dict[str, Any]:
 
     resolved = resolve(config).config
     volume = resolved.injection.plume_volume_cm3
-    if volume is None or volume <= 0.0:
-        raise ValueError("plume_volume_cm3 is unresolved; resolve the config before previewing")
-    air = air_number_density(resolved.site.pressure_mbar, resolved.site.temperature_k)
+    temperature = resolved.site.temperature_k
+    if volume is None or volume <= 0.0 or temperature is None:
+        raise ValueError(
+            "plume_volume_cm3 / temperature_k are unresolved; resolve the config before previewing"
+        )
+    air = air_number_density(resolved.site.pressure_mbar, temperature)
     decades = 3.0
     volumes = np.logspace(
         math.log10(volume) - decades, math.log10(volume) + decades, _CURVE_POINTS // 3
@@ -239,7 +242,7 @@ def concentration_sensitivity(config: RunConfig) -> dict[str, Any]:
             molar_mass_g_per_mol=SO2_MOLAR_MASS_G_PER_MOL,
             volume_cm3=float(v),
             pressure_mbar=resolved.site.pressure_mbar,
-            temperature_k=resolved.site.temperature_k,
+            temperature_k=temperature,
         )
         for v in volumes
     ]
@@ -253,10 +256,55 @@ def concentration_sensitivity(config: RunConfig) -> dict[str, Any]:
     }
 
 
+def climatology_profile(config: RunConfig) -> dict[str, Any]:
+    """The ERA5 zonal-mean monthly profile at this latitude and month (stage 1).
+
+    Drawn whatever the dataset selection: under USER it is context ("here is what ERA5 thinks this
+    place looks like") with the typed values marked against it; under ERA5 the marker IS the derived
+    value. Pure product read -- no model, no JAX.
+    """
+    from studio.science.climatology import DATASET_ID, geopotential_height_m, load, profile
+
+    resolved = resolve(config).config
+    month = resolved.schedule.month
+    latitude = resolved.site.latitude_deg
+    data = profile(month=month, latitude_deg=latitude)
+
+    # Altitude as a second LABELING of the pressure axis, not a second scale: round-kilometre ticks
+    # placed at the pressures where those altitudes actually sit at this latitude and month, from
+    # the product's own geopotential. Interpolated in log-p against z, which is near-linear.
+    z_km = np.asarray(data["geopotential_height_m"], dtype=float) / 1000.0
+    log_p = np.log(np.asarray(data["level_hpa"], dtype=float))
+    ascending = np.argsort(z_km)  # z falls as pressure rises, so sort once for interp
+    altitude_ticks = []
+    for km in range(int(np.ceil(z_km.min())), int(np.floor(z_km.max())) + 1):
+        if km % 5 == 0:
+            pressure = float(np.exp(np.interp(km, z_km[ascending], log_p[ascending])))
+            altitude_ticks.append({"km": km, "pressure_hpa": pressure})
+
+    box_altitude_m = geopotential_height_m(
+        month=month, latitude_deg=latitude, pressure_mbar=resolved.site.pressure_mbar
+    )
+    return {
+        **data,
+        "altitude_ticks": altitude_ticks,
+        "box_altitude_km": box_altitude_m / 1000.0,
+        "dataset_id": DATASET_ID,
+        "sha256_12": load().sha256[:12],
+        "month": month,
+        "latitude_deg": latitude,
+        "selected_dataset": resolved.site.dataset.value,
+        "box_pressure_mbar": resolved.site.pressure_mbar,
+        "box_temperature_k": resolved.site.temperature_k,
+        "box_h2o_ppmv": resolved.site.h2o_ppmv,
+    }
+
+
 #: Panel name -> builder. The API exposes exactly these, so a typo in a panel name is a 404 naming
 #: the ones that exist rather than an empty chart.
 PANELS = {
     "sza": sza_diurnal,
+    "climatology": climatology_profile,
     "dilution": dilution_curve,
     "size-distribution": size_distribution,
     "bins": bin_grid,

@@ -51,6 +51,19 @@ interface Props {
   markers?: Marker[];
   xDomain?: [number, number];
   yDomain?: [number, number];
+  /**
+   * Draw the y axis with the LARGER value at the bottom. For pressure as a vertical coordinate:
+   * pressure falls with altitude, so a profile reads correctly only when 300 hPa sits at the
+   * bottom of the frame and 5 hPa at the top -- the atmosphere the way anyone pictures it.
+   */
+  yReverse?: boolean;
+  /**
+   * A second LABELING of the y axis on the right edge -- the same positions in different units
+   * (altitude for a pressure axis), never an independent second scale. Each tick names a position
+   * in the PRIMARY y domain.
+   */
+  rightTicks?: { y: number; label: string }[];
+  rightLabel?: string;
   /** How a hovered value is written in the tooltip. */
   format?: (value: number) => string;
   caption?: string;
@@ -89,6 +102,9 @@ export function Chart({
   markers = [],
   xDomain,
   yDomain,
+  yReverse = false,
+  rightTicks = [],
+  rightLabel,
   format = (v) => tickLabel(v),
   caption,
 }: Props) {
@@ -114,7 +130,13 @@ export function Chart({
   };
 
   const x = makeScale(xd, [PAD.left, WIDTH - PAD.right], xLog);
-  const y = makeScale(yd, [height - PAD.bottom, PAD.top], yLog);
+  // The default puts the domain minimum at the bottom (SVG y grows downward, so the pixel range is
+  // inverted). yReverse swaps the pixel range instead of the domain, so ticks stay ascending.
+  const y = makeScale(
+    yd,
+    yReverse ? [PAD.top, height - PAD.bottom] : [height - PAD.bottom, PAD.top],
+    yLog,
+  );
   if (!x || !y) {
     return (
       <p className="chart-error">
@@ -231,6 +253,34 @@ export function Chart({
             {s.label}
           </text>
         ))}
+
+        {rightTicks.map((tick) => (
+          <g key={`right-${tick.label}`}>
+            <line
+              className="chart-axis"
+              x1={WIDTH - PAD.right}
+              x2={WIDTH - PAD.right + 5}
+              y1={y(tick.y)}
+              y2={y(tick.y)}
+            />
+            <text
+              className="chart-tick"
+              x={WIDTH - PAD.right + 8}
+              y={y(tick.y)}
+              dy="0.32em"
+            >
+              {tick.label}
+            </text>
+          </g>
+        ))}
+        {rightLabel && rightTicks.length ? (
+          <text
+            className="chart-axis-label"
+            transform={`translate(${WIDTH - 10} ${PAD.top + 4}) rotate(90)`}
+          >
+            {rightLabel}
+          </text>
+        ) : null}
 
         {markers.map((marker) => (
           <g key={marker.label}>

@@ -71,7 +71,7 @@ def test_resolve_returns_the_derived_values_and_the_identity(api: Any) -> None:
 @pytest.mark.parametrize(
     "config",
     [
-        {"site": {"temperature_k": -5}},
+        {"site": {"given_temperature_k": -5}},
         {"microphysics": {"n_bins": 100}},
         {"switches": {"heating_to_t": True}},
         {"site": {"temprature_k": 210}},

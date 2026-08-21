@@ -91,10 +91,22 @@ STAGES: tuple[Stage, ...] = (
             ),
             Section(
                 title="Ambient state",
-                fields=("site.temperature_k", "site.pressure_mbar", "site.h2o_ppmv"),
-                note="Entered directly today. SCIENCE-1 is answered (zonal-mean monthly, ERA5), so "
-                "the climatology-derived p/T arrives with the reduced product (task 1.1); until "
-                "then these are typed.",
+                fields=(
+                    "site.dataset",
+                    "site.pressure_mbar",
+                    "site.given_temperature_k",
+                    "site.given_h2o_ppmv",
+                ),
+                note="Pressure is always entered -- it places the box, so it is the climatology "
+                "lookup's coordinate rather than its result. The entered T and H2O are used under "
+                "USER and kept but inert under ERA5.",
+            ),
+            Section(
+                title="And the run uses",
+                fields=("site.temperature_k", "site.h2o_ppmv"),
+                note="Entered values, or the ERA5 zonal-mean monthly climatology (1991-2020, "
+                "SCIENCE-1) interpolated to this latitude, month and pressure. ERA5 water vapour "
+                "is biased dry (BLOCKING-5); MLS as a dedicated H2O source is issue #94.",
             ),
             Section(
                 title="Date and time",

@@ -71,7 +71,8 @@ def test_chained_derivations_resolve_in_order() -> None:
     [
         ("injection.plume_length_m", 30000.0, {VOLUME, SO2_PPTV}),
         ("injection.plume_width_m", 20.0, {VOLUME, SO2_PPTV}),
-        ("site.temperature_k", 213.0, {SO2_PPTV}),
+        # Editing the ENTERED temperature recomputes the derived one, then the mixing ratio.
+        ("site.given_temperature_k", 213.0, {"site.temperature_k", SO2_PPTV}),
         ("site.pressure_mbar", 120.0, {SO2_PPTV}),
         # Mass reaches the REPORTED emission rate as well since 0.3.0: R = M / t, so twice the mass
         # over the same track is twice the rate. It does NOT reach the length or the volume, which
@@ -105,7 +106,7 @@ def test_an_override_is_never_overwritten_by_a_recomputation() -> None:
     assert overridden.config.injection.so2_initial_pptv == 5.0e9
     assert overridden.is_consistent, "an override anchored to the current inputs is not stale"
 
-    after_edit = apply_change(overridden, "site.temperature_k", 213.0)
+    after_edit = apply_change(overridden, "site.given_temperature_k", 213.0)
     assert after_edit.config.injection.so2_initial_pptv == 5.0e9
 
 
@@ -113,7 +114,7 @@ def test_an_override_is_never_overwritten_by_a_recomputation() -> None:
 def test_a_moved_input_marks_the_override_stale_with_both_values() -> None:
     """ "Stale" without "here is what it would be" leaves the user to recompute by hand."""
     overridden = set_override(resolve(RunConfig()), SO2_PPTV, 5.0e9)
-    after_edit = apply_change(overridden, "site.temperature_k", 213.0)
+    after_edit = apply_change(overridden, "site.given_temperature_k", 213.0)
 
     assert after_edit.stale_fields == (SO2_PPTV,)
     (entry,) = after_edit.stale
@@ -130,7 +131,7 @@ def test_an_unrelated_edit_does_not_make_an_override_stale() -> None:
     """Only a change to one of ITS inputs counts. Flagging on every edit would train users to
     dismiss the flag."""
     overridden = set_override(resolve(RunConfig()), VOLUME, 3.0e12)
-    after = apply_change(overridden, "site.temperature_k", 213.0)
+    after = apply_change(overridden, "site.given_temperature_k", 213.0)
     assert after.is_consistent
     assert after.config.injection.plume_volume_cm3 == 3.0e12
 
@@ -147,7 +148,7 @@ def test_a_downstream_auto_field_uses_the_overridden_value() -> None:
 @pytest.mark.tier_a
 def test_accept_derived_drops_the_override_and_recomputes() -> None:
     stale = apply_change(
-        set_override(resolve(RunConfig()), SO2_PPTV, 5.0e9), "site.temperature_k", 213.0
+        set_override(resolve(RunConfig()), SO2_PPTV, 5.0e9), "site.given_temperature_k", 213.0
     )
     accepted = accept_derived(stale, SO2_PPTV)
     assert accepted.is_consistent
@@ -162,7 +163,7 @@ def test_keep_override_re_anchors_and_clears_staleness() -> None:
     """The user has said, knowingly, that their value still applies -- that is the difference
     between this and never having flagged it."""
     stale = apply_change(
-        set_override(resolve(RunConfig()), SO2_PPTV, 5.0e9), "site.temperature_k", 213.0
+        set_override(resolve(RunConfig()), SO2_PPTV, 5.0e9), "site.given_temperature_k", 213.0
     )
     kept = keep_override(stale, SO2_PPTV)
     assert kept.is_consistent
@@ -170,7 +171,7 @@ def test_keep_override_re_anchors_and_clears_staleness() -> None:
     assert kept.overrides[SO2_PPTV].inputs["site.temperature_k"] == 213.0
 
     # ...and it goes stale again on the NEXT change, rather than being permanently silenced
-    assert apply_change(kept, "site.temperature_k", 220.0).stale_fields == (SO2_PPTV,)
+    assert apply_change(kept, "site.given_temperature_k", 220.0).stale_fields == (SO2_PPTV,)
 
 
 @pytest.mark.tier_a
@@ -178,7 +179,7 @@ def test_a_stale_config_refuses_to_pass_as_consistent() -> None:
     """A stale config still has a hash, and that is the trap: a stable identity for numbers that do
     not follow from each other."""
     stale = apply_change(
-        set_override(resolve(RunConfig()), SO2_PPTV, 5.0e9), "site.temperature_k", 213.0
+        set_override(resolve(RunConfig()), SO2_PPTV, 5.0e9), "site.given_temperature_k", 213.0
     )
     with pytest.raises(InconsistentConfigError, match="stale override"):
         stale.require_consistent()
@@ -190,7 +191,7 @@ def test_the_stale_list_travels_with_the_config() -> None:
     """Serialising must carry the stale list, or a persisted config loses the fact that it is
     inconsistent -- exactly what the plan forbids."""
     stale = apply_change(
-        set_override(resolve(RunConfig()), SO2_PPTV, 5.0e9), "site.temperature_k", 213.0
+        set_override(resolve(RunConfig()), SO2_PPTV, 5.0e9), "site.given_temperature_k", 213.0
     )
     restored = type(stale).model_validate_json(stale.model_dump_json())
     assert restored.stale_fields == (SO2_PPTV,)
@@ -209,9 +210,14 @@ def test_editing_a_derived_field_directly_is_an_override() -> None:
 
 @pytest.mark.tier_a
 def test_overriding_a_primary_field_is_refused() -> None:
-    """Primary fields have no derivation to be stale against; the concept does not apply."""
+    """Primary fields have no derivation to be stale against; the concept does not apply.
+
+    Pressure, deliberately: it is one of the few fields that stayed primary through 0.3.0 (the
+    emission system) and 0.4.0 (the dataset selector), precisely because everything else is
+    derived FROM it.
+    """
     with pytest.raises(ValueError, match="not a derived field"):
-        set_override(resolve(RunConfig()), "site.temperature_k", 999.0)
+        set_override(resolve(RunConfig()), "site.pressure_mbar", 999.0)
 
 
 @pytest.mark.tier_a

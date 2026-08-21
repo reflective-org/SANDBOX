@@ -74,6 +74,16 @@ def to_scenario(config: RunConfig | ResolvedConfig) -> CoupledScenario:
             "start with no SO2."
         )
 
+    temperature = run.site.temperature_k
+    h2o = run.site.h2o_ppmv
+    if temperature is None or h2o is None:
+        raise ValueError(
+            "site.temperature_k / site.h2o_ppmv are unresolved. They are DERIVED fields since the "
+            "ambient state gained a dataset selector (SCIENCE-1): run the config through "
+            "studio.resolve.resolve() before converting it, rather than letting the model run at "
+            "a temperature nobody chose."
+        )
+
     day_of_year = run.schedule.day_of_year
     if day_of_year is None:
         raise ValueError(
@@ -89,9 +99,9 @@ def to_scenario(config: RunConfig | ResolvedConfig) -> CoupledScenario:
     }
 
     return CoupledScenario(
-        T=run.site.temperature_k,
+        T=temperature,
         P=run.site.pressure_mbar,
-        WTR=run.site.h2o_ppmv,
+        WTR=h2o,
         latitude=run.site.latitude_deg,
         longitude=run.site.longitude_deg,
         day_of_year=day_of_year,

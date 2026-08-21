@@ -123,6 +123,24 @@ class EmissionInput(StrEnum):
     EMISSION_DURATION = "emission_duration"
 
 
+class ClimatologyDataset(StrEnum):
+    """Where stage 1's ambient state comes from.
+
+    USER keeps the values typed -- the paper ensemble's parameterisation, and the default, so
+    existing configs keep their meaning. ERA5 derives temperature and water vapour from the
+    committed zonal-mean monthly climatology (SCIENCE-1) at this config's latitude, month and
+    pressure; pressure itself stays entered, because it is what places the box.
+
+    One member per product that EXISTS. MERRA-2 and MLS are issue #94, and adding an enum member
+    before its product would let a config claim a derivation that cannot run (ADR-005).
+    """
+
+    #: Ambient state typed directly (default; the ensemble's own values).
+    USER = "user"
+    #: ERA5 zonal-mean monthly climatology, 1991-2020 (era5_zonal_monthly_v1, SCIENCE-1).
+    ERA5 = "era5"
+
+
 class AxisKind(StrEnum):
     """How a ``RunSet`` axis combines with the others. See ``studio/schema/runset.py``."""
 
@@ -139,6 +157,7 @@ class AxisKind(StrEnum):
 __all__ = [
     "AxisKind",
     "BackgroundAerosol",
+    "ClimatologyDataset",
     "DilutionRegime",
     "EmissionInput",
     "PhotolysisMode",

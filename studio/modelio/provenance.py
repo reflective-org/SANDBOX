@@ -185,6 +185,18 @@ def record_for(
     """
     config.require_consistent()
     root = repo_root or repository_root()
+
+    # Datasets are recorded automatically from the config, not trusted to the caller: a run whose
+    # temperature came from the ERA5 climatology but whose provenance does not say so would defeat
+    # the point of ADR-006. The import is lazy and the load cached; under USER nothing is touched.
+    recorded_datasets = dict(datasets or {})
+    from studio.schema.enums import ClimatologyDataset
+
+    if config.config.site.dataset is ClimatologyDataset.ERA5:
+        from studio.science.climatology import load
+
+        product = load()
+        recorded_datasets[product.dataset_id] = product.sha256
     submodules = {}
     for name in MODEL_SUBMODULES:
         path = root / name
@@ -201,7 +213,7 @@ def record_for(
         studio_version=studio.__version__,
         sandbox=describe_checkout(root),
         submodules=submodules,
-        datasets=dict(datasets or {}),
+        datasets=recorded_datasets,
         resolved_config=config.config.model_dump(mode="json"),
         overrides={path: record.value for path, record in sorted(config.overrides.items())},
     )

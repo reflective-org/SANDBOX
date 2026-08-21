@@ -29,7 +29,7 @@ All 42 schema fields are placed and rendered; `test_layout.py` fails if a new on
 
 - **1.0 Wizard shell** — *done (2026-08-17)*. Layout manifest, generated form, override/stale
   actions, review with diff, submit. React + Vite + TS per ADR-007.
-- **1.1 Climatology product** — *unblocked (2026-08-18).* SCIENCE-1 is answered: **zonal-mean,
+- **1.1 Climatology product** — *done (2026-08-19).* SCIENCE-1 is answered: **zonal-mean,
   monthly**, so the reduced product is `(lat × month × level)` — of order 86k values per field, a few
   MB, small enough to **commit with a checksum** rather than fetch at run time. Longitude stays an
   input for the solar zenith angle but does not select the meteorology, and the convention goes into
