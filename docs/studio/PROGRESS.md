@@ -29,6 +29,38 @@ derivations to resolve rather than fixtures.
 
 ---
 
+### 2026-08-24 — Results, rebuilt from what d1_globe and inverse_lab do well
+
+Review: "the results after running are shit -- learn from d1_globe and inverse_lab." Studied both
+pages (`origin/viz/inverse-lab`, and `plume_dynamics.html` on main, the renamed d1_globe) rather
+than guessing. What they have that the results view lacked: **night bands** from the run's own
+photolysis, the **sulfur-budget stacked area**, and card polish. Added all three, everything from
+the summary the run already produces (no model change).
+
+- **Night bands on every time series**, from the run's OWN J (daylight = any photolysis rate > 0),
+  aligned to the stored grid by interval index (a time search ties at the edges and can't tell the
+  interval a step opens from the one it closes -- a test pins it). Absent J draws no bands rather
+  than a recomputed sun (ADR-005). The OH/HO2 diurnal crash now reads against real day/night.
+- **Sulfur budget** as a normalized gas-vs-particle stack (gold SO2, steel particles), the panel
+  from both reference pages; particle sulfur was already emitted in pptv, so it is a normalization.
+- **Particle mass** series (dry H2SO4-equivalent, ug/m3) from particulate_S -- Avogadro and molar
+  mass only (ASSUMPTION-8), tested against a hand-computed value.
+
+Summary schema 0.1.0 -> 0.2.0 carried the time-resolved spectrum in the prior commit; this adds
+`daylight`.
+
+**Fixed a real rendering bug I twice misdiagnosed as a screenshot artifact.** A vertical blue line
+ran the full page height. It was not a capture seam: H2SO4 gas starts at exactly 0, and the log
+y-scale clamped 0 to Number.MIN_VALUE (~1e-308), giving a finite pixel near -1e308 -- so linePath
+drew a segment plunging off the chart, and `overflow: visible` painted it down the page. A zero has
+NO position on a log axis; the scale now returns NaN there and the line breaks, exactly as for
+missing data. Two scale tests pin it. The lesson recorded: "capture artifact" is a claim to verify
+by DOM probe, not a default explanation -- elementsFromPoint on the line is what finally caught it.
+
+375 Python Tier-A (+4), 67 vitest (+2).
+
+---
+
 ### 2026-08-21 — The rail moves and the results arrived
 
 Raised in use as three questions — *when does it finish, where do I see results, does the front-end

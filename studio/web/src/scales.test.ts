@@ -156,3 +156,21 @@ describe("minor log gridlines", () => {
   });
 });
 
+describe("log scale has no position for zero", () => {
+  it("maps non-positive values to NaN so the line breaks instead of plunging off-chart", () => {
+    // Regression: H2SO4 gas starts at 0; clamping 0 to MIN_VALUE drew a full-page vertical line.
+    const s = logScale([1, 1000], [0, 300]);
+    expect(Number.isNaN(s(0))).toBe(true);
+    expect(Number.isNaN(s(-5))).toBe(true);
+    expect(s(10)).toBeCloseTo(100);
+  });
+
+  it("linePath breaks at a zero on a log y, drawing no segment through it", () => {
+    const x = linearScale([0, 2], [0, 100]);
+    const y = logScale([1, 1000], [100, 0]);
+    // Middle point is zero -> gap, so two moves and no line across.
+    const path = linePath([0, 1, 2], [10, 0, 100], x, y);
+    expect(path).not.toContain("L");
+    expect((path.match(/M/g) ?? []).length).toBe(2);
+  });
+});

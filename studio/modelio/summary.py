@@ -160,6 +160,10 @@ class RunSummary(BaseModel):
     termination: TerminationReason = TerminationReason.UNKNOWN
     flags: tuple[SummaryFlag, ...] = ()
     time_days: tuple[float, ...] = ()
+    #: True where the run's own photolysis was active (daylight), aligned to ``time_days``. Empty
+    #: when the npz carried no J. The results view shades the complement as night bands -- the
+    #: same day/night the chemistry actually saw, not a recomputed sun.
+    daylight: tuple[bool, ...] = ()
     series: dict[str, Series] = Field(default_factory=dict)
     final_size_distribution: SizeDistribution | None = None
     size_distribution_history: SizeDistributionHistory | None = None
@@ -230,6 +234,26 @@ def _particle_mass_series(data: dict[str, Any]) -> Series | None:
 #: Species whose number density IS its sulfur content -- each carries exactly one S atom. Used for
 #: the closed-box budget check. ``particulate_S`` is added separately; it is already a sulfur count.
 _SULFUR_GAS_SPECIES = ("SO2", "SO3", "H2SO4")
+
+
+def _daylight(data: dict[str, Any], time_s: np.ndarray) -> tuple[bool, ...]:
+    """Daylight per stored step, from the run's photolysis J (any rate > 0 means the sun was up).
+
+    J is stored on interval MIDPOINTS (J_tmid), one fewer than the step edges; each step takes the
+    daylight flag of the interval it opens. Absent J -> empty, and the caller draws no bands rather
+    than a guessed sun (ADR-005).
+    """
+    if "J" not in data or "J_tmid" not in data:
+        return ()
+    active = np.asarray(data["J"], dtype=np.float64).max(axis=1) > 0.0
+    if active.size == 0:
+        return ()
+    # J has exactly one entry per interval, in order, so interval i's flag is active[i] regardless
+    # of the midpoint values -- index alignment, not a time search (a search ties at the edges and
+    # cannot tell the interval a step OPENS from the one it closes). Step i opens interval i; the
+    # final edge has no interval after it, so it repeats the last flag. The clip also covers a
+    # mismatched npz (J not exactly one-per-interval) without inventing a sun.
+    return tuple(bool(active[min(i, active.size - 1)]) for i in range(len(time_s)))
 
 
 def summarise_state_npz(
@@ -312,6 +336,7 @@ def summarise_state_npz(
         termination=termination,
         flags=tuple(flags),
         time_days=tuple(time_s / SECONDS_PER_DAY),
+        daylight=_daylight(data, time_s),
         series=series,
         final_size_distribution=_final_size_distribution(data),
         size_distribution_history=_size_distribution_history(data),

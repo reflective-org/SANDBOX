@@ -17,6 +17,7 @@
 import { useState } from "react";
 import { Chart, type Series as ChartSeries } from "./Chart";
 import { Heatmap } from "./Heatmap";
+import { StackedArea } from "./StackedArea";
 import { display } from "./schema";
 import { tickLabel } from "./scales";
 import type { RunBrief } from "./types";
@@ -32,6 +33,8 @@ export interface RunSummaryPayload {
   time_days: number[];
   termination: string;
   flags: string[];
+  /** Daylight per time step from the run's own photolysis; [] when the npz had no J. */
+  daylight?: boolean[];
   series: Record<string, SummarySeries>;
   final_size_distribution?: {
     diameter_um: number[];
@@ -55,12 +58,14 @@ function TimeSeriesChart({
   names,
   yLabel,
   yLog = true,
+  night = [],
 }: {
   summary: RunSummaryPayload;
   title: string;
   names: string[];
   yLabel: string;
   yLog?: boolean;
+  night?: { from: number; to: number }[];
 }) {
   const series: ChartSeries[] = [];
   for (const name of names) {
@@ -78,7 +83,7 @@ function TimeSeriesChart({
   return (
     <section>
       <h3>{title}</h3>
-      <Chart series={series} xLabel="days" yLabel={yLabel} yLog={yLog} height={200} />
+      <Chart series={series} xLabel="days" yLabel={yLabel} yLog={yLog} height={200} bands={night} />
     </section>
   );
 }
@@ -94,6 +99,45 @@ export function Results({
 }) {
   const [timeIndex, setTimeIndex] = useState<number | null>(null);
   const [logY, setLogY] = useState(true);
+
+  // Night intervals from the run's own daylight flags -- contiguous dark spans as [from, to] in
+  // days, drawn behind every time series so the OH/HO2 diurnal cycle reads against real day/night.
+  const nightBands = (() => {
+    const out: { from: number; to: number }[] = [];
+    const dl = summary?.daylight;
+    const days = summary?.time_days ?? [];
+    if (!dl || dl.length !== days.length) return out;
+    let start: number | null = null;
+    for (let i = 0; i < dl.length; i++) {
+      if (!dl[i] && start === null) start = days[i]!;
+      if ((dl[i] || i === dl.length - 1) && start !== null) {
+        out.push({ from: start, to: days[i]! });
+        start = null;
+      }
+    }
+    return out;
+  })();
+
+  // Sulfur budget: gas-phase S (SO2+SO3+H2SO4, one S atom each, in pptv) vs particle S (pptv),
+  // as the gas FRACTION over time. Both are mixing ratios the summary already carries, so this is
+  // a normalization, not new physics.
+  const sulfurGasFraction = (() => {
+    if (!summary) return null;
+    const gasNames = ["SO2", "SO3", "H2SO4"];
+    const n = summary.time_days.length;
+    const gas = new Array(n).fill(0);
+    for (const name of gasNames) {
+      const s = summary.series[name];
+      if (s) for (let i = 0; i < n; i++) gas[i] += s.values[i] ?? 0;
+    }
+    const particle = summary.series["particulate_S_pptv"];
+    if (!particle) return null;
+    const frac = gas.map((g, i) => {
+      const total = g + (particle.values[i] ?? 0);
+      return total > 0 ? g / total : 1;
+    });
+    return frac;
+  })();
 
   const headline = run.headline;
   const stats: { label: string; value: string }[] = headline
@@ -165,38 +209,59 @@ export function Results({
               title="Total particle number"
               names={["total_n"]}
               yLabel="N (cm⁻³)"
+              night={nightBands}
             />
             <TimeSeriesChart
               summary={summary}
               title="Particle mass (dry H₂SO₄-eq)"
               names={["particle_mass_ug_m3"]}
               yLabel="mass (µg m⁻³)"
+              night={nightBands}
             />
             <TimeSeriesChart
               summary={summary}
               title="SO₂ (gas)"
               names={["SO2"]}
               yLabel="SO₂ (pptv)"
+              night={nightBands}
             />
             <TimeSeriesChart
               summary={summary}
               title="H₂SO₄: gas and particle (pptv)"
               names={["H2SO4", "particulate_S_pptv"]}
               yLabel="mixing ratio (pptv)"
+              night={nightBands}
             />
             <TimeSeriesChart
               summary={summary}
               title="Oxidants: OH and HO₂"
               names={["OH", "HO2"]}
               yLabel="mixing ratio (pptv)"
+              night={nightBands}
             />
             <TimeSeriesChart
               summary={summary}
               title="Aerosol surface area (wet)"
               names={["SA"]}
               yLabel="SA (µm² cm⁻³)"
+              night={nightBands}
             />
           </div>
+
+          {sulfurGasFraction ? (
+            <section className="budget-panel">
+              <h3>Sulfur budget — gas vs particle</h3>
+              <StackedArea
+                timeDays={summary.time_days}
+                lower={sulfurGasFraction}
+                lowerLabel="SO₂ gas"
+                lowerColor="var(--gold)"
+                upperLabel="in particles"
+                upperColor="var(--steel)"
+                night={nightBands}
+              />
+            </section>
+          ) : null}
 
           {history ? (
             <div className="results-distributions">
