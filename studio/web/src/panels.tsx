@@ -22,7 +22,15 @@ import { tickLabel } from "./scales";
 interface PanelProps {
   config: Record<string, unknown>;
   /** Fetch a preview panel; supplied by App so panels do not each know about the API. */
-  load: (panel: string, signal: AbortSignal) => Promise<Record<string, unknown>>;
+  load: (
+    panel: string,
+    signal: AbortSignal,
+    params?: Record<string, unknown>,
+  ) => Promise<Record<string, unknown>>;
+  /** Change a config field -- the same server round-trip every Field control uses. Panels use it
+   *  for graph-adjacent controls like the dilution regime chips, so choosing on the graph IS
+   *  choosing in the config. */
+  onChange?: ((path: string, value: unknown) => void) | undefined;
 }
 
 /** Fetch-with-state, shared by every server-computed panel. */
@@ -30,17 +38,19 @@ function usePanel(
   name: string,
   config: Record<string, unknown>,
   load: PanelProps["load"],
+  params?: Record<string, unknown>,
 ): { data: Record<string, unknown> | null; error: string; loading: boolean } {
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  // Keyed on the serialised config: the panel must follow every edit, and this is what makes it
-  // refetch when a field the panel depends on moves.
-  const key = JSON.stringify(config);
+  // Keyed on the serialised config AND the panel parameters: the panel must follow every edit,
+  // and an explorer input (the dilution k) is an edit to the picture even though it is not one to
+  // the config.
+  const key = JSON.stringify([config, params ?? null]);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
-    load(name, controller.signal)
+    load(name, controller.signal, params)
       .then((payload) => {
         setData(payload);
         setError("");
@@ -87,7 +97,8 @@ function Frame({
         {loading ? <span className="panel-status">computing…</span> : null}
       </div>
       {hint ? <p className="panel-hint">{hint}</p> : null}
-      {error ? <p className="chart-error">{error}</p> : children}
+      {error ? <p className="chart-error">{error}</p> : null}
+      {children}
     </section>
   );
 }
@@ -159,6 +170,8 @@ export function ClimatologyPanel({ config, load }: PanelProps) {
   const boxP = typeof data?.box_pressure_mbar === "number" ? data.box_pressure_mbar : null;
   const boxT = typeof data?.box_temperature_k === "number" ? data.box_temperature_k : null;
   const boxKm = typeof data?.box_altitude_km === "number" ? data.box_altitude_km : null;
+  const heights = nums(data, "geopotential_height_m");
+  const h2o = nums(data, "h2o_ppmv");
   const selected = typeof data?.selected_dataset === "string" ? data.selected_dataset : "user";
   const altitudeTicks = Array.isArray(data?.altitude_ticks)
     ? (data.altitude_ticks as { km: number; pressure_hpa: number }[]).map((tick) => ({
@@ -195,6 +208,17 @@ export function ClimatologyPanel({ config, load }: PanelProps) {
         height={280}
         rightTicks={altitudeTicks}
         rightLabel="altitude (km)"
+        hoverAxis="y"
+        hoverReadout={(index) => {
+          const rows = [
+            { name: "p", value: `${(levels[index] ?? 0).toFixed(0)} hPa` },
+            { name: "z", value: `${((heights[index] ?? 0) / 1000).toFixed(1)} km` },
+            { name: "T", value: `${(temperature[index] ?? 0).toFixed(1)} K` },
+          ];
+          const water = h2o[index];
+          if (water !== undefined) rows.push({ name: "H₂O", value: `${water.toFixed(2)} ppmv` });
+          return rows;
+        }}
         markers={
           boxP !== null && boxT !== null
             ? [{ x: boxT, y: boxP, label: boxKm !== null ? `the box · ${boxKm.toFixed(1)} km` : "the box" }]
@@ -323,16 +347,61 @@ export function ConcentrationPanel({ config, load }: PanelProps) {
   );
 }
 
-/** Stage 4 — the dilution curves. The choice between regimes is the stage. */
-export function DilutionPanel({ config, load }: PanelProps) {
-  const { data, error, loading } = usePanel("dilution", config, load);
+/** Stage 4 — the dilution curves: the equation, its one constant, and the regimes as chips. */
+export function DilutionPanel({ config, load, onChange }: PanelProps) {
+  // The explorer's k: a draft string so typing does not refetch per keystroke; committed on Enter
+  // or blur, like every other text control. Empty commits to "no custom curve".
+  const [kDraft, setKDraft] = useState("");
+  const [exploreK, setExploreK] = useState<number | null>(null);
+  const { data, error, loading } = usePanel(
+    "dilution",
+    config,
+    load,
+    exploreK !== null ? { explore_k: exploreK } : undefined,
+  );
   const days = nums(data, "days");
   const regimes = (data?.regimes ?? {}) as Record<
     string,
-    { label: string; volume_ratio: number[]; final: number }
+    { label: string; volume_ratio: number[]; final: number; k: number | null }
   >;
   const selected = typeof data?.selected === "string" ? data.selected : "";
   const usesCurve = data?.uses_curve !== false;
+  const [kError, setKError] = useState("");
+  const equation = (data?.equation ?? null) as {
+    early: string;
+    late: string;
+    k_unit: string;
+    k_min: number;
+    k_max: number;
+  } | null;
+  const custom = (data?.custom ?? null) as { k: number; volume_ratio: number[] } | null;
+  const selectedK = regimes[selected]?.k ?? null;
+
+  const commitK = () => {
+    if (kDraft.trim() === "") {
+      setKError("");
+      setExploreK(null);
+      return;
+    }
+    const value = Number(kDraft);
+    if (!Number.isFinite(value)) {
+      setKError("not a number — e.g. 1.5e-8");
+      setExploreK(null);
+      return;
+    }
+    // Validate against the bounds the server declared, BEFORE any request: a bad k previously
+    // came back as a panel-level 422 that replaced the panel body, taking this very input with
+    // it -- an error state with no way out short of reloading. Reported from use.
+    if (equation && (value < equation.k_min || value > equation.k_max)) {
+      setKError(
+        `k must be within ${equation.k_min.toExponential(0)} … ${equation.k_max.toExponential(0)}`,
+      );
+      setExploreK(null);
+      return;
+    }
+    setKError("");
+    setExploreK(value);
+  };
 
   const series: Series[] = Object.entries(regimes).map(([name, regime]) => ({
     name,
@@ -341,6 +410,16 @@ export function DilutionPanel({ config, load }: PanelProps) {
     muted: name !== selected,
     label: name === selected ? `${name} — ${regime.label}` : name,
   }));
+  if (custom) {
+    series.push({
+      name: "custom",
+      xs: days,
+      ys: custom.volume_ratio,
+      dashed: true,
+      color: "var(--gold)",
+      label: `k = ${custom.k.toExponential(2)}`,
+    });
+  }
 
   return (
     <Frame
@@ -350,10 +429,69 @@ export function DilutionPanel({ config, load }: PanelProps) {
           ? undefined
           : `CONSTANT regime: fixed ${display(data?.constant_rate_per_s)} s⁻¹ — these curves are not used.`
       }
-      help="Every regime is drawn; the selected one is solid. The gap between D2 and D3 is a factor of three in dilution rate — far easier to judge as two curves than as two names. Hover to read V/V₀ at a given time."
+      help="The regimes share one functional form and differ ONLY in the constant k. Click a chip to select the run's regime (it sets dilution.regime); type a custom k to see the family between and beyond them. A custom k is a picture, not a runnable configuration — the model runs named regimes or a constant rate."
       loading={loading}
       {...(error ? { error } : {})}
     >
+      {equation ? (
+        <div className="equation-card">
+          <div className="equation">
+            <code>{equation.early}</code>
+            <code>{equation.late}</code>
+          </div>
+          <div className="equation-k">
+            k ({equation.k_unit}) ={" "}
+            <strong>{selectedK !== null ? selectedK.toExponential(3) : "—"}</strong>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="regime-chips">
+        {Object.entries(regimes).map(([name, regime]) => (
+          <button
+            key={name}
+            type="button"
+            className={`chip${name === selected ? " current" : ""}`}
+            onClick={() => onChange?.("dilution.regime", name)}
+            title={regime.label}
+          >
+            <span className="chip-name">{name}</span>
+            <span className="chip-k">
+              {regime.k !== null ? regime.k.toExponential(2) : "4-piece"}
+            </span>
+          </button>
+        ))}
+        <button
+          type="button"
+          className={`chip${selected === "constant" ? " current" : ""}`}
+          onClick={() => onChange?.("dilution.regime", "constant")}
+          title="fixed first-order rate; ignores the curves"
+        >
+          <span className="chip-name">constant</span>
+          <span className="chip-k">rate</span>
+        </button>
+        <span className="explore">
+          <label htmlFor="explore-k">try k</label>
+          <input
+            id="explore-k"
+            type="text"
+            inputMode="decimal"
+            placeholder="e.g. 1.5e-8"
+            value={kDraft}
+            className={kError ? "invalid" : ""}
+            onChange={(e) => setKDraft(e.target.value)}
+            onBlur={commitK}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitK();
+              }
+            }}
+          />
+          {kError ? <span className="explore-error">{kError}</span> : null}
+        </span>
+      </div>
+
       <Chart
         series={series}
         xLabel="days"
@@ -361,7 +499,7 @@ export function DilutionPanel({ config, load }: PanelProps) {
         yLog
         height={260}
         format={(v) => tickLabel(v)}
-        caption="Hover to read the expansion at a given time."
+        caption="Hover to read the expansion at a given time. The dashed gold curve, if present, is the explored k."
       />
     </Frame>
   );

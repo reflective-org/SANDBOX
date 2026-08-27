@@ -49,6 +49,7 @@ function spec(path: string, over: Partial<FieldSpec> = {}): FieldSpec {
     unit: "",
     kind: "number",
     choices: [],
+    hiddenChoices: [],
     default: undefined,
     provenance: "model_default",
     source: "",

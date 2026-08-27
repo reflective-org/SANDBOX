@@ -366,3 +366,21 @@ def test_the_superseded_page_is_still_reachable(api: Any) -> None:
     assert response.status_code == 200
     assert "Plume Studio" in response.text
     assert "/api/config/resolve" in response.text, "it must talk to the real resolver, not its own"
+
+
+@pytest.mark.tier_a
+def test_preview_panels_accept_parameters(api: Any, repo_root: Path) -> None:
+    """The dilution explorer's k travels as panel params, and a bad one is a 422 with the bounds."""
+    if not (repo_root / "stratchem-jax" / "config.py").is_file():
+        pytest.skip("model submodules not checked out (`git submodule update --init`)")
+    client, _ = api
+    good = client.post(
+        "/api/preview/dilution", json={"config": {}, "params": {"explore_k": 8.89e-9}}
+    )
+    assert good.status_code == 200
+    body = good.json()
+    assert body["custom"]["volume_ratio"] == body["regimes"]["D2"]["volume_ratio"]
+
+    bad = client.post("/api/preview/dilution", json={"config": {}, "params": {"explore_k": 5.0}})
+    assert bad.status_code == 422
+    assert "explore_k must be within" in bad.json()["detail"]

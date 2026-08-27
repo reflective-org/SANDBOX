@@ -33,8 +33,8 @@ SITES: Final[dict[str, tuple[float, float, float, float]]] = {
 
 #: background token -> (aerosol distribution, background SO2 [pptv]). ``run_ensemble.py:67-71``.
 BACKGROUNDS: Final[dict[str, tuple[BackgroundAerosol, float]]] = {
-    "sabr330": (BackgroundAerosol.SABR_330, 20.0),
-    "sabr220": (BackgroundAerosol.SABR_220, 20.0),
+    "sabr330": (BackgroundAerosol.SABRE_330, 20.0),
+    "sabr220": (BackgroundAerosol.SABRE_220, 20.0),
     "cesm": (BackgroundAerosol.CESM_G6, 100.0),
 }
 

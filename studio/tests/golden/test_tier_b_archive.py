@@ -105,7 +105,7 @@ def test_the_curated_set_covers_the_dilution_regimes_and_both_backgrounds() -> N
     regimes = {config_for_case(case).config.dilution.regime.value for case in TIER_B_CASES}
     backgrounds = {config_for_case(case).config.background.aerosol.value for case in TIER_B_CASES}
     assert {"D1", "D2", "D3", "burst"} <= regimes
-    assert {"sabr_220", "sabr_330"} <= backgrounds
+    assert {"sabre_220", "sabre_330"} <= backgrounds
     for case in TIER_B_CASES:
         config = config_for_case(case).config
         assert config.microphysics.n_bins == ENSEMBLE_BINS

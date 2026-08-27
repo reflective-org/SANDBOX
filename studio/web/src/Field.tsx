@@ -238,21 +238,24 @@ function control(
           <span>{value === true ? "on" : "off"}</span>
         </label>
       );
-    case "enum":
+    case "enum": {
+      // Hidden choices stay VALID -- an archived config that used one must still display -- but
+      // are not offered: they appear only when they ARE the current value, marked as archival.
+      const current = String(value ?? "");
+      const offered = spec.choices.filter(
+        (choice) => !spec.hiddenChoices.includes(String(choice)) || String(choice) === current,
+      );
       return (
-        <select
-          id={id}
-          value={String(value ?? "")}
-          disabled={disabled}
-          onChange={(e) => emit(e.target.value)}
-        >
-          {spec.choices.map((choice) => (
+        <select id={id} value={current} disabled={disabled} onChange={(e) => emit(e.target.value)}>
+          {offered.map((choice) => (
             <option key={String(choice)} value={String(choice)}>
               {String(choice)}
+              {spec.hiddenChoices.includes(String(choice)) ? " (archival)" : ""}
             </option>
           ))}
         </select>
       );
+    }
     case "number":
     case "integer":
       return (

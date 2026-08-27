@@ -64,6 +64,17 @@ interface Props {
    */
   rightTicks?: { y: number; label: string }[];
   rightLabel?: string;
+  /**
+   * Track the pointer along the y axis instead of x, for profiles whose natural coordinate is
+   * vertical (pressure). The crosshair turns horizontal and the nearest point is found on the
+   * FIRST series' ys, which must be sorted.
+   */
+  hoverAxis?: "x" | "y";
+  /**
+   * Everything the hover should read out at a data index -- the panel knows what lives at each
+   * level (pressure, altitude, temperature, water vapour); the chart only knows two columns.
+   */
+  hoverReadout?: (index: number) => { name: string; value: string }[];
   /** How a hovered value is written in the tooltip. */
   format?: (value: number) => string;
   caption?: string;
@@ -105,6 +116,8 @@ export function Chart({
   yReverse = false,
   rightTicks = [],
   rightLabel,
+  hoverAxis = "x",
+  hoverReadout,
   format = (v) => tickLabel(v),
   caption,
 }: Props) {
@@ -152,28 +165,47 @@ export function Chart({
       if (!svg) return;
       const box = svg.getBoundingClientRect();
       // The SVG is scaled to its container, so pointer pixels must be mapped back to viewBox units.
+      if (hoverAxis === "y") {
+        const py = ((event.clientY - box.top) / box.height) * height;
+        setHoverX(py < PAD.top || py > height - PAD.bottom ? null : py);
+        return;
+      }
       const px = ((event.clientX - box.left) / box.width) * WIDTH;
       setHoverX(px < PAD.left || px > WIDTH - PAD.right ? null : px);
     },
-    [],
+    [hoverAxis, height],
   );
 
   const hover =
     hoverX === null
       ? null
-      : (() => {
-          const value = x.invert(hoverX);
-          const readouts = series
-            .map((s) => {
-              const index = nearestIndex(s.xs, value);
-              if (index < 0) return null;
-              const yv = s.ys[index];
-              if (yv === undefined || !Number.isFinite(yv)) return null;
-              return { name: s.label ?? s.name, value: yv, muted: s.muted === true };
-            })
-            .filter((r): r is { name: string; value: number; muted: boolean } => r !== null);
-          return { at: value, readouts };
-        })();
+      : hoverAxis === "y"
+        ? (() => {
+            const first = series[0];
+            if (!first) return null;
+            const value = y.invert(hoverX);
+            const index = nearestIndex(first.ys, value);
+            if (index < 0) return null;
+            const readouts = (hoverReadout ? hoverReadout(index) : []).map((r) => ({
+              name: r.name,
+              value: r.value,
+              muted: false,
+            }));
+            return { at: value, index, readouts };
+          })()
+        : (() => {
+            const value = x.invert(hoverX);
+            const readouts = series
+              .map((s) => {
+                const index = nearestIndex(s.xs, value);
+                if (index < 0) return null;
+                const yv = s.ys[index];
+                if (yv === undefined || !Number.isFinite(yv)) return null;
+                return { name: s.label ?? s.name, value: format(yv), muted: s.muted === true };
+              })
+              .filter((r): r is { name: string; value: string; muted: boolean } => r !== null);
+            return { at: value, index: -1, readouts };
+          })();
 
   return (
     <figure className="chart">
@@ -196,6 +228,26 @@ export function Chart({
           />
         ))}
 
+        {(y.minorTicks ? y.minorTicks() : []).map((tick) => (
+          <line
+            key={`y-minor-${tick}`}
+            className="chart-grid minor"
+            x1={PAD.left}
+            x2={WIDTH - PAD.right}
+            y1={y(tick)}
+            y2={y(tick)}
+          />
+        ))}
+        {(x.minorTicks ? x.minorTicks() : []).map((tick) => (
+          <line
+            key={`x-minor-${tick}`}
+            className="chart-grid minor"
+            x1={x(tick)}
+            x2={x(tick)}
+            y1={PAD.top}
+            y2={height - PAD.bottom}
+          />
+        ))}
         {y.ticks(5).map((tick) => (
           <g key={`y-${tick}`}>
             <line
@@ -297,13 +349,23 @@ export function Chart({
         ))}
 
         {hoverX !== null ? (
-          <line
-            className="chart-crosshair"
-            x1={hoverX}
-            x2={hoverX}
-            y1={PAD.top}
-            y2={height - PAD.bottom}
-          />
+          hoverAxis === "y" ? (
+            <line
+              className="chart-crosshair"
+              x1={PAD.left}
+              x2={WIDTH - PAD.right}
+              y1={hoverX}
+              y2={hoverX}
+            />
+          ) : (
+            <line
+              className="chart-crosshair"
+              x1={hoverX}
+              x2={hoverX}
+              y1={PAD.top}
+              y2={height - PAD.bottom}
+            />
+          )
         ) : null}
 
         <text className="chart-axis-label" x={PAD.left} y={height - 4}>
@@ -320,15 +382,17 @@ export function Chart({
 
       {hover && hover.readouts.length ? (
         <div className="chart-readout">
-          <span className="at">
-            {xLabel.split(" ")[0]} {format(hover.at)}
-          </span>
+          {hoverAxis === "x" ? (
+            <span className="at">
+              {xLabel.split(" ")[0]} {format(hover.at)}
+            </span>
+          ) : null}
           {hover.readouts
             .filter((r) => !r.muted)
-            .slice(0, 4)
+            .slice(0, 5)
             .map((r) => (
               <span key={r.name}>
-                <strong>{r.name}</strong> {format(r.value)}
+                <strong>{r.name}</strong> {r.value}
               </span>
             ))}
         </div>

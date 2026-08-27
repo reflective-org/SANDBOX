@@ -68,7 +68,7 @@ def test_the_golden_case_is_the_schemas_default(build_scenario: Any) -> None:
     config = resolve(RunConfig()).config
     assert config.site.temperature_k == reference.T
     assert config.site.pressure_mbar == reference.P
-    assert config.background.aerosol is BackgroundAerosol.SABR_220
+    assert config.background.aerosol is BackgroundAerosol.SABRE_220
     assert config.dilution.regime is DilutionRegime.D2
     assert config.chemistry.photolysis is PhotolysisMode.TUVX
 

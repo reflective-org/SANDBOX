@@ -86,6 +86,18 @@ class ResolveRequest(BaseModel):
     overrides: dict[str, OverrideRecord] = Field(default_factory=dict)
 
 
+class PreviewRequest(BaseModel):
+    """A config plus panel-specific parameters (e.g. the dilution explorer's ``explore_k``).
+
+    Parameters are exploration inputs for a PICTURE, never part of the configuration -- they do not
+    join the hash, the overrides, or anything persistent, which is why this is a separate model
+    rather than a field on ``ResolveRequest``.
+    """
+
+    config: dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
 class ChangeRequest(ResolveRequest):
     """A single edit. ``value`` is whatever the field's type accepts, validated by the schema."""
 
@@ -228,7 +240,7 @@ def create_app(home: Path | None = None, database: str | None = None) -> FastAPI
             raise HTTPException(status_code=404, detail=f"no such field: {exc}") from exc
 
     @app.post("/api/preview/{panel}")
-    def preview(panel: str, request: ResolveRequest) -> dict[str, Any]:
+    def preview(panel: str, request: PreviewRequest) -> dict[str, Any]:
         """A stage's preview panel: what this configuration implies, before spending compute.
 
         Spec section 8 -- sub-second, and never the full model. Every curve is the model's own
@@ -251,6 +263,12 @@ def create_app(home: Path | None = None, database: str | None = None) -> FastAPI
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         try:
+            # Builders that take panel parameters (the dilution explorer's k) receive them; the
+            # rest keep their one-argument signature rather than all growing an unused parameter.
+            import inspect
+
+            if "params" in inspect.signature(builder).parameters:
+                return builder(config, request.params)
             return builder(config)
         except NotImplementedError as exc:
             # An unimplemented derivation must say so rather than draw a plausible curve (ADR-005).

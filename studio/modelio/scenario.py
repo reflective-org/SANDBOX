@@ -32,6 +32,7 @@ from typing import Any
 from coupled.coupled_scenario import CoupledScenario, Switches
 from studio.resolve import ResolvedConfig
 from studio.schema import DilutionRegime, RunConfig
+from studio.schema.enums import BackgroundAerosol
 
 #: Schema regime -> the model's ``dilution_regime`` string. Only CONSTANT differs; the rest are
 #: identical by construction, and the test asserts that rather than trusting it.
@@ -43,6 +44,49 @@ _REGIME_TO_MODEL: dict[DilutionRegime, str] = {
     DilutionRegime.D5: "D5",
     DilutionRegime.BURST: "burst",
 }
+
+
+#: Studio's SABRE values -> the bridge's internal keys. The campaign is SABRE (Stratospheric
+#: Aerosol processes, Budget and Radiative Effects); the model's BACKGROUND_MODES keys predate the
+#: correction and stay as they are -- renaming a model-internal key is not the seam's call.
+#: Values absent here pass through unchanged.
+_BACKGROUND_KEYS: dict[str, str] = {
+    "sabre_330": "sabr_330",
+    "sabre_310": "sabr_310",
+    "sabre_220": "sabr_220",
+}
+
+
+def _custom_modes(run: RunConfig) -> tuple[tuple[float, float, float], ...]:
+    """The CUSTOM background's modes, zero-N entries dropped, at least one remaining.
+
+    Raises:
+        ValueError: If every mode has N = 0. "A custom background with no particles" is more
+            likely a half-edited form than an intention, and the model would refuse the empty
+            list anyway -- this message names the fields instead of the bridge internals.
+    """
+    modes = tuple(
+        (n, dg, sigma)
+        for n, dg, sigma in (
+            (
+                run.background.custom_n1_cm3,
+                run.background.custom_dg1_um,
+                run.background.custom_sigma1,
+            ),
+            (
+                run.background.custom_n2_cm3,
+                run.background.custom_dg2_um,
+                run.background.custom_sigma2,
+            ),
+        )
+        if n > 0.0
+    )
+    if not modes:
+        raise ValueError(
+            "background.aerosol is CUSTOM but both modes have N = 0; give custom_n1_cm3 or "
+            "custom_n2_cm3 a positive number concentration"
+        )
+    return modes
 
 
 def to_scenario(config: RunConfig | ResolvedConfig) -> CoupledScenario:
@@ -111,7 +155,21 @@ def to_scenario(config: RunConfig | ResolvedConfig) -> CoupledScenario:
         dt_couple=run.numerics.couple_dt_s,
         photolysis=run.chemistry.photolysis.value,
         tomas_nbins=run.microphysics.n_bins,
-        background_dist=run.background.aerosol.value,
+        background_dist=(
+            # CUSTOM: the entered lognormal modes as (N, Dg, sigma) tuples -- the bridge's own
+            # custom-mode path, which requires the explicit STP/ambient basis below. Zero-N modes
+            # are FILTERED here, not passed: the model refuses N <= 0 outright
+            # (CoupledScenario: "N must be > 0"), and the config's N2 = 0 default means "no second
+            # mode", which at the seam is a shorter mode list rather than a zero entry.
+            _custom_modes(run)
+            if run.background.aerosol is BackgroundAerosol.CUSTOM
+            else _BACKGROUND_KEYS.get(run.background.aerosol.value, run.background.aerosol.value)
+        ),
+        background_modes_basis=(
+            run.background.custom_basis.value
+            if run.background.aerosol is BackgroundAerosol.CUSTOM
+            else ""
+        ),
         dilution_regime=_REGIME_TO_MODEL[run.dilution.regime],
         dilution_rate=run.dilution.rate_per_s,
         dilution_zero_species=tuple(run.dilution.zero_species),

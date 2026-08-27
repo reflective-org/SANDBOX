@@ -41,6 +41,7 @@ const numberSpec: FieldSpec = {
   unit: "m",
   kind: "number",
   choices: [],
+  hiddenChoices: [],
   default: 15000,
   provenance: "paper_ensemble",
   source: "",
