@@ -29,6 +29,69 @@ derivations to resolve rather than fixtures.
 
 ---
 
+### 2026-08-24 — Results, rebuilt from what d1_globe and inverse_lab do well
+
+Review: "the results after running are shit -- learn from d1_globe and inverse_lab." Studied both
+pages (`origin/viz/inverse-lab`, and `plume_dynamics.html` on main, the renamed d1_globe) rather
+than guessing. What they have that the results view lacked: **night bands** from the run's own
+photolysis, the **sulfur-budget stacked area**, and card polish. Added all three, everything from
+the summary the run already produces (no model change).
+
+- **Night bands on every time series**, from the run's OWN J (daylight = any photolysis rate > 0),
+  aligned to the stored grid by interval index (a time search ties at the edges and can't tell the
+  interval a step opens from the one it closes -- a test pins it). Absent J draws no bands rather
+  than a recomputed sun (ADR-005). The OH/HO2 diurnal crash now reads against real day/night.
+- **Sulfur budget** as a normalized gas-vs-particle stack (gold SO2, steel particles), the panel
+  from both reference pages; particle sulfur was already emitted in pptv, so it is a normalization.
+- **Particle mass** series (dry H2SO4-equivalent, ug/m3) from particulate_S -- Avogadro and molar
+  mass only (ASSUMPTION-8), tested against a hand-computed value.
+
+Summary schema 0.1.0 -> 0.2.0 carried the time-resolved spectrum in the prior commit; this adds
+`daylight`.
+
+**Fixed a real rendering bug I twice misdiagnosed as a screenshot artifact.** A vertical blue line
+ran the full page height. It was not a capture seam: H2SO4 gas starts at exactly 0, and the log
+y-scale clamped 0 to Number.MIN_VALUE (~1e-308), giving a finite pixel near -1e308 -- so linePath
+drew a segment plunging off the chart, and `overflow: visible` painted it down the page. A zero has
+NO position on a log axis; the scale now returns NaN there and the line breaks, exactly as for
+missing data. Two scale tests pin it. The lesson recorded: "capture artifact" is a claim to verify
+by DOM probe, not a default explanation -- elementsFromPoint on the line is what finally caught it.
+
+375 Python Tier-A (+4), 67 vitest (+2).
+
+---
+
+### 2026-08-21 — The rail moves and the results arrived
+
+Raised in use as three questions — *when does it finish, where do I see results, does the front-end
+update?* — and the honest answers were "3–5 minutes", "only in /legacy or the API", and "no". Now:
+
+**Live run states.** The wizard subscribes to the SSE stream the API has pushed since Phase 0; the
+rail moves queued → running → succeeded without a reload. The first cut had a lifecycle bug worth
+recording: the effect's cleanup closed every socket on any `runs` change — i.e. on the first pushed
+update — while the already-watched set prevented reopening, so each stream died the moment it
+delivered once and the rail froze at *running* while the server said *succeeded*. Found by driving a
+real run and comparing against the API. Sockets now live in a ref, closed only on terminal state or
+unmount.
+
+**A results view in the wizard.** Click a run (or submit one — it self-selects): headline tiles
+(final SO₂, peak H₂SO₄, peak N, final SA), flags, and three charts from the RunSummary — gas phase
+(SO₂/H₂SO₄/OH, pptv), total particle number, and the final size distribution. All read from the
+summary, never the npz (ADR-004). The first cut invented its own payload shape and rendered four
+confident zeros — headline scalars live on the *run*, the spectrum under `final_size_distribution` —
+so the component test's fixture now mirrors the real endpoints, and "no summary yet" states say what
+is happening instead of showing an empty shell.
+
+Verified end to end in the browser: a 1-day/40-bin run submitted from the review stage went
+running → succeeded at t+18 s with zero reloads, tiles filled (1.7e6 pptv final SO₂, 15.05 pptv peak
+H₂SO₄, 3.1e6 cm⁻³ peak N), three charts drew, `open_system_dilution` flagged.
+
+`/legacy` is now fully superseded (task 1.4): the wizard shows results. Deletion is its own small PR.
+
+371 Python Tier-A, 63 vitest (+3).
+
+---
+
 ### 2026-08-20 — Interactive dilution, full-profile hover, curated backgrounds, custom modes
 
 Four review requests in one message, all landed (schema 0.4.0 → 0.5.0):

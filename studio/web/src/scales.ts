@@ -75,8 +75,13 @@ export function logScale(domain: [number, number], range: [number, number]): Sca
   const l0 = Math.log10(d0);
   const l1 = Math.log10(d1);
   const span = l1 - l0 || 1;
+  // Non-positive values have NO position on a log axis, so they map to NaN and linePath breaks the
+  // line there -- exactly as it does for a gap. The old code clamped to Number.MIN_VALUE, which
+  // gave a finite pixel near -1e308: a series that touches zero (H2SO4 gas starts at 0) then drew
+  // a segment plunging off the chart, and `overflow: visible` painted it as a full-page vertical
+  // line. A zero on a log scale is missing data, not a point at the bottom.
   const scale = ((value: number) =>
-    r0 + ((Math.log10(Math.max(value, Number.MIN_VALUE)) - l0) / span) * (r1 - r0)) as Scale;
+    value > 0 ? r0 + ((Math.log10(value) - l0) / span) * (r1 - r0) : NaN) as Scale;
   scale.domain = domain;
   scale.range = range;
   scale.invert = (pixel: number) => Math.pow(10, l0 + ((pixel - r0) / (r1 - r0 || 1)) * span);

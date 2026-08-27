@@ -234,3 +234,112 @@ def test_summarising_a_real_archived_run(paper_ensemble_runs: Path) -> None:
     }
     assert summary.sulfur_conservation is not None
     assert summary.sulfur_conservation.status == "not_applicable"
+
+
+@pytest.mark.tier_a
+def test_the_history_carries_the_spectrum_uniformly_strided(tmp_path: Path) -> None:
+    """Summary 0.2.0: dN/dlogDp over (time x bin), uniform stride, capped sample count.
+
+    Uniform, because CAVEATS.md records that non-uniform coarsening aliases the morning number
+    spikes by up to 8x -- and the whole point of the history is that a reviewer could not see
+    nucleation in the final spectrum alone.
+    """
+    import math
+
+    import numpy as np
+
+    from studio.modelio.summary import _HISTORY_MAX_SAMPLES, summarise_state_npz
+
+    steps, bins = 1000, 8  # forces decimation: 1000 > _HISTORY_MAX_SAMPLES
+    times = np.linspace(0.0, 10 * 86400.0, steps)
+    spectrum = np.tile(np.linspace(1.0, 8.0, bins), (steps, 1)) * (1.0 + times[:, None] / 86400.0)
+    path = tmp_path / "state.npz"
+    np.savez(
+        path,
+        t=times,
+        x=np.ones((steps, 2)),
+        species=np.array(["SO2", "OH"]),
+        M=1.0e18,
+        dNdlogDp=spectrum,
+        dp_mid_um=np.logspace(-3, 1, bins),
+    )
+    history = summarise_state_npz(path).size_distribution_history
+    assert history is not None
+    assert len(history.time_days) <= _HISTORY_MAX_SAMPLES
+    assert history.stride == 5  # ceil(1000 / 240)
+    gaps = {round(b - a, 9) for a, b in zip(history.time_days, history.time_days[1:], strict=False)}
+    assert len(gaps) == 1, f"stride must be uniform, got gaps {gaps}"
+    # The kept rows are the original rows, not interpolations.
+    assert history.dn_dlogdp_cm3[0] == tuple(spectrum[0])
+    assert history.dn_dlogdp_cm3[1] == tuple(spectrum[5])
+    assert math.isclose(history.time_days[0], 0.0)
+
+
+@pytest.mark.tier_a
+def test_particle_mass_is_the_unit_conversion_it_claims(tmp_path: Path) -> None:
+    """molec S / cm^3 -> ug/m^3 as dry H2SO4 (ASSUMPTION-8), against a hand-computed value."""
+    import numpy as np
+
+    from studio.modelio.summary import summarise_state_npz
+    from studio.science.constants import AVOGADRO, H2SO4_MOLAR_MASS_G_PER_MOL
+
+    count = 6.153e9  # molec/cm^3, arbitrary
+    path = tmp_path / "state.npz"
+    np.savez(
+        path,
+        t=np.array([0.0, 600.0]),
+        x=np.ones((2, 1)),
+        species=np.array(["SO2"]),
+        M=1.0e18,
+        particulate_S=np.array([0.0, count]),
+    )
+    series = summarise_state_npz(path).series["particle_mass_ug_m3"]
+    expected = count * (H2SO4_MOLAR_MASS_G_PER_MOL / AVOGADRO) * 1e12
+    assert series.values[1] == pytest.approx(expected, rel=1e-12)
+    assert series.unit == "ug m^-3"
+    assert series.basis.value == "dry"
+
+
+@pytest.mark.tier_a
+def test_daylight_comes_from_the_runs_own_photolysis(tmp_path: Path) -> None:
+    """Night bands are the day/night the CHEMISTRY saw (J > 0), not a recomputed sun.
+
+    J lives on interval midpoints, one fewer than the step edges; each step takes the flag of the
+    interval it opens. A run with no J gets an empty tuple, and the results view draws no bands
+    rather than guessing (ADR-005).
+    """
+    import numpy as np
+
+    from studio.modelio.summary import summarise_state_npz
+
+    # Six steps over 24 h; J on five midpoints, dark in the middle of the day.
+    times = np.linspace(0.0, 86400.0, 6)
+    jmid = (times[:-1] + times[1:]) / 2
+    jvals = np.array([[1.0], [1.0], [0.0], [0.0], [1.0]])  # night in the two middle intervals
+    path = tmp_path / "state.npz"
+    np.savez(
+        path,
+        t=times,
+        x=np.ones((6, 1)),
+        species=np.array(["SO2"]),
+        M=1.0e18,
+        J=jvals,
+        J_tmid=jmid,
+    )
+    daylight = summarise_state_npz(path).daylight
+    assert len(daylight) == len(times)
+    assert daylight[0] is True and daylight[1] is True
+    assert daylight[2] is False and daylight[3] is False
+    assert daylight[-1] is True
+
+
+@pytest.mark.tier_a
+def test_no_photolysis_means_no_daylight_bands(tmp_path: Path) -> None:
+    """Absent J -> empty daylight, so the UI shows no bands rather than a fabricated day/night."""
+    import numpy as np
+
+    from studio.modelio.summary import summarise_state_npz
+
+    path = tmp_path / "state.npz"
+    np.savez(path, t=np.array([0.0, 600.0]), x=np.ones((2, 1)), species=np.array(["SO2"]), M=1e18)
+    assert summarise_state_npz(path).daylight == ()

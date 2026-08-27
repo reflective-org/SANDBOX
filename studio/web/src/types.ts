@@ -111,4 +111,12 @@ export interface RunBrief {
   exit_code: number | null;
   detail: string;
   termination: string | null;
+  /** Headline numbers from the summary row; null until the run has one. */
+  headline: {
+    final_so2_pptv: number | null;
+    peak_h2so4_pptv: number | null;
+    peak_number_cm3: number | null;
+    final_surface_area: number | null;
+    flags: string[];
+  } | null;
 }
