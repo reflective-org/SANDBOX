@@ -82,6 +82,9 @@ async function shot(name) {
 /**
  * Set a React-controlled input. Assigning `.value` does not notify React, so this uses the native
  * setter and dispatches a bubbling input event -- which is what a real keystroke produces.
+ *
+ * Text inputs are DRAFTS: the config moves only on Enter or blur (the multi-digit typing fix), so
+ * this also presses Enter. Selects commit on change and ignore the extra keydown.
  */
 const setValue = (selector, value) => `(() => {
   const el = document.querySelector(${JSON.stringify(selector)});
@@ -90,6 +93,7 @@ const setValue = (selector, value) => `(() => {
   Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(String(value))});
   el.dispatchEvent(new Event('input', { bubbles: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
+  el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   return el.value;
 })()`;
 
@@ -128,7 +132,7 @@ await sleep(2500);
 console.log("  ", JSON.stringify(await evaluate(state)));
 
 console.log("2. type a new plume length -> derived volume must follow");
-await evaluate(setValue("#injection\\.plume_length_m", "20000"));
+await evaluate(setValue("#injection\\.given_track_length_m", "20000"));
 await sleep(1200);
 let s = await evaluate(state);
 console.log("   length:", s.length, "volume:", s.volume, "badges:", s.badges.join(","));
@@ -141,7 +145,7 @@ console.log("   volume:", s.volume, "badges:", s.badges.join(","), "stale:", s.s
 await shot("drive-2-override");
 
 console.log("4. move the input underneath it -> the override must go stale");
-await evaluate(setValue("#injection\\.plume_length_m", "12000"));
+await evaluate(setValue("#injection\\.given_track_length_m", "12000"));
 await sleep(1400);
 s = await evaluate(state);
 console.log("   header:", s.headerStale, "| stale tabs:", s.staleTabs.join(","), "| badges:", s.badges.join(","));
@@ -174,14 +178,14 @@ await shot("drive-5-review");
 console.log("7. a value the schema refuses must surface its message, not fail silently");
 await evaluate(clickText("Environment"));
 await sleep(900);
-await evaluate(setValue("#site\\.temperature_k", "-5"));
+await evaluate(setValue("#site\\.given_temperature_k", "-5"));
 await sleep(1300);
 s = await evaluate(state);
 console.log("   error shown:", s.error ? s.error.replace(/\s+/g, " ").slice(0, 200) : "NONE (BAD)");
 await shot("drive-6-validation");
 
 console.log("8. and 9999 K is accepted, which is issue #91 -- recorded here, not asserted as good");
-await evaluate(setValue("#site\\.temperature_k", "9999"));
+await evaluate(setValue("#site\\.given_temperature_k", "9999"));
 await sleep(1300);
 s = await evaluate(state);
 console.log("   error for 9999 K:", s.error ? "shown" : "NONE -- unbounded above, see #91");

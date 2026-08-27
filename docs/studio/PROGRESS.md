@@ -29,6 +29,43 @@ derivations to resolve rather than fixtures.
 
 ---
 
+### 2026-08-19 — The Reflective redesign
+
+Requested in review: cleaner, more intuitive controls; explanations behind a hoverable question
+mark instead of paragraphs in every box; the look of reflective.org / simulator.reflective.org /
+tomas-fe.vercel.app.
+
+**Design sources, read rather than imagined.** The SAI simulator frontend
+(`~/GitHub/reflective-simulator/sai-simulator-fe`) uses Radix Themes, Inter, lucide icons, a
+zero-delay `CircleHelp` tooltip beside every control, and a builder-left/plots-right layout;
+reflective.org contributes deep navy `#091834`, gold `#f1b80d` and steel `#466f8d`; tomas-fe the
+warm paper ground (`#f5f0eb` on `#242220`). Plume Studio now composes exactly those pieces —
+lucide-react is a real dependency because it is literally their icon set.
+
+**What changed.**
+- Every field's description and provenance moved behind a `CircleHelp` hover (a real `<button>`, so
+  keyboard focus opens it too). Section notes and panel explanations likewise; **visible text is
+  now data** — totals, extremes, mode lines — and prose is on demand.
+- Stages render **controls left, graphs right** (sticky), the simulator's builder layout. The
+  stepper became icon pills (ThermometerSun, Wind, FlaskConical, Waves, CloudHail, Atom,
+  SlidersHorizontal, ClipboardCheck).
+- Navy primary buttons, gold for overrides/markers, paper cards with soft shadows; dark mode is the
+  navy-tinted equivalent, not an automatic inversion.
+
+**Two defects found by looking, one by re-running.**
+- Dark mode's `button { color: dark }` rule outranked `.stage-tab`'s colour by specificity, so
+  inactive stage tabs (and help triggers) rendered dark-on-dark — illegible on first render.
+  Re-stated per-shape in the dark block, with a comment explaining the specificity trap.
+- The smoke script had silently rotted twice over: it still typed into `plume_length_m` (derived
+  since 0.3.0 — the entered field is `given_track_length_m`) and predated commit-on-Enter, so its
+  edits filled drafts the server never heard about. Steps printed and nothing failed. Repaired
+  (setValue now presses Enter; fields renamed), and the full flow re-verified in the new UI:
+  override → stale tab → accept → review shows 1 change → schema refusals surface.
+
+360 Python Tier-A, 58 vitest, both unchanged — the redesign is presentation over the same seams.
+
+---
+
 ### 2026-08-19 — Task 1.1: ERA5 is in the product, the schema, and the wizard
 
 Raised in use: *"I do not see ERA5 data being utilized"* — correct; the decisions existed and the
