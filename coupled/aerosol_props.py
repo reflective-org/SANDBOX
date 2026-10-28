@@ -30,7 +30,7 @@ _SRTH2O = tb.SRTH2O
 def _wet_diameters_m(state):
     """Per-bin WET particle diameter [m] (equilibrium water added at ``SRTH2O``).
 
-    Uses the **Tabazadeh (pure H2SO4/H2O)** water scheme -- the SAME ``water_scheme='h2so4_tabazadeh'``
+    Uses the **Tabazadeh (pure H2SO4/H2O)** water scheme -- the SAME ``WATER_SCHEME_H2SO4``
     the coupled TOMAS step evolves (tomas_bridge, AD-3.6). Using the ISORROPIA/NH4HSO4 default here
     instead would compute SA / radius / wt% on a DIFFERENT water field than the particles TOMAS carries
     (measured 1.3-1.8x SA error) -- so the diagnostics must match the step's scheme.

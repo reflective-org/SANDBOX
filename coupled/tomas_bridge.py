@@ -46,6 +46,7 @@ import numpy as np  # noqa: E402
 
 from tomas_jax.core import config as tcfg          # noqa: E402
 from tomas_jax.core.state import TomasState        # noqa: E402
+from tomas_jax.physics.water_equilibrium import WATER_SCHEME_H2SO4  # noqa: E402
 from tomas_jax.solvers.condensation import make_step  # noqa: E402
 import background_aerosol_distribution as _bad      # noqa: E402  (Marianna dist loader)
 
@@ -61,7 +62,7 @@ ALPHA_DEFAULT = 1.0           # condensation accommodation coefficient (Phase 8 
 # TOMAS scheme choices matching the validated Marianna run (AD-3.5); documented in ASSUMPTIONS.md.
 _COND_METHOD = "ppm_jit"
 _NUCL_SCHEME = "ricco_dunne"
-_WATER_SCHEME = "h2so4_tabazadeh"
+_WATER_SCHEME = WATER_SCHEME_H2SO4   # Tabazadeh-1997 H2SO4-H2O (dev's float selector; a string is not accepted)
 
 #: canonical process order for make_step; the driver filters this by the scenario switches.
 _PROCESS_ORDER = ("nucleation", "coagulation", "condensation")
@@ -183,7 +184,8 @@ def active_processes(switches) -> list[str]:
     return [p for p in _PROCESS_ORDER if flags[p]]
 
 
-def make_microphysics_step(switches, ion_pair_rate=0.0, coag_kernel_scale=1.0):
+def make_microphysics_step(switches, ion_pair_rate=0.0, coag_kernel_scale=1.0, water_every_process=False,
+                           nuc_org_mass_frac=0.1):
     """Build the TOMAS ``step_fn(Nk,Mk,Gc,xk,temp,pres,boxvol,rh,alpha,dt,**kw)->(Nk,Mk,Gc)``.
 
     Uses the Marianna-validated scheme choices; SO2 chemistry is omitted. Returns ``None`` if no
@@ -191,15 +193,19 @@ def make_microphysics_step(switches, ion_pair_rate=0.0, coag_kernel_scale=1.0):
     ``ion_pair_rate`` [pairs/cm^3/s] is baked in as TOMAS's ``fion`` (Dunne-2016 ion-induced
     nucleation); make_step's own default is 0, which silently turns those channels off -- so the
     scenario value must be passed through here. ``coag_kernel_scale`` (default 1.0) is a free
-    multiplier on the coagulation kernel (AD-7.2 sensitivity knob), passed to coag_euler_step."""
+    multiplier on the coagulation kernel (AD-7.2 sensitivity knob), passed to coag_euler_step.
+    ``water_every_process`` re-equilibrates aerosol water after every process (TOMAS box.f order)
+    instead of only with condensation; ``nuc_org_mass_frac`` is the share of nucleated cluster mass put
+    in the organic slot (TOMAS default 0.1; 0 = all sulfate)."""
     procs = active_processes(switches)
     if not procs:
         return None
     step = make_step(procs, cond_method=_COND_METHOD, nucl_scheme=_NUCL_SCHEME,
-                     water_scheme=_WATER_SCHEME)
+                     water_scheme=_WATER_SCHEME, water_every_process=bool(water_every_process))
     fion = float(ion_pair_rate)
     coag_scale = float(coag_kernel_scale)
+    org_frac = float(nuc_org_mass_frac)
 
     def step_fn(*args, **kwargs):
-        return step(*args, fion=fion, coag_kernel_scale=coag_scale, **kwargs)
+        return step(*args, fion=fion, coag_kernel_scale=coag_scale, nuc_org_mass_frac=org_frac, **kwargs)
     return step_fn

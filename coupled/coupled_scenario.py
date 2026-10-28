@@ -168,6 +168,9 @@ class CoupledScenario:
     nucleation_rate_scale: float = 1.0   # -> TOMAS make_step nucleation fn_scale
     condensation_alpha: float = 1.0      # -> TomasState alpha (Fuchs accommodation coefficient), (0,1]
     coag_kernel_scale: float = 1.0       # -> TOMAS make_step kernel multiplier (AD-7.2)
+    # --- TOMAS process options (paper runs v2; defaults reproduce the v1 runs) ---
+    water_every_process: bool = False    # re-equilibrate aerosol water after every process (box.f order)
+    nuc_org_mass_frac: float = 0.1       # share of nucleated cluster mass put in the organic slot; 0 = all SO4
 
     # --- aerosol -> photolysis (Phase 4) ---
     # Where the box aerosol sits in the TUV-x RT column when switches.aerosol_to_j is on. By DEFAULT
@@ -228,6 +231,8 @@ class CoupledScenario:
             raise ValueError(f"nucleation_rate_scale must be >= 0, got {self.nucleation_rate_scale}")
         if not (0.0 < self.condensation_alpha <= 1.0):
             raise ValueError(f"condensation_alpha must be in (0, 1], got {self.condensation_alpha}")
+        if not (0.0 <= self.nuc_org_mass_frac <= 1.0):
+            raise ValueError(f"nuc_org_mass_frac must be in [0, 1], got {self.nuc_org_mass_frac}")
         if self.coag_kernel_scale < 0.0:   # now wired (AD-7.2): free multiplier on the coag kernel
             raise ValueError(f"coag_kernel_scale must be >= 0, got {self.coag_kernel_scale}")
         if isinstance(self.background_dist, str):

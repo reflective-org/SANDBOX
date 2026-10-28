@@ -72,7 +72,7 @@ def test_tomas_so2_chem_truly_off_at_run_level():
     step_off = tb.make_microphysics_step(sc.switches)                            # no so2_chemistry
     step_on = _make_step_raw(["so2_chemistry", "nucleation", "coagulation", "condensation"],
                              cond_method="ppm_jit", nucl_scheme="ricco_dunne",
-                             water_scheme="h2so4_tabazadeh")
+                             water_scheme=tb._WATER_SCHEME)
     _, Mk_off, Gc_off = step_off(*args, oh_conc=1.0e7)
     _, Mk_on, Gc_on = step_on(*args, oh_conc=1.0e7)
     d_off = abs((float(jnp.sum(Mk_off[:, tb.SRTSO4])) + float(Gc_off[tb.SRTSO4])) - S0)
