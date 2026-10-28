@@ -51,6 +51,7 @@ from .tomas_bridge import (initial_tomas_state, make_microphysics_step, SRTSO4,
 from .aerosol_props import het_inputs
 from . import heating as _heating
 from .dilution import dilute_gas, dilute_aerosol, kdil_from_regime as dl_kdil_from_regime
+from .dilution import volume_ratio as dl_volume_ratio, GAUSSIAN_CASES as DL_GAUSSIAN_CASES
 from .units import conc_to_mass, mass_to_conc
 
 from config import IDX, air_number_density                   # noqa: E402  (gas model)
@@ -71,15 +72,41 @@ def _cosz(cfg, t_seconds: float) -> float:
     return cos_solar_zenith(cfg.latitude, cfg.longitude, doy, total_hours % 24.0)
 
 
-def _outer_intervals(cfg, days: int, dt_couple: float) -> list[tuple[float, float]]:
+#: Floor on a dilution-refined outer interval [s]; stops the bisection at a V(t) kink (burst onset).
+_MIN_REFINED_DT = 0.5
+
+
+def _refine_for_dilution(E, vratio, max_dlnv):
+    """Bisect each interval of edge list ``E`` until ln(V(t1)/V(t0)) <= ``max_dlnv`` (or the interval
+    reaches _MIN_REFINED_DT), so the operator-split dilution applied at the end of an interval never
+    removes more than a fraction ~max_dlnv of the plume excess that chemistry/microphysics saw."""
+    out = [E[0]]
+    for t0, t1 in zip(E[:-1], E[1:]):
+        stack = [(t0, t1)]
+        while stack:
+            a, b = stack.pop()
+            if (b - a) > _MIN_REFINED_DT and np.log(float(vratio(b)) / float(vratio(a))) > max_dlnv:
+                m = 0.5 * (a + b)
+                stack.extend([(m, b), (a, m)])   # LIFO: process (a, m) first -> edges stay sorted
+            else:
+                out.append(float(b))
+    return out
+
+
+def _outer_intervals(cfg, days: int, dt_couple: float, vratio=None, max_dlnv: float = 0.0,
+                     extra_edges=()) -> list[tuple[float, float]]:
     """(t0, t1) intervals of length <= dt_couple, SNAPPED so none straddles sunrise/sunset.
 
     Uniform dt_couple edges plus the day/night terminator crossings (found by a coarse cos(SZA) scan
     then bisection). Because terminators only subdivide uniform intervals, every interval is <=
-    dt_couple AND lies entirely in day or entirely in night.
+    dt_couple AND lies entirely in day or entirely in night. Optionally (``max_dlnv`` > 0 with a
+    ``vratio(t)`` = V(t)/V0) intervals where the plume expands fast are further bisected, and
+    ``extra_edges`` (e.g. a Kz burst's start/end) are added; both only subdivide, so the day/night
+    guarantee holds.
     """
     total = float(days) * 86400.0
     edges = set(np.arange(0.0, total, dt_couple).tolist()) | {0.0, total}
+    edges |= {float(e) for e in extra_edges if 0.0 < e < total}
     scan = np.arange(0.0, total + 1.0, min(dt_couple, 300.0))
     cz = np.array([_cosz(cfg, t) for t in scan])
     for i in range(len(scan) - 1):
@@ -92,6 +119,8 @@ def _outer_intervals(cfg, days: int, dt_couple: float) -> list[tuple[float, floa
     # plain floats throughout: terminator edges come out of the bisection as np.float64, and the
     # weak/strong scalar-dtype flip on (t0, t1) would retrace the jitted gas solve at each transition.
     E = sorted(float(e) for e in edges if 0.0 <= e <= total)
+    if vratio is not None and max_dlnv > 0.0:
+        E = _refine_for_dilution(E, vratio, max_dlnv)
     return list(zip(E[:-1], E[1:]))
 
 
@@ -434,7 +463,16 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     _use_retry = False        # STICKY-RETRY: inside a stall region, skip the doomed probe
     _ivl = 0
     _REPROBE = 48             # re-probe the standard dt0 every N intervals to exit the region
-    for t0, t1 in _outer_intervals(cfg, scenario.days, scenario.dt_couple):
+    # Dilution-aware interval refinement (opt-in, dilution_max_dlnv > 0): bisect intervals where V(t)
+    # grows fast and put edges on a Kz burst's start/end, so the end-of-interval dilution step stays small.
+    _refine = dilution_active and bool(regime) and scenario.dilution_max_dlnv > 0.0
+    _gc = DL_GAUSSIAN_CASES.get(regime) if _refine else None
+    _burst_edges = ((_gc.t_burst_start, _gc.t_burst_start + _gc.tau_burst)
+                    if _gc is not None and _gc.tau_burst is not None else ())
+    _intervals = _outer_intervals(cfg, scenario.days, scenario.dt_couple,
+                                  vratio=(lambda t: dl_volume_ratio(t, regime)) if _refine else None,
+                                  max_dlnv=float(scenario.dilution_max_dlnv), extra_edges=_burst_edges)
+    for t0, t1 in _intervals:
         _ivl += 1
         t_mid = 0.5 * (t0 + t1)
         # plain float: photolysis_scale returns 0.0 (float) at night but np.float64 by day, and the
