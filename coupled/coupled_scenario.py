@@ -28,6 +28,11 @@ from dataclasses import asdict, dataclass, field
 from coupled.backgrounds import (BACKGROUND_MODES, MODE_BASES, TABULATED_BACKGROUND,
                                  normalize_modes)
 
+#: Sheared-Gaussian dilution case names (paper runs v2). Mirrors ``coupled.dilution.GAUSSIAN_CASES``
+#: without importing it (that pulls in tomas_jax; this module must stay cheap) -- a test keeps the
+#: two in sync.
+GAUSSIAN_DILUTION_CASES = ("C1", "C2", "C3", "C3a", "C4", "C4a", "C5", "C5a")
+
 #: Photolysis drivers understood by the model (validated -> no silent mis-gate of the sulfur chain).
 PHOTOLYSIS_MODES = ("reference", "sza", "tuvx")
 
@@ -118,9 +123,14 @@ class CoupledScenario:
     # First-order relaxation rate [1/s] toward the background when switches.dilution is on and
     # dilution_regime is "" (constant rate; AD-6.2). Ignored when a regime is set.
     dilution_rate: float = 1.157e-6
-    # Time-varying dilution regime "" (constant) | D1 (Low Kz) | D2 | D3 | D5, from the plume
-    # volume-expansion V(t)/V0 (Schumann scaling; coupled/dilution.DILUTION_REGIMES).
+    # Time-varying dilution regime "" (constant) | D1 (Low Kz) | D2 | D3 | D5 | burst, from the plume
+    # volume-expansion V(t)/V0 (Schumann scaling; coupled/dilution.DILUTION_REGIMES), or a
+    # sheared-Gaussian case C1..C5a (coupled/dilution.GAUSSIAN_CASES; paper runs v2).
     dilution_regime: str = ""
+    # Max ln(V(t1)/V(t0)) per outer interval: intervals where the plume expands faster are bisected
+    # (and a Kz burst's start/end become edges) so the operator-split dilution step stays small.
+    # 0 (default) = off, i.e. plain dt_couple intervals as in the v1 paper runs. v2 uses 0.1.
+    dilution_max_dlnv: float = 0.0
     # Gas species zeroed in the dilution BACKGROUND (entrained air); all others keep their initial
     # value. Empty () => background is the full initial state (AD-6.3). Names must be valid species.
     dilution_zero_species: tuple = ()
@@ -209,9 +219,11 @@ class CoupledScenario:
         if self.dilution_rate < 0.0:
             raise ValueError(f"dilution_rate must be >= 0, got {self.dilution_rate}")
         self.dilution_zero_species = tuple(self.dilution_zero_species)   # YAML list -> tuple
-        _VALID_REGIMES = ("", "D1", "D2", "D3", "D5", "burst")
+        _VALID_REGIMES = ("", "D1", "D2", "D3", "D5", "burst", *GAUSSIAN_DILUTION_CASES)
         if self.dilution_regime not in _VALID_REGIMES:
             raise ValueError(f"dilution_regime must be one of {_VALID_REGIMES}, got {self.dilution_regime!r}")
+        if self.dilution_max_dlnv < 0.0:
+            raise ValueError(f"dilution_max_dlnv must be >= 0, got {self.dilution_max_dlnv}")
         if self.nucleation_rate_scale < 0.0:
             raise ValueError(f"nucleation_rate_scale must be >= 0, got {self.nucleation_rate_scale}")
         if not (0.0 < self.condensation_alpha <= 1.0):
