@@ -63,8 +63,8 @@ import numpy as np
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _SANDBOX = os.path.abspath(os.path.join(_HERE, "..", ".."))
 IC_DIR = os.path.join(_HERE, "ic")
-#: the tracked ss20IC file; this script refuses to write to it
-PROTECTED_IC = os.path.join(IC_DIR, "30N_20km_ss20IC.json")
+#: the legacy ss20IC (local noon, ~DOY 231) the first 8 v2 base runs used; never overwritten
+PROTECTED_IC = os.path.join(IC_DIR, "30N_20km_ss20IC_legacy_noon_doy231.json")
 
 
 def frank_root() -> str:
