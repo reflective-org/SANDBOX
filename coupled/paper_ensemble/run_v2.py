@@ -11,6 +11,7 @@ wet-SA-within-10%-of-background-for-24-h early stop) PLUS the v2 knobs:
   dilution_max_dlnv = 0.1           adaptive outer intervals where the plume expands fast (L12)
   water_every_process = True        TOMAS box.f water re-equilibration order (L8)
   nuc_org_mass_frac = 0.0           nucleated mass 100 % sulfate (L7)
+  molar_so4_transfer = True         gas H2SO4 (98) -> particle SO4 (96) conserves moles (L13)
   tomas_nbins = 80, ion_pair_rate = 30
 
 Named run sets (``SETS``), selected on the CLI:
@@ -72,6 +73,7 @@ TOMAS_NBINS = 80                                      # v2 (also run_60day)
 DILUTION_MAX_DLNV = 0.1                               # v2 (L12)
 WATER_EVERY_PROCESS = True                            # v2 (L8)
 NUC_ORG_MASS_FRAC = 0.0                               # v2 (L7)
+MOLAR_SO4_TRANSFER = True                             # v2 (L13): x96/98 at gas->particle sulfate
 OH_PIN_MOLEC_CM3 = 5.0e5                              # make_constant_oh_banana.OH_CONST
 
 # 1 t SO2 into V0 = 10 m x 10 m x 15 km (identical to run_60day._SO2_SPIKE, 6.273063291666667e15)
@@ -204,6 +206,7 @@ def build_scenario(spec, days=MAX_DAYS):
         nucleation_rate_scale=spec.nucleation_rate_scale,
         coag_kernel_scale=spec.coag_kernel_scale,
         water_every_process=WATER_EVERY_PROCESS, nuc_org_mass_frac=NUC_ORG_MASS_FRAC,
+        molar_so4_transfer=MOLAR_SO4_TRANSFER,
         switches=Switches(sulfur=True, nucleation=True, condensation=True, coagulation=True,
                           aerosol_to_j=False, heating_to_t=False, dilution=True),
         concentrations=conc)
@@ -293,7 +296,8 @@ def manifest_row(set_name, i, spec):
         dilution_zero_species=";".join(sc.dilution_zero_species),
         condensation_alpha=sc.condensation_alpha, nucleation_rate_scale=sc.nucleation_rate_scale,
         coag_kernel_scale=sc.coag_kernel_scale, water_every_process=sc.water_every_process,
-        nuc_org_mass_frac=sc.nuc_org_mass_frac, tomas_nbins=sc.tomas_nbins,
+        nuc_org_mass_frac=sc.nuc_org_mass_frac, molar_so4_transfer=sc.molar_so4_transfer,
+        tomas_nbins=sc.tomas_nbins,
         ion_pair_rate=sc.ion_pair_rate, so2_ho2_rate=sc.so2_ho2_rate,
         ic_set=IC_TAG, SO2_init_ppt=sc.concentrations["SO2"],
         SO2_init_molec_cm3=(SO2_SPIKE_MOLEC_CM3 if injected else BG_SO2_PPT * 1e-12 * M),

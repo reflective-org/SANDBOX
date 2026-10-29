@@ -16,6 +16,7 @@ COUNTS = {"base": 8, "oat": 40, "ctrl": 8, "constoh": 1}
 MANIFEST_COLS = {
     "set", "index", "case_id", "kind", "dilution_regime", "sigma_y0_m", "sigma_z0_m", "shear_s-1",
     "kz_schedule", "tau_burst_s", "dilution_max_dlnv", "water_every_process", "nuc_org_mass_frac",
+    "molar_so4_transfer",
     "tomas_nbins", "ion_pair_rate", "condensation_alpha", "nucleation_rate_scale",
     "coag_kernel_scale", "start_utc_hour", "ic_set", "days", "sandbox_git_sha", "sandbox_dirty",
     "tomas_jax_sha", "tomas_jax_dirty"}
@@ -53,6 +54,7 @@ def test_scenarios_construct_with_v2_knobs(name):
         assert sc.dilution_max_dlnv == 0.1
         assert sc.water_every_process is True
         assert sc.nuc_org_mass_frac == 0.0
+        assert sc.molar_so4_transfer is True         # L13: x96/98 gas->particle sulfate
         assert sc.tomas_nbins == 80 and sc.ion_pair_rate == 30.0
         assert sc.start_utc_hour == 6.0 and sc.background_dist == "sabr_220"
         assert sc.dilution_background == {"SO2": 20.0} and sc.dilution_zero_species == ()
@@ -84,6 +86,7 @@ def test_plan_writes_manifest(name, capsys):
     assert MANIFEST_COLS <= set(rows[0])
     assert len({r["case_id"] for r in rows}) == COUNTS[name]
     assert all(len(r["tomas_jax_sha"]) == 40 for r in rows)
+    assert all(r["molar_so4_transfer"] == "True" for r in rows)
     expected = {"C1"} if name == "constoh" else set(rv.DILUTION_CASES)
     assert {r["dilution_regime"] for r in rows} == expected
     assert all(r["sigma_z0_m"] and r["kz_schedule"] for r in rows)
