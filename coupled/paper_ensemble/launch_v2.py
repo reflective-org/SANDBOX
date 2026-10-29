@@ -50,10 +50,12 @@ def main(set_name, n_proc=8):
     total = len(cases)
     sdir = run_v2.set_dir(set_name)
     os.makedirs(sdir, exist_ok=True)
-    if set_name == "ctrl":
-        missing = [c.dil for c in cases if not os.path.exists(run_v2.paired_base_npz(c))]
+    if any(c.kind == "ctrl" for c in cases):
+        missing = [c.dil for c in cases
+                   if not run_v2.is_current(run_v2.paired_base_npz(c), c.site)]
         if missing:
-            print(f"WARNING: base runs not finished for {missing}; those controls will run the "
+            print(f"WARNING: base runs not finished (or made on another IC) for {missing}; "
+                  f"those controls will run the "
                   f"full {run_v2.MAX_DAYS} d instead of the paired length", flush=True)
     path, _ = run_v2.write_manifest(set_name, cases)
     env = dict(os.environ, **_PIN)

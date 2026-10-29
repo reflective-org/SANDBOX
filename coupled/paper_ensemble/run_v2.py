@@ -4,7 +4,7 @@
 
 Decisions are recorded in RUNS_V2.md (same dir). Every v2 scenario is the ``run_60day.py``
 scenario (30N / 20 km / 210 K / 55 hPa, SABR-220 background with 20 ppt SO2, ``ss20IC`` spun-up
-gas ICs, 06:00 local release, 1 t SO2 into V0 = 10 m x 10 m x 15 km, 60 d max with the
+gas ICs, 06:00 local release on DOY 172, 1 t SO2 into V0 = 10 m x 10 m x 15 km, 60 d max with the
 wet-SA-within-10%-of-background-for-24-h early stop) PLUS the v2 knobs:
 
   dilution_regime in C1..C5a        sheared-Gaussian V(t)/V0 from t = 0 (coupled/dilution.py)
@@ -14,20 +14,38 @@ wet-SA-within-10%-of-background-for-24-h early stop) PLUS the v2 knobs:
   molar_so4_transfer = True         gas H2SO4 (98) -> particle SO4 (96) conserves moles (L13)
   tomas_nbins = 80, ion_pair_rate = 30
 
+A ``Site`` bundles the site, background and spun-up IC (``SITES``):
+
+  30N   30N_20km (lat 30, 210 K, 55 hPa, WTR 6.9104), sabr_220, bg SO2 20 ppt,
+        ic/30N_20km_ss20IC.json  (L17/L18 regenerated; the first 8 base runs used the legacy
+        ic/30N_20km_ss20IC_legacy_noon_doy231.json)
+  geo   30N_20km, aer_geo, bg SO2 100 ppt (L15), ic/30N_20km_ss100IC.json
+  60N   60N_15km (lat 60, 210 K, 120 hPa, WTR 3.1673 = run_ensemble.LAT_ALT, L14), sabr_220,
+        bg SO2 20 ppt, ic/60N_15km_ss20IC.json
+The background SO2 is both ``dilution_background`` (entrained air) and the no-injection SO2.
+
 Named run sets (``SETS``), selected on the CLI:
 
-  base    8   the eight dilution cases, microphysics at defaults
-  oat     40  every case x {nucleation x0.01, x100; coag kernel x0.5, x2; alpha 0.5}
-  ctrl    8   no-injection twin per base case, same V(t) (length = paired base run's final t,
-              rounded up to whole days, else 60 d -- as run_bgstop_control)
-  constoh 1   C1 with OH pinned at 5e5 molec cm^-3 (as make_constant_oh_banana)
-  geo, hour, site60N   defined but BLOCKED on open questions O2 / O3 / O1 (RUNS_V2.md)
+  base          8   30N: the eight dilution cases, microphysics at defaults
+  oat           40  30N: every case x {nucleation x0.01, x100; coag kernel x0.5, x2; alpha 0.5}
+  ctrl          8   30N: no-injection twin per base case, same V(t) (length = paired base run's
+                    final t, rounded up to whole days, else 60 d -- as run_bgstop_control)
+  constoh       1   30N: C1 with OH pinned at 5e5 molec cm^-3 (as make_constant_oh_banana)
+  geo           8   the eight dilution cases on the geo site (aer_geo)
+  geo_ctrl      8   no-injection twins of the geo set (O5 still open: defined, not yet approved)
+  site60N       8   the eight dilution cases at 60N/15 km (O4: same sigma/Kz/S as 30N)
+  site60N_ctrl  8   no-injection twins of the site60N set (O5 still open)
+  hour              defined but BLOCKED on open question O3 (RUNS_V2.md)
 
-Case id: ``<site>__<bg>__<dil>__<alpha>__<nuc>__<coag>__h06_ss20IC`` (+ ``__ctrl`` / ``__constOH``).
+Case id: ``<site>__<bg>__<dil>__<alpha>__<nuc>__<coag>__h06_<ic tag>`` (+ ``__ctrl`` /
+``__constOH``), e.g. ``30N_20km__aergeo__C1__a1p0__nuc1__cg1__h06_ss100IC``.
 Output: ``runs_v2/<set>/<case_id>/state.npz`` (run_60day layout; ``V_ratio`` from
-``coupled.dilution.volume_ratio``), ``runs_v2/<set>/manifest.csv`` (one row per case, all resolved
-parameters + dilution metadata + git provenance), ``runs_v2/<set>/summary_*.csv``.
-Cases whose ``state.npz`` exists are skipped.
+``coupled.dilution.volume_ratio``; ``ic_sha256`` of the IC used), ``runs_v2/<set>/manifest.csv``
+(one row per case, all resolved parameters + dilution metadata + IC file and sha256 + git
+provenance), ``runs_v2/<set>/summary_*.csv``.
+Cases whose ``state.npz`` exists AND records the current IC's sha256 are skipped. A state.npz with
+no or another IC hash (e.g. the base runs made on the legacy IC) is reported STALE and left alone:
+move it aside to rerun that case. A ctrl twin only takes its length from a non-stale base run.
 
 CLI (from SANDBOX/):
   python -m coupled.paper_ensemble.run_v2 plan <set>          # list cases, write manifest, no run
@@ -39,6 +57,7 @@ from __future__ import annotations
 import csv
 import dataclasses
 import functools
+import hashlib
 import json
 import math
 import os
@@ -52,21 +71,16 @@ import coupled.model_bridge  # noqa: F401  (puts the flat gas model + tuvx on sy
 from config import IDX, air_number_density  # noqa: E402
 from coupled import CoupledScenario  # noqa: E402
 from coupled.coupled_scenario import GAUSSIAN_DILUTION_CASES, Switches  # noqa: E402
+from coupled.paper_ensemble.run_ensemble import LAT_ALT  # noqa: E402
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _SANDBOX = os.path.abspath(os.path.join(_HERE, "..", ".."))
 _OUT = os.path.join(_HERE, "runs_v2")
-_IC_DIR = os.path.join(_HERE, "ic")                  # tracked copy of runs_60day/control_so2_20ppt_ic.json
+_IC_DIR = os.path.join(_HERE, "ic")                  # spun-up control ICs (make_spinup_ic.py)
 
 # --- fixed v2 configuration (every value traced to run_60day.py unless marked "v2") -----------------
-SITE = "30N_20km"
-BG_TOKEN = "sabr220"
-_T, _P, _WTR = 210.0, 55.0, 6.9104                    # run_60day / run_ensemble LAT_ALT[0]
-_LAT, _LON, _DOY, _START_UTC_H = 30.0, 0.0, 172, 6.0  # 06:00 local release (lon 0 -> local = UTC)
+_LON, _DOY, _START_UTC_H = 0.0, 172, 6.0              # 06:00 local release (lon 0 -> local = UTC)
 MAX_DAYS = 60
-BG_SO2_PPT = 20.0                                     # SABR-220 background SO2 (dilution_background)
-IC_TAG = "ss20IC"
-_IC_FILE = "30N_20km_ss20IC.json"
 ION_PAIR_RATE = 30.0
 SO2_HO2_RATE = 1.0e-18
 TOMAS_NBINS = 80                                      # v2 (also run_60day)
@@ -82,6 +96,39 @@ _V0_CM3 = (10.0 * 10.0 * 15000.0) * 1e6
 SO2_SPIKE_MOLEC_CM3 = 1.0e6 / 64.0 * _AVOG / _V0_CM3
 
 DILUTION_CASES = GAUSSIAN_DILUTION_CASES              # C1, C2, C3, C3a, C4, C4a, C5, C5a
+
+
+@dataclasses.dataclass(frozen=True)
+class Site:
+    """Site + background + spun-up IC of a family of run sets."""
+    key: str
+    site: str                 # run_ensemble.LAT_ALT label (case-id prefix)
+    latitude: float
+    T: float
+    P: float                  # hPa
+    WTR: float                # ppmv
+    bg_token: str             # case-id token
+    background_dist: str      # coupled.backgrounds name
+    bg_so2_ppt: float         # dilution_background SO2 AND the no-injection (ctrl) SO2
+    ic_tag: str
+    ic_file: str              # under ic/
+    base_set: str             # the set holding this site's default-microphysics plume runs
+
+
+def _lat_alt(label):
+    (row,) = [r for r in LAT_ALT if r[0] == label]
+    return dict(zip(("site", "latitude", "T", "P", "WTR"), row))
+
+
+SITES = {s.key: s for s in [
+    Site("30N", **_lat_alt("30N_20km"), bg_token="sabr220", background_dist="sabr_220",
+         bg_so2_ppt=20.0, ic_tag="ss20IC", ic_file="30N_20km_ss20IC.json", base_set="base"),
+    Site("geo", **_lat_alt("30N_20km"), bg_token="aergeo", background_dist="aer_geo",
+         bg_so2_ppt=100.0, ic_tag="ss100IC", ic_file="30N_20km_ss100IC.json", base_set="geo"),
+    Site("60N", **_lat_alt("60N_15km"), bg_token="sabr220", background_dist="sabr_220",
+         bg_so2_ppt=20.0, ic_tag="ss20IC", ic_file="60N_15km_ss20IC.json", base_set="site60N"),
+]}
+SITE_30N = SITES["30N"]
 
 # one-at-a-time microphysics sensitivities: (token, field, value)
 OAT_VARIANTS = (
@@ -106,14 +153,15 @@ class CaseSpec:
     condensation_alpha: float = 1.0
     nucleation_rate_scale: float = 1.0
     coag_kernel_scale: float = 1.0
+    site: Site = SITE_30N
 
     @property
     def base_id(self):
-        return "__".join([SITE, BG_TOKEN, self.dil,
+        return "__".join([self.site.site, self.site.bg_token, self.dil,
                           _TOKEN["condensation_alpha"][self.condensation_alpha],
                           _TOKEN["nucleation_rate_scale"][self.nucleation_rate_scale],
                           _TOKEN["coag_kernel_scale"][self.coag_kernel_scale],
-                          f"h06_{IC_TAG}"])
+                          f"h06_{self.site.ic_tag}"])
 
     @property
     def case_id(self):
@@ -126,16 +174,16 @@ def _blocked(question, why):
     return fn
 
 
-def _base():
-    return [CaseSpec(d) for d in DILUTION_CASES]
+def _base(site=SITE_30N):
+    return [CaseSpec(d, site=site) for d in DILUTION_CASES]
 
 
 def _oat():
     return [CaseSpec(d, **{field: val}) for d in DILUTION_CASES for _tok, field, val in OAT_VARIANTS]
 
 
-def _ctrl():
-    return [CaseSpec(d, kind="ctrl") for d in DILUTION_CASES]
+def _ctrl(site=SITE_30N):
+    return [CaseSpec(d, kind="ctrl", site=site) for d in DILUTION_CASES]
 
 
 def _constoh():
@@ -148,9 +196,11 @@ SETS = {
     "oat": _oat,
     "ctrl": _ctrl,
     "constoh": _constoh,
-    "geo": _blocked("O2", "geo background SO2 (100 ppt as v1, or ss20IC 20 ppt?)"),
+    "geo": functools.partial(_base, SITES["geo"]),
+    "geo_ctrl": functools.partial(_ctrl, SITES["geo"]),
+    "site60N": functools.partial(_base, SITES["60N"]),
+    "site60N_ctrl": functools.partial(_ctrl, SITES["60N"]),
     "hour": _blocked("O3", "release-hour sweep IC resampling per hour from the ss20 control?"),
-    "site60N": _blocked("O1", "60N spun-up control: 120 or 100 hPa, SO2 held at 20 ppt? (also O4)"),
 }
 
 
@@ -169,38 +219,52 @@ def case_dir(set_name, spec):
 
 
 # --- scenario ------------------------------------------------------------------------------------
-@functools.lru_cache(maxsize=1)
-def _ic_ppt():
-    """ss20IC gas mixing ratios [ppt], H2O dropped (comes from WTR), H2SO4/SO3 zeroed (as run_60day)."""
-    path = os.path.join(_IC_DIR, _IC_FILE)
+def ic_path(site):
+    return os.path.join(_IC_DIR, site.ic_file)
+
+
+@functools.lru_cache(maxsize=None)
+def _ic_load(path):
+    """(gas mixing ratios [ppt], sha256 of the file bytes) of a spun-up IC json; H2O dropped (comes
+    from WTR), H2SO4/SO3 zeroed (as run_60day). The hash is of the exact bytes parsed."""
     if not os.path.exists(path):
-        raise FileNotFoundError(f"spun-up IC file missing: {path} (gitignored; regenerate or copy "
-                                f"from the 60-day runs)")
-    with open(path) as f:
-        ic = json.load(f)["ppt"]
+        raise FileNotFoundError(f"spun-up IC file missing: {path} (make it with "
+                                f"python -m coupled.paper_ensemble.make_spinup_ic run <preset>)")
+    with open(path, "rb") as f:
+        raw = f.read()
+    ic = json.loads(raw)["ppt"]
     conc = {k: float(v) for k, v in ic.items() if k in IDX}
     conc.pop("H2O", None)
     conc["H2SO4"] = 0.0
     conc["SO3"] = 0.0
-    return conc
+    return conc, hashlib.sha256(raw).hexdigest()
+
+
+def _ic_ppt(site=SITE_30N):
+    return dict(_ic_load(ic_path(site))[0])
+
+
+def ic_sha256(site=SITE_30N):
+    return _ic_load(ic_path(site))[1]
 
 
 def build_scenario(spec, days=MAX_DAYS):
     """The v2 CoupledScenario for ``spec`` (``days`` only matters for ctrl, see ``ctrl_days``)."""
-    M = air_number_density(_P, _T)
-    conc = dict(_ic_ppt())
+    site = spec.site
+    M = air_number_density(site.P, site.T)
+    conc = _ic_ppt(site)
     if spec.kind == "ctrl":
-        conc["SO2"] = BG_SO2_PPT                              # no injection: background SO2
+        conc["SO2"] = site.bg_so2_ppt                         # no injection: background SO2
     else:
-        conc["SO2"] = SO2_SPIKE_MOLEC_CM3 / M * 1e12           # the 1 t spike
+        conc["SO2"] = SO2_SPIKE_MOLEC_CM3 / M * 1e12           # the 1 t spike (same molecules/V0)
     if spec.kind == "constoh":
         conc["OH"] = OH_PIN_MOLEC_CM3 / M * 1e12
     return CoupledScenario(
-        T=_T, P=_P, WTR=_WTR, latitude=_LAT, longitude=_LON, day_of_year=_DOY,
+        T=site.T, P=site.P, WTR=site.WTR, latitude=site.latitude, longitude=_LON, day_of_year=_DOY,
         start_utc_hour=_START_UTC_H, days=int(days), DT=600.0, dt_couple=600.0, photolysis="tuvx",
-        tomas_nbins=TOMAS_NBINS, background_dist="sabr_220", dilution_regime=spec.dil,
+        tomas_nbins=TOMAS_NBINS, background_dist=site.background_dist, dilution_regime=spec.dil,
         dilution_max_dlnv=DILUTION_MAX_DLNV,
-        dilution_zero_species=(), dilution_background={"SO2": BG_SO2_PPT},
+        dilution_zero_species=(), dilution_background={"SO2": site.bg_so2_ppt},
         ion_pair_rate=ION_PAIR_RATE, so2_ho2_rate=SO2_HO2_RATE,
         condensation_alpha=spec.condensation_alpha,
         nucleation_rate_scale=spec.nucleation_rate_scale,
@@ -212,20 +276,37 @@ def build_scenario(spec, days=MAX_DAYS):
         concentrations=conc)
 
 
+def paired_spec(spec):
+    """The plume case a ctrl twin is paired to (same site and dilution case, default knobs)."""
+    return CaseSpec(spec.dil, site=spec.site)
+
+
 def paired_base_npz(spec):
-    """state.npz of the base-set run that a ctrl twin is paired to (same dilution case, defaults)."""
-    return os.path.join(set_dir("base"), CaseSpec(spec.dil).case_id, "state.npz")
+    """state.npz of the site's base-set run that a ctrl twin is paired to."""
+    return os.path.join(set_dir(spec.site.base_set), paired_spec(spec).case_id, "state.npz")
+
+
+def npz_ic_sha256(path):
+    """The ``ic_sha256`` a state.npz records ('' if none: runs made before it was recorded)."""
+    with np.load(path, allow_pickle=False) as z:
+        return str(z["ic_sha256"]) if "ic_sha256" in z.files else ""
+
+
+def is_current(path, site):
+    """True if ``path`` exists and was made from the IC file ``site`` uses now."""
+    return os.path.exists(path) and npz_ic_sha256(path) == ic_sha256(site)
 
 
 def ctrl_days(spec):
     """(days, source): the paired base run's final t rounded up to whole days if its state.npz
-    exists, else MAX_DAYS (mirrors run_bgstop_control; no early stop for the control itself)."""
+    exists and was made on the same IC, else MAX_DAYS (mirrors run_bgstop_control; no early stop
+    for the control itself)."""
     path = paired_base_npz(spec)
-    if os.path.exists(path):
+    if is_current(path, spec.site):
         with np.load(path, allow_pickle=True) as z:
             t_end_d = float(z["t"][-1]) / 86400.0
         return max(1, int(math.ceil(t_end_d - 1e-6))), "paired_base_run"
-    return MAX_DAYS, "default_60d"
+    return MAX_DAYS, ("default_60d_paired_base_stale_ic" if os.path.exists(path) else "default_60d")
 
 
 def resolved_days(spec):
@@ -284,10 +365,10 @@ def manifest_row(set_name, i, spec):
     injected = spec.kind != "ctrl"
     row = dict(
         set=set_name, index=i, case_id=spec.case_id, kind=spec.kind,
-        paired_case_id=(CaseSpec(spec.dil).case_id if spec.kind == "ctrl" else ""),
-        site=SITE, latitude=sc.latitude, longitude=sc.longitude, T=sc.T, P=sc.P, WTR=sc.WTR,
-        day_of_year=sc.day_of_year, start_utc_hour=sc.start_utc_hour,
-        background=BG_TOKEN, background_dist=sc.background_dist,
+        paired_case_id=(paired_spec(spec).case_id if spec.kind == "ctrl" else ""),
+        site=spec.site.site, latitude=sc.latitude, longitude=sc.longitude, T=sc.T, P=sc.P,
+        WTR=sc.WTR, day_of_year=sc.day_of_year, start_utc_hour=sc.start_utc_hour,
+        background=spec.site.bg_token, background_dist=sc.background_dist,
         dilution_regime=sc.dilution_regime,
         **{k: meta[k] for k in ("family", "sigma_y0_m", "sigma_z0_m", "shear_s-1",
                                 "kz_schedule", "tau_burst_s")},
@@ -299,8 +380,10 @@ def manifest_row(set_name, i, spec):
         nuc_org_mass_frac=sc.nuc_org_mass_frac, molar_so4_transfer=sc.molar_so4_transfer,
         tomas_nbins=sc.tomas_nbins,
         ion_pair_rate=sc.ion_pair_rate, so2_ho2_rate=sc.so2_ho2_rate,
-        ic_set=IC_TAG, SO2_init_ppt=sc.concentrations["SO2"],
-        SO2_init_molec_cm3=(SO2_SPIKE_MOLEC_CM3 if injected else BG_SO2_PPT * 1e-12 * M),
+        ic_set=spec.site.ic_tag,
+        ic_file=os.path.relpath(ic_path(spec.site), _SANDBOX), ic_sha256=ic_sha256(spec.site),
+        SO2_init_ppt=sc.concentrations["SO2"],
+        SO2_init_molec_cm3=(SO2_SPIKE_MOLEC_CM3 if injected else spec.site.bg_so2_ppt * 1e-12 * M),
         SO2_injected_tonne=(1.0 if injected else 0.0), V0_cm3=_V0_CM3,
         oh_pinned_molec_cm3=(OH_PIN_MOLEC_CM3 if spec.kind == "constoh" else ""),
         days=days, days_source=days_src, max_days=MAX_DAYS, early_stop=(spec.kind != "ctrl"),
@@ -378,7 +461,8 @@ def run_one(set_name, spec):
              n_cm3=sd["n_cm3"], Dp_m=sd["Dp_m"], dp_mid_um=dp_mid,
              dNdlogDp=sd["n_cm3"] / np.diff(logdp)[None, :],
              V_ratio=V, total_n=sd["n_cm3"].sum(axis=1),
-             J_tmid=jrec["t_mid"], J=jrec["J"], J_equations=jrec["equations"])
+             J_tmid=jrec["t_mid"], J=jrec["J"], J_equations=jrec["equations"],
+             ic_file=os.path.relpath(ic_path(spec.site), _SANDBOX), ic_sha256=ic_sha256(spec.site))
     os.replace(tmp, final)
     if spec.kind == "constoh":
         oh = x[:, IDX["OH"]]
@@ -412,8 +496,14 @@ def run_slice(set_name, cases, lo, hi):
     spath = os.path.join(set_dir(set_name), f"summary_{lo}_{hi}.csv")
     for i in range(lo, min(hi, len(cases))):
         spec = cases[i]
-        if os.path.exists(os.path.join(case_dir(set_name, spec), "state.npz")):
-            print(f"[{i}] {spec.case_id} SKIP (state.npz exists)", flush=True)
+        npz = os.path.join(case_dir(set_name, spec), "state.npz")
+        if os.path.exists(npz):
+            if is_current(npz, spec.site):
+                print(f"[{i}] {spec.case_id} SKIP (state.npz exists)", flush=True)
+            else:
+                print(f"[{i}] {spec.case_id} STALE: state.npz was made from another IC "
+                      f"(ic_sha256 {npz_ic_sha256(npz)[:12] or 'not recorded'} != "
+                      f"{ic_sha256(spec.site)[:12]}); move it aside to rerun", flush=True)
             continue
         try:
             days, src = resolved_days(spec)
