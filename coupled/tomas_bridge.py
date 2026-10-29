@@ -56,6 +56,7 @@ SRTSO2 = tcfg.SRTSO2          # SO2 index in the gas array Gc (TOMAS's own SO2 c
 SRTH2O = tcfg.SRTH2O          # aerosol water index in Mk
 NBINS = tcfg.NBINS
 MW_H2SO4 = tcfg.MW_H2SO4      # g/mol (98.0), for the units bridge
+MW_SO4 = tcfg.MW_SO4          # g/mol (96.0): Mk[:,SRTSO4] is SO4 mass under molar_so4_transfer (L13)
 BOXVOL_CM3 = 1.0e6            # canonical grid-cell volume = 1 m^3 (intensive results independent of it)
 ALPHA_DEFAULT = 1.0           # condensation accommodation coefficient (Phase 8 sensitivity knob)
 
@@ -184,8 +185,17 @@ def active_processes(switches) -> list[str]:
     return [p for p in _PROCESS_ORDER if flags[p]]
 
 
+def particle_sulfate_mw(molar_so4_transfer=False) -> float:
+    """Molar mass [g/mol] that converts the particle slot ``Mk[:,SRTSO4]`` to moles of sulfur.
+
+    ``MW_SO4`` (96) when ``molar_so4_transfer`` is on -- TOMAS then stores SO4 mass and conserves moles
+    at every gas->particle transfer (L13). Otherwise ``MW_H2SO4`` (98): the v1 kg-for-kg transfer makes
+    the slot H2SO4-equivalent mass (AD-3.8), and the v1 readers stay bitwise unchanged."""
+    return MW_SO4 if molar_so4_transfer else MW_H2SO4
+
+
 def make_microphysics_step(switches, ion_pair_rate=0.0, coag_kernel_scale=1.0, water_every_process=False,
-                           nuc_org_mass_frac=0.1):
+                           nuc_org_mass_frac=0.1, molar_so4_transfer=False):
     """Build the TOMAS ``step_fn(Nk,Mk,Gc,xk,temp,pres,boxvol,rh,alpha,dt,**kw)->(Nk,Mk,Gc)``.
 
     Uses the Marianna-validated scheme choices; SO2 chemistry is omitted. Returns ``None`` if no
@@ -196,12 +206,16 @@ def make_microphysics_step(switches, ion_pair_rate=0.0, coag_kernel_scale=1.0, w
     multiplier on the coagulation kernel (AD-7.2 sensitivity knob), passed to coag_euler_step.
     ``water_every_process`` re-equilibrates aerosol water after every process (TOMAS box.f order)
     instead of only with condensation; ``nuc_org_mass_frac`` is the share of nucleated cluster mass put
-    in the organic slot (TOMAS default 0.1; 0 = all sulfate)."""
+    in the organic slot (TOMAS default 0.1; 0 = all sulfate). ``molar_so4_transfer`` (static) makes every
+    TOMAS gas->particle sulfate transfer (nucleation incl. its gas-limited clamp, condensation incl. the
+    tiny-sink dump) conserve moles: kg H2SO4 leaving ``Gc`` -> x96/98 kg SO4 into ``Mk`` (L13); False is
+    TOMAS's kg-for-kg default, bitwise."""
     procs = active_processes(switches)
     if not procs:
         return None
     step = make_step(procs, cond_method=_COND_METHOD, nucl_scheme=_NUCL_SCHEME,
-                     water_scheme=_WATER_SCHEME, water_every_process=bool(water_every_process))
+                     water_scheme=_WATER_SCHEME, water_every_process=bool(water_every_process),
+                     molar_so4_transfer=bool(molar_so4_transfer))
     fion = float(ion_pair_rate)
     coag_scale = float(coag_kernel_scale)
     org_frac = float(nuc_org_mass_frac)

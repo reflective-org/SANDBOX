@@ -47,7 +47,7 @@ import numpy as np
 # model_bridge puts gas_phase_chemistry on sys.path (interim; see DEFERRED) -- import it first.
 from .model_bridge import initial_state, to_model_config
 from .tomas_bridge import (initial_tomas_state, make_microphysics_step, SRTSO4,
-                           BOXVOL_CM3, MW_H2SO4)
+                           BOXVOL_CM3, MW_H2SO4, particle_sulfate_mw)
 from .aerosol_props import het_inputs
 from . import heating as _heating
 from .dilution import dilute_gas, dilute_aerosol, kdil_from_regime as dl_kdil_from_regime
@@ -321,6 +321,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     ``radius_cm``       **wet** effective radius [cm]; NaN when TOMAS is inactive
     ``h2so4wp``         aerosol H2SO4 weight percent; NaN when TOMAS is inactive
     ``particulate_S``   aerosol sulfur [molec/cm^3, H2SO4-equivalent]; NaN when TOMAS is inactive
+                        (slot read with MW 96 under ``molar_so4_transfer``, else MW 98)
     ``N_total``         total particle number [#/cm^3 at ambient T,P]; NaN when TOMAS is inactive
     ``gas``             ``{species_name: concentration [molec/cm^3]}``, all 34 gas species
     ==================  =========================================================================
@@ -339,10 +340,12 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
                                         ion_pair_rate=float(scenario.ion_pair_rate),
                                         coag_kernel_scale=float(scenario.coag_kernel_scale),
                                         water_every_process=bool(scenario.water_every_process),
-                                        nuc_org_mass_frac=float(scenario.nuc_org_mass_frac))
+                                        nuc_org_mass_frac=float(scenario.nuc_org_mass_frac),
+                                        molar_so4_transfer=bool(scenario.molar_so4_transfer))
     tomas_active = tomas_step is not None
     tstate = initial_tomas_state(scenario) if tomas_active else None
-    het = het_inputs(tstate) if tomas_active else None
+    molar_so4 = bool(scenario.molar_so4_transfer)   # Mk[:,SRTSO4] is SO4 (96) vs H2SO4-equiv (98) mass
+    het = het_inputs(tstate, molar_so4=molar_so4) if tomas_active else None
     h2so4_idx = IDX["H2SO4"]
 
     # Two-level integration: the gas ODE is solved ONCE per outer step. With TOMAS active we need a
@@ -403,10 +406,13 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
             return None
         return aerosol_optical_props(tstate, _wl_nm, _height_edges, _band_km, mie=mie_table)
 
+    _mw_particle_so4 = particle_sulfate_mw(molar_so4)   # 96 (molar_so4_transfer) else 98 (v1, bitwise)
+
     def _particulate_S(state):
-        # aerosol sulfate mass (H2SO4-equiv kg, AD-3.8) -> molec/cm^3 of sulfur
+        # aerosol sulfate slot mass (SO4 kg under molar_so4_transfer, else H2SO4-equiv kg, AD-3.8)
+        # -> molec/cm^3 of sulfur (= moles S; reported as H2SO4-equivalent molecules)
         m_so4_kg = float(jnp.sum(state.Mk[:, SRTSO4]))
-        return mass_to_conc(m_so4_kg, BOXVOL_CM3, MW_H2SO4)
+        return mass_to_conc(m_so4_kg, BOXVOL_CM3, _mw_particle_so4)
 
     def _aero_record():
         aero = (np.nan, np.nan, np.nan, np.nan) if not tomas_active else \
@@ -532,7 +538,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
             env_end_kg = conc_to_mass(float(env_grid[-1]), BOXVOL_CM3, MW_H2SO4)   # envelope(t1)
             yc = yc.at[h2so4_idx].set(
                 mass_to_conc(max(env_end_kg - removal_kg, 0.0), BOXVOL_CM3, MW_H2SO4))
-            het = het_inputs(tstate)                          # for the next interval
+            het = het_inputs(tstate, molar_so4=molar_so4)     # for the next interval
         else:
             _try_std = (not _use_retry) or (_ivl % _REPROBE == 0)
             _done = False
@@ -573,7 +579,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
             yc = dilute_gas(yc, gas_bg, kdil, float(t1 - t0))
             if tomas_active:
                 tstate = dilute_aerosol(tstate, tstate_bg, kdil, float(t1 - t0))
-                het = het_inputs(tstate)   # het inputs reflect the diluted aerosol next interval
+                het = het_inputs(tstate, molar_so4=molar_so4)   # het inputs reflect the diluted aerosol
 
         t_list.append(t1)
         x_list.append(np.asarray(yc))

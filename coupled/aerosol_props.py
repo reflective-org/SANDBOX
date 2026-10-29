@@ -8,8 +8,12 @@ Derive the three quantities the gas het chemistry needs from an evolving ``Tomas
   * ``h2so4_weight_pct``     -- H2SO4 weight-percent of the aerosol (feeds the gamma composition).
 
 All use the WET particle (equilibrium water at ``SRTH2O``): uptake happens on the deliquesced
-particle (AD-3.4). TOMAS ``Mk[:,SRTSO4]`` is H2SO4-equivalent mass (AD-3.8), so the weight-percent
-needs no 96/98 conversion. There is no prebuilt TOMAS helper for these; we compose the physics
+particle (AD-3.4). What ``Mk[:,SRTSO4]`` holds depends on the scenario's ``molar_so4_transfer``:
+False (v1) -- kg-for-kg transfer, the slot is H2SO4-equivalent mass (AD-3.8) and the weight-percent
+uses it directly (bitwise v1); True (L13) -- the slot is SO4 mass (MW 96), converted to H2SO4 x98/96
+for the weight-percent, so a pure-acid particle gives exactly ``tabazadeh_h2so4_wt(T, RH)``. The wet
+diameters need no flag: TOMAS's Tabazadeh water (``acid = Mk*98/96``) and density (moles = Mk/96)
+already read the slot as SO4. There is no prebuilt TOMAS helper for these; we compose the physics
 functions (``calc_equilibrium_water`` + ``calc_particle_properties``) that TOMAS itself uses.
 """
 
@@ -25,6 +29,7 @@ from tomas_jax.physics.water_equilibrium import calc_equilibrium_water_h2so4  # 
 
 _SRTSO4 = tb.SRTSO4
 _SRTH2O = tb.SRTH2O
+_SO4_TO_H2SO4 = tb.MW_H2SO4 / tb.MW_SO4   # 98/96: SO4 slot mass -> H2SO4 mass (molar_so4_transfer)
 
 
 def _wet_diameters_m(state):
@@ -70,14 +75,18 @@ def effective_wet_radius_cm(state, _wet=None) -> float:
     return (m3 / m2) * 100.0                                    # m -> cm
 
 
-def h2so4_weight_pct(state, _wet=None) -> float:
+def h2so4_weight_pct(state, _wet=None, molar_so4=False) -> float:
     """H2SO4 weight-percent of the aerosol = 100 * M_H2SO4 / (M_H2SO4 + M_H2O).
 
-    ``M_H2SO4`` is ``sum(Mk[:,SRTSO4])`` directly (H2SO4-equiv mass, AD-3.8); ``M_H2O`` is the
-    equilibrium water at the state's RH. Returns 0 if there is no sulfate.
+    ``M_H2SO4`` is ``sum(Mk[:,SRTSO4])`` directly when ``molar_so4`` is False (H2SO4-equiv mass,
+    AD-3.8; bitwise v1), and ``sum(Mk[:,SRTSO4]) * 98/96`` when it is True (the slot is SO4 mass under
+    the scenario's ``molar_so4_transfer``, L13). ``M_H2O`` is the equilibrium water at the state's RH.
+    Returns 0 if there is no sulfate.
     """
     _Dpk, Mk_wet = _wet if _wet is not None else _wet_diameters_m(state)
     m_so4 = float(jnp.sum(state.Mk[:, _SRTSO4]))
+    if molar_so4:
+        m_so4 = m_so4 * _SO4_TO_H2SO4                           # SO4 -> H2SO4 mass (moles conserved)
     m_h2o = float(jnp.sum(Mk_wet[:, _SRTH2O]))
     denom = m_so4 + m_h2o
     if denom <= 0.0:
@@ -85,13 +94,14 @@ def h2so4_weight_pct(state, _wet=None) -> float:
     return 100.0 * m_so4 / denom
 
 
-def het_inputs(state) -> dict:
+def het_inputs(state, molar_so4=False) -> dict:
     """Bundle the three het-chem inputs for one outer step: ``{SA, radius_cm, h2so4wp}``.
 
     The wet-particle equilibrium (``_wet_diameters_m``, an eager JAX compute + device sync) is
-    evaluated ONCE and shared by all three diagnostics.
+    evaluated ONCE and shared by all three diagnostics. ``molar_so4`` = the scenario's
+    ``molar_so4_transfer`` (only the weight-percent depends on it).
     """
     wet = _wet_diameters_m(state)
     return {"SA": surface_area_um2_cm3(state, _wet=wet),
             "radius_cm": effective_wet_radius_cm(state, _wet=wet),
-            "h2so4wp": h2so4_weight_pct(state, _wet=wet)}
+            "h2so4wp": h2so4_weight_pct(state, _wet=wet, molar_so4=molar_so4)}

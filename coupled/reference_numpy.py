@@ -44,10 +44,12 @@ def run_coupled_numpy(scenario):
                                         ion_pair_rate=float(scenario.ion_pair_rate),
                                         coag_kernel_scale=float(scenario.coag_kernel_scale),
                                         water_every_process=bool(scenario.water_every_process),
-                                        nuc_org_mass_frac=float(scenario.nuc_org_mass_frac))
+                                        nuc_org_mass_frac=float(scenario.nuc_org_mass_frac),
+                                        molar_so4_transfer=bool(scenario.molar_so4_transfer))
     tomas_active = tomas_step is not None
     tstate = initial_tomas_state(scenario) if tomas_active else None
-    het = het_inputs(tstate) if tomas_active else None
+    molar_so4 = bool(scenario.molar_so4_transfer)        # mirror of the JAX driver
+    het = het_inputs(tstate, molar_so4=molar_so4) if tomas_active else None
     h2so4_idx = IDX["H2SO4"]
 
     nuc_scale = float(scenario.nucleation_rate_scale)    # Phase 7 knob (mirror)
@@ -119,7 +121,7 @@ def run_coupled_numpy(scenario):
             yc = yc.copy()
             env_end_kg = conc_to_mass(float(env_grid[-1]), BOXVOL_CM3, MW_H2SO4)   # envelope(t1)
             yc[h2so4_idx] = mass_to_conc(max(env_end_kg - removal_kg, 0.0), BOXVOL_CM3, MW_H2SO4)
-            het = het_inputs(tstate)
+            het = het_inputs(tstate, molar_so4=molar_so4)
 
         if heating_active:   # mirror the JAX driver's radiative-heating -> box T update
             from . import heating as _heating
@@ -133,7 +135,7 @@ def run_coupled_numpy(scenario):
             yc = dilute_gas(yc, gas_bg, kdil, float(t1 - t0))
             if tomas_active:
                 tstate = dilute_aerosol(tstate, tstate_bg, kdil, float(t1 - t0))
-                het = het_inputs(tstate)
+                het = het_inputs(tstate, molar_so4=molar_so4)
 
         t_list.append(t1)
         x_list.append(yc.copy())

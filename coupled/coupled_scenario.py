@@ -171,6 +171,12 @@ class CoupledScenario:
     # --- TOMAS process options (paper runs v2; defaults reproduce the v1 runs) ---
     water_every_process: bool = False    # re-equilibrate aerosol water after every process (box.f order)
     nuc_org_mass_frac: float = 0.1       # share of nucleated cluster mass put in the organic slot; 0 = all SO4
+    # Conserve MOLES of sulfur at every gas->particle sulfate transfer (PI decision L13). TOMAS's particle
+    # slot Mk[:,SRTSO4] holds SO4 mass (MW 96) while the gas Gc[SRTSO4] holds H2SO4 (MW 98): True adds
+    # 96/98 kg SO4 per kg H2SO4 condensed/nucleated (TOMAS make_step molar_so4_transfer) AND makes the
+    # coupled readers of that slot (particulate_S, h2so4wp) use MW 96. False = the kg-for-kg v1 behaviour
+    # (slot read as H2SO4-equivalent mass, AD-3.8), bitwise.
+    molar_so4_transfer: bool = False
 
     # --- aerosol -> photolysis (Phase 4) ---
     # Where the box aerosol sits in the TUV-x RT column when switches.aerosol_to_j is on. By DEFAULT
