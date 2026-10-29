@@ -100,6 +100,28 @@ All runs at 30N/20 km with SABR-220 background unless noted.
 
 That is about 90 runs, each ≤ 30–40 min single-core.
 
+## Results so far (gate G2, 2026-10-28)
+
+Figures: `runs_v2/plots/g2_base_overview.png`, `runs_v2/plots/g2_attribution.png` (script beside them).
+
+- **Base set (8 × 60 d) completed; no run met the early-stop rule.** SABR-220 is very clean
+  (SA_bg = 0.35 µm² cm⁻³), and Gaussian dilution is far slower than v1's (C5 reaches 3.6e7 at 60 d;
+  v1 D5 reached ~5e9 in 5 d). So the plume stays above 1.1× background: SA/SA_bg at 60 d runs from
+  3.4 (C5) to 1375 (C4a). The v1 t* convention ("last day before relaxing to background") no longer
+  applies to any case (see O6).
+- **Background-air contamination of plume-excess metrics.** In the box, the 20 ppt background SO₂
+  keeps oxidising, and once V/V0 is huge that sulfate counts as plume. Example: C5's particulate S
+  reaches 101% of the injected S at 60 d. The paired no-injection controls (ctrl set) are needed
+  before quoting any plume-integrated budget.
+- **Attribution at C1 vs D2, 10 d (R1 v1 stack, R2 new TOMAS + D2, R3 full v2):**
+  - The TOMAS update (R1→R2) is small: particle number −5…15%, SA −3…4%, particulate S < 1%.
+  - The dilution change (R2→R3) dominates. Early on the plume stays dense, so particulate S at 6 h
+    is 43× lower; by day 10 there are ~8× fewer particles surviving to dawn (before background
+    contamination), with SA 64 vs 8 µm² cm⁻³. Total particulate S at day 10 is the same.
+  - The v1 stack took 4.9 h for 10 d against 7.5 min for v2, so v1 TOMAS 80-bin coagulation was the
+    slow part.
+- Wall time: 85–100 min per 60-d run on one core under load.
+
 ## Open questions
 
 | # | Question | Needed before | Status |
@@ -109,7 +131,7 @@ That is about 90 runs, each ≤ 30–40 min single-core.
 | O3 | Release-hour sweep: C1 + C2 × 8 hours, with ICs re-sampled at each hour from the ss20 control? | hour | open |
 | O4 | Same dilution cases (σ, Kz, S) at 60N? | site60N | assumed yes; say if not |
 | O5 | Paired controls for geo/60N too (+16 runs)? | after base | open |
-| O6 | C2/C4a never relax to background within 60 d. Which evaluation day (t*) for them in figures? | figures | open |
+| O6 | No case relaxes to background within 60 d (see Results). What replaces t* (fixed evaluation days, e.g. 7/30/60 d, on ctrl-differenced metrics)? | figures | open |
 | O7 | Push `feat/dev-sai-coupling` and open a tomas-jax PR into dev? | pinning submodule | open |
 
 ## Physics questions from the independent check (non-blocking — the runs use the values above)
