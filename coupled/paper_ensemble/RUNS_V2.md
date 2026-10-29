@@ -49,6 +49,7 @@ and the commits; this page is the one to read.
 | L13 | Particle sulfate slot = SO₄ mass (96); gas H₂SO₄ = 98. Condensation and nucleation transfers convert ×96/98 (TOMAS `molar_so4_transfer=True`); dev's ×98/96 in the Tabazadeh water is kept; coupled sulfur diagnostics use 96. Before this, dev transferred kg-for-kg into a slot its water code read as SO₄ (+2.08% water, wt% ≈0.5 low). The H⁺ mass (2/98) is not carried in dry mass: a known TOMAS approximation for pure acid |
 | L14 | 60N/15 km: runs at 120 hPa (≈ US Standard Atmosphere at 15 km; set in the July ensemble, `1e3df00`, no literature source); spun-up control from the frank-model 100 hPa preset (same convention as 30N: run 55 hPa, control 60 hPa preset) |
 | L15 | Geo set gets its own 60-day spun-up control ("ss100IC"): SO₂ held at 100 ppt, het chemistry sees the aer_geo aerosol |
+| L16 | Evaluation days replace t*: compare all cases at fixed days 7 (burst-matching day), 30 and 60, on plume-integrated metrics with the paired no-injection control subtracted |
 
 **Not bitwise-comparable to v1 even at default knobs:** the TOMAS pin change alone alters the water
 scheme and the 80-bin coagulation algorithm (TFL → linear sub-bin). Any v1-vs-v2 figure is a
@@ -131,8 +132,8 @@ Figures: `runs_v2/plots/g2_base_overview.png`, `runs_v2/plots/g2_attribution.png
 | O3 | Release-hour sweep: C1 + C2 × 8 hours, with ICs re-sampled at each hour from the ss20 control? | hour | open |
 | O4 | Same dilution cases (σ, Kz, S) at 60N? | site60N | assumed yes; say if not |
 | O5 | Paired controls for geo/60N too (+16 runs)? | after base | open |
-| O6 | No case relaxes to background within 60 d (see Results). What replaces t* (fixed evaluation days, e.g. 7/30/60 d, on ctrl-differenced metrics)? | figures | open |
-| O7 | Push `feat/dev-sai-coupling` and open a tomas-jax PR into dev? | pinning submodule | open |
+| O6 | What replaces t*? | figures | **answered → L16** |
+| O7 | Push `feat/dev-sai-coupling` and open a tomas-jax PR into dev? | pinning submodule | **yes**: PR text goes to Ali before pushing |
 
 ## Physics questions from the independent check (non-blocking — the runs use the values above)
 
