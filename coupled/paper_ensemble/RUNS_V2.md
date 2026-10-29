@@ -50,6 +50,8 @@ and the commits; this page is the one to read.
 | L14 | 60N/15 km: runs at 120 hPa (≈ US Standard Atmosphere at 15 km; set in the July ensemble, `1e3df00`, no literature source); spun-up control from the frank-model 100 hPa preset (same convention as 30N: run 55 hPa, control 60 hPa preset) |
 | L15 | Geo set gets its own 60-day spun-up control ("ss100IC"): SO₂ held at 100 ppt, het chemistry sees the aer_geo aerosol |
 | L16 | Evaluation days replace t*: compare all cases at fixed days 7 (burst-matching day), 30 and 60, on plume-integrated metrics with the paired no-injection control subtracted |
+| L17 | Spun-up controls are sampled at true local 06:00 on DOY 172 (60-d control starting DOY 113, 06:00; sample at elapsed 1416 h). The legacy ss20IC was a local-noon state from ≈DOY 231 (sampled at 1422 h on a control started at DOY 172), so the first 8 base runs are rerun on the regenerated IC. The legacy file is kept as `ic/30N_20km_ss20IC_legacy_noon_doy231.json` |
+| L18 | Each control's aerosol surface area and H₂O match its coupled site: SA = wet SA of the site's coupled background (30N SABR-220, geo aer_geo, 60N SABR-220 at 120 hPa) and WTR = the coupled value (6.91 ppmv at 30N, 3.17 at 60N). The legacy control used frank defaults (SA 2.0, ~6× SABR-220; WTR 5 ppmv) |
 
 **Not bitwise-comparable to v1 even at default knobs:** the TOMAS pin change alone alters the water
 scheme and the 80-bin coagulation algorithm (TFL → linear sub-bin). Any v1-vs-v2 figure is a
@@ -57,6 +59,10 @@ comparison of model versions, not only of dilution. The attribution runs (old st
 TOMAS + old D2 / new TOMAS + C1) separate the two.
 
 **Carried over unchanged from v1** (say if any should change):
+- spun-up controls run in frank-model (JPL-11 rates, 45° J scaled by SZA, fixed γ radius 0.1 µm) at
+  the nearest pressure preset (60 hPa for the 55 hPa site, 100 hPa for 120 hPa), with mixing ratios
+  transferred to the coupled pressure; the plume runs use JPL 19-5 + TUV-x. The control's
+  `fixed_species` feature is committed on frank-model branch `feat/fixed-species` (8aa3c07, local)
 - TOMAS 80 bins
 - condensation α = 1 (default)
 - Diffrax Kvaerno5 with 600 s operator-split coupling
