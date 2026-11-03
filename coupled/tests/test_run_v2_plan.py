@@ -11,7 +11,7 @@ import pytest
 
 from coupled.paper_ensemble import run_v2 as rv
 
-COUNTS = {"base": 8, "oat": 40, "ctrl": 8, "constoh": 1,
+COUNTS = {"base": 40, "oat": 40, "ctrl": 8, "constoh": 1,
           "geo": 8, "geo_ctrl": 8, "site60N": 8, "site60N_ctrl": 8}
 SET_SITE = {"base": "30N", "oat": "30N", "ctrl": "30N", "constoh": "30N",
             "geo": "geo", "geo_ctrl": "geo", "site60N": "60N", "site60N_ctrl": "60N"}
@@ -21,6 +21,7 @@ MANIFEST_COLS = {
     "molar_so4_transfer",
     "tomas_nbins", "ion_pair_rate", "condensation_alpha", "nucleation_rate_scale",
     "coag_kernel_scale", "start_utc_hour", "ic_set", "ic_file", "ic_sha256", "days",
+    "v0_variant", "V0_cm3", "SO2_init_molec_cm3", "SO2_init_ppt",
     "sandbox_git_sha", "sandbox_dirty", "tomas_jax_sha", "tomas_jax_dirty"}
 
 
@@ -53,19 +54,50 @@ def test_ids_unique_across_all_sets():
 
 
 def test_case_id_format():
-    assert rv.CaseSpec("C1").case_id == "30N_20km__sabr220__C1__a1p0__nuc1__cg1__h06_ss20IC"
-    assert rv.CaseSpec("C3a", kind="ctrl").case_id.endswith("__h06_ss20IC__ctrl")
+    assert rv.CaseSpec("C1").case_id == \
+        "30N_20km__sabr220__C1__a1p0__nuc1__cg1__V0mwmean__h06_ss20IC"
+    assert rv.CaseSpec("C1", v0="c2sig").case_id == \
+        "30N_20km__sabr220__C1__a1p0__nuc1__cg1__V0c2sig__h06_ss20IC"
+    assert rv.CaseSpec("C3a", kind="ctrl").case_id.endswith("__V0mwmean__h06_ss20IC__ctrl")
     assert rv.cases_for("constoh")[0].case_id == \
-        "30N_20km__sabr220__C1__a1p0__nuc1__cg1__h06_ss20IC__constOH"
+        "30N_20km__sabr220__C1__a1p0__nuc1__cg1__V0mwmean__h06_ss20IC__constOH"
     oat_ids = {c.case_id for c in rv.cases_for("oat")}
-    assert "30N_20km__sabr220__C2__a1p0__nuc0p01__cg1__h06_ss20IC" in oat_ids
-    assert "30N_20km__sabr220__C5a__a0p5__nuc1__cg1__h06_ss20IC" in oat_ids
+    assert "30N_20km__sabr220__C2__a1p0__nuc0p01__cg1__V0mwmean__h06_ss20IC" in oat_ids
+    assert "30N_20km__sabr220__C5a__a0p5__nuc1__cg1__V0mwmean__h06_ss20IC" in oat_ids
     assert not oat_ids & {c.case_id for c in rv.cases_for("base")}
-    assert rv.cases_for("geo")[0].case_id == "30N_20km__aergeo__C1__a1p0__nuc1__cg1__h06_ss100IC"
+    assert rv.cases_for("geo")[0].case_id == \
+        "30N_20km__aergeo__C1__a1p0__nuc1__cg1__V0mwmean__h06_ss100IC"
     assert rv.cases_for("site60N")[0].case_id == \
-        "60N_15km__sabr220__C1__a1p0__nuc1__cg1__h06_ss20IC"
+        "60N_15km__sabr220__C1__a1p0__nuc1__cg1__V0mwmean__h06_ss20IC"
     assert rv.cases_for("site60N_ctrl")[0].case_id == \
-        "60N_15km__sabr220__C1__a1p0__nuc1__cg1__h06_ss20IC__ctrl"
+        "60N_15km__sabr220__C1__a1p0__nuc1__cg1__V0mwmean__h06_ss20IC__ctrl"
+    with pytest.raises(ValueError, match="unknown V0 variant"):
+        rv.CaseSpec("C1", v0="nope")
+
+
+def test_v0_variants_and_set_scope():
+    assert rv.V0_VARIANTS == ("peak", "c1sig", "mwmean", "tophat", "c2sig")
+    assert rv.DEFAULT_V0 == "mwmean" and rv.V0_SWEEP_SETS == {"base"}
+    base = rv.cases_for("base")                       # dilution case outer, V0 inner
+    assert [(c.dil, c.v0) for c in base] == \
+        [(d, v) for d in rv.DILUTION_CASES for v in rv.V0_VARIANTS]
+    for name in COUNTS:
+        if name != "base":
+            assert {c.v0 for c in rv.cases_for(name)} == {"mwmean"}, name
+
+
+def test_v0_definitions_l21():
+    sx = sz = 25.0
+    L = 15000.0
+    base = sx * sz * L * 1e6                           # cm^3
+    expect = {"peak": 2 * np.pi * base, "c1sig": 2 * np.pi * base * np.exp(0.5),
+              "mwmean": 4 * np.pi * base, "tophat": 12.0 * base,
+              "c2sig": 2 * np.pi * base * np.exp(2.0)}
+    for v, v0 in expect.items():
+        assert rv.V0_CM3[v] == pytest.approx(v0, rel=1e-14)
+    np.testing.assert_allclose(rv.V0_CM3["mwmean"], 1.178e14, rtol=1e-3)
+    # mass-weighted mean concentration of a 2-D Gaussian = c_peak / 2
+    assert rv.V0_CM3["mwmean"] / rv.V0_CM3["peak"] == pytest.approx(2.0, rel=1e-15)
 
 
 def test_sites_follow_lat_alt_and_decisions():
@@ -85,6 +117,7 @@ def test_sites_follow_lat_alt_and_decisions():
 @pytest.mark.parametrize("name", COUNTS)
 def test_scenarios_construct_with_v2_knobs(name):
     need_ic(name)
+    from config import air_number_density
     site = rv.SITES[SET_SITE[name]]
     for spec in rv.cases_for(name):
         sc = rv.build_scenario(spec)                    # CoupledScenario validation runs here
@@ -102,12 +135,19 @@ def test_scenarios_construct_with_v2_knobs(name):
         assert sc.concentrations["H2SO4"] == 0.0 and sc.concentrations["SO3"] == 0.0
         if spec.kind == "ctrl":
             assert sc.concentrations["SO2"] == site.bg_so2_ppt
-        else:
-            assert sc.concentrations["SO2"] > 1e3       # the 1 t spike, ppt
+        else:                                           # 1 t / V0 of this case's variant
+            M = air_number_density(site.P, site.T)
+            assert sc.concentrations["SO2"] * 1e-12 * M == \
+                pytest.approx(rv.SO2_MOLECULES / rv.V0_CM3[spec.v0], rel=1e-12)
+            assert sc.concentrations["SO2"] > 1e3       # ppt
 
 
-def test_spike_matches_run_60day_constant():
-    assert rv.SO2_SPIKE_MOLEC_CM3 == pytest.approx(6.273063291666667e15, rel=1e-14)
+def test_spike_is_one_tonne_over_v0():
+    one_tonne = 1.0e6 / 64.0 * 6.02214076e23
+    assert rv.SO2_MOLECULES == pytest.approx(one_tonne, rel=1e-15)
+    for v in rv.V0_VARIANTS:
+        assert rv.SO2_SPIKE_MOLEC_CM3[v] * rv.V0_CM3[v] == pytest.approx(one_tonne, rel=1e-14)
+    np.testing.assert_allclose(rv.SO2_SPIKE_MOLEC_CM3["mwmean"], 7.99e13, rtol=1e-3)
 
 
 def test_spike_is_the_same_molecules_at_60N():
@@ -115,7 +155,7 @@ def test_spike_is_the_same_molecules_at_60N():
     from config import air_number_density
     sc = rv.build_scenario(rv.cases_for("site60N")[0])
     M = air_number_density(120.0, 210.0)
-    assert sc.concentrations["SO2"] * 1e-12 * M == pytest.approx(rv.SO2_SPIKE_MOLEC_CM3)
+    assert sc.concentrations["SO2"] * 1e-12 * M == pytest.approx(rv.SO2_SPIKE_MOLEC_CM3["mwmean"])
 
 
 def test_constoh_pins_oh_initial_value():
@@ -153,6 +193,20 @@ def test_plan_writes_manifest(name, capsys):
     assert {float(r["dilution_background_SO2_ppt"]) for r in rows} == {site.bg_so2_ppt}
     if name.endswith("ctrl"):
         assert all(r["paired_case_id"] == r["case_id"][:-len("__ctrl")] for r in rows)
+        assert all("__V0mwmean__" in r["paired_case_id"] for r in rows)
+    # V0 columns consistent: variant <-> V0_cm3 <-> SO2_init (1 t / V0, or the background SO2)
+    for r in rows:
+        assert float(r["V0_cm3"]) == pytest.approx(rv.V0_CM3[r["v0_variant"]], rel=1e-12)
+        assert f"__V0{r['v0_variant']}__" in r["case_id"]
+        so2 = float(r["SO2_init_molec_cm3"])
+        if r["kind"] == "ctrl":
+            assert float(r["SO2_injected_tonne"]) == 0.0
+            assert so2 == pytest.approx(site.bg_so2_ppt * 1e-12 * float(r["M_air"]), rel=1e-12)
+        else:
+            assert so2 == pytest.approx(rv.SO2_MOLECULES / float(r["V0_cm3"]), rel=1e-12)
+        assert float(r["SO2_init_ppt"]) * 1e-12 * float(r["M_air"]) == pytest.approx(so2, rel=1e-12)
+    if name == "base":
+        assert sorted({r["v0_variant"] for r in rows}) == sorted(rv.V0_VARIANTS)
 
 
 def test_ic_hashes_differ_between_sites():

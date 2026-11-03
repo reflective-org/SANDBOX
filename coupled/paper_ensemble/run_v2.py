@@ -4,10 +4,12 @@
 
 Decisions are recorded in RUNS_V2.md (same dir). Every v2 scenario is the ``run_60day.py``
 scenario (30N / 20 km / 210 K / 55 hPa, SABR-220 background with 20 ppt SO2, ``ss20IC`` spun-up
-gas ICs, 06:00 local release on DOY 172, 1 t SO2 into V0 = 10 m x 10 m x 15 km, 60 d max with the
+gas ICs, 06:00 local release on DOY 172, 1 t SO2, 60 d max with the
 wet-SA-within-10%-of-background-for-24-h early stop) PLUS the v2 knobs:
 
-  dilution_regime in C1..C5a        sheared-Gaussian V(t)/V0 from t = 0 (coupled/dilution.py)
+  dilution_regime in C1..C5a        sheared-Gaussian V(t)/V0 from t = 0, initial plume
+                                    sigma_x = sigma_z = 25 m (L19; coupled/dilution.py)
+  V0 variant (L21)                  1 t SO2 into V0 = (molecules) / (box concentration), below
   dilution_max_dlnv = 0.1           adaptive outer intervals where the plume expands fast (L12)
   water_every_process = True        TOMAS box.f water re-equilibration order (L8)
   nuc_org_mass_frac = 0.0           nucleated mass 100 % sulfate (L7)
@@ -24,12 +26,27 @@ A ``Site`` bundles the site, background and spun-up IC (``SITES``):
         bg SO2 20 ppt, ic/60N_15km_ss20IC.json
 The background SO2 is both ``dilution_background`` (entrained air) and the no-injection SO2.
 
+Initial-concentration (V0) variants (L21, ``V0_VARIANTS``). The plume is Gaussian in x, z
+(sigma_x = sigma_z = 25 m) and uniform along the L = 15 km track; the sigma contours are Mahalanobis
+contours of the 2-D Gaussian, c(r) = c_peak exp(-r^2/2). The initial box SO2 is 1 t / V0:
+
+  peak     V0 = 2 pi sx sz L            box conc = c_peak
+  c1sig    V0 = 2 pi sx sz L e^(1/2)    c on the 1-sigma contour (0.607 c_peak)
+  mwmean   V0 = 4 pi sx sz L            mass-weighted mean, int c^2 / int c = c_peak/2  (DEFAULT_V0)
+  tophat   V0 = 12 sx sz L              sqrt(12) sigma tophat equivalent in x and z
+  c2sig    V0 = 2 pi sx sz L e^2        c on the 2-sigma contour (0.135 c_peak)
+
+V0 is the same for across- and along-shear cases (same physical plume) and D(t) applies to all five.
+Scope: ONLY the ``base`` set runs every variant (``V0_SWEEP_SETS``); every other set uses
+``DEFAULT_V0``. "Every set x 5 V0" is a one-line change: put the set name in ``V0_SWEEP_SETS``.
+
 Named run sets (``SETS``), selected on the CLI:
 
-  base          8   30N: the eight dilution cases, microphysics at defaults
+  base          40  30N: the eight dilution cases x the five V0 variants, microphysics at defaults
   oat           40  30N: every case x {nucleation x0.01, x100; coag kernel x0.5, x2; alpha 0.5}
-  ctrl          8   30N: no-injection twin per base case, same V(t) (length = paired base run's
-                    final t, rounded up to whole days, else 60 d -- as run_bgstop_control)
+  ctrl          8   30N: no-injection twin per dilution case, same V(t) (length = the paired
+                    DEFAULT_V0 base run's final t, rounded up to whole days, else 60 d -- as
+                    run_bgstop_control)
   constoh       1   30N: C1 with OH pinned at 5e5 molec cm^-3 (as make_constant_oh_banana)
   geo           8   the eight dilution cases on the geo site (aer_geo)
   geo_ctrl      8   no-injection twins of the geo set (O5 still open: defined, not yet approved)
@@ -37,8 +54,9 @@ Named run sets (``SETS``), selected on the CLI:
   site60N_ctrl  8   no-injection twins of the site60N set (O5 still open)
   hour              defined but BLOCKED on open question O3 (RUNS_V2.md)
 
-Case id: ``<site>__<bg>__<dil>__<alpha>__<nuc>__<coag>__h06_<ic tag>`` (+ ``__ctrl`` /
-``__constOH``), e.g. ``30N_20km__aergeo__C1__a1p0__nuc1__cg1__h06_ss100IC``.
+Case id: ``<site>__<bg>__<dil>__<alpha>__<nuc>__<coag>__V0<variant>__h06_<ic tag>`` (+ ``__ctrl`` /
+``__constOH``), e.g. ``30N_20km__aergeo__C1__a1p0__nuc1__cg1__V0mwmean__h06_ss100IC``. A ctrl twin
+carries its paired plume's V0 token (DEFAULT_V0); V0 has no effect on a no-injection run.
 Output: ``runs_v2/<set>/<case_id>/state.npz`` (run_60day layout; ``V_ratio`` from
 ``coupled.dilution.volume_ratio``; ``ic_sha256`` of the IC used), ``runs_v2/<set>/manifest.csv``
 (one row per case, all resolved parameters + dilution metadata + IC file and sha256 + git
@@ -90,10 +108,28 @@ NUC_ORG_MASS_FRAC = 0.0                               # v2 (L7)
 MOLAR_SO4_TRANSFER = True                             # v2 (L13): x96/98 at gas->particle sulfate
 OH_PIN_MOLEC_CM3 = 5.0e5                              # make_constant_oh_banana.OH_CONST
 
-# 1 t SO2 into V0 = 10 m x 10 m x 15 km (identical to run_60day._SO2_SPIKE, 6.273063291666667e15)
+# --- 1 t SO2 into the initial plume volume V0 (L21) -------------------------------------------------
 _AVOG = 6.02214076e23
-_V0_CM3 = (10.0 * 10.0 * 15000.0) * 1e6
-SO2_SPIKE_MOLEC_CM3 = 1.0e6 / 64.0 * _AVOG / _V0_CM3
+SO2_MOLECULES = 1.0e6 / 64.0 * _AVOG                  # 1 t SO2 (64 g/mol), as run_60day
+PLUME_SIGMA_X_M = 25.0                                # across-track horizontal sigma (L19)
+PLUME_SIGMA_Z_M = 25.0                                # vertical sigma (L19)
+PLUME_TRACK_M = 15000.0                               # uniform along-track length L
+_SXSZL_CM3 = PLUME_SIGMA_X_M * PLUME_SIGMA_Z_M * PLUME_TRACK_M * 1e6
+
+#: V0 variant -> V0 [cm^3] (L21; see the module docstring). Order = case order within a dilution case.
+V0_CM3 = {
+    "peak": 2.0 * math.pi * _SXSZL_CM3,
+    "c1sig": 2.0 * math.pi * _SXSZL_CM3 * math.exp(0.5),
+    "mwmean": 4.0 * math.pi * _SXSZL_CM3,
+    "tophat": 12.0 * _SXSZL_CM3,
+    "c2sig": 2.0 * math.pi * _SXSZL_CM3 * math.exp(2.0),
+}
+V0_VARIANTS = tuple(V0_CM3)                           # peak, c1sig, mwmean, tophat, c2sig
+DEFAULT_V0 = "mwmean"
+#: Sets that run EVERY V0 variant; all others use DEFAULT_V0 only. "Everything x 5" = add names here.
+V0_SWEEP_SETS = frozenset({"base"})
+#: Initial plume SO2 [molec cm^-3] per V0 variant (same molecules/V0 at every site).
+SO2_SPIKE_MOLEC_CM3 = {v: SO2_MOLECULES / v0 for v, v0 in V0_CM3.items()}
 
 DILUTION_CASES = GAUSSIAN_DILUTION_CASES              # C1, C2, C3, C3a, C4, C4a, C5, C5a
 
@@ -154,6 +190,11 @@ class CaseSpec:
     nucleation_rate_scale: float = 1.0
     coag_kernel_scale: float = 1.0
     site: Site = SITE_30N
+    v0: str = DEFAULT_V0                      # V0 variant (L21); a ctrl twin keeps DEFAULT_V0
+
+    def __post_init__(self):
+        if self.v0 not in V0_CM3:
+            raise ValueError(f"unknown V0 variant {self.v0!r}; known: {V0_VARIANTS}")
 
     @property
     def base_id(self):
@@ -161,7 +202,7 @@ class CaseSpec:
                           _TOKEN["condensation_alpha"][self.condensation_alpha],
                           _TOKEN["nucleation_rate_scale"][self.nucleation_rate_scale],
                           _TOKEN["coag_kernel_scale"][self.coag_kernel_scale],
-                          f"h06_{self.site.ic_tag}"])
+                          f"V0{self.v0}", f"h06_{self.site.ic_tag}"])
 
     @property
     def case_id(self):
@@ -169,37 +210,45 @@ class CaseSpec:
 
 
 def _blocked(question, why):
-    def fn():
+    def fn(_set_name=None):
         raise NotImplementedError(f"blocked on open question {question} in RUNS_V2.md: {why}")
     return fn
 
 
-def _base(site=SITE_30N):
-    return [CaseSpec(d, site=site) for d in DILUTION_CASES]
+def v0_variants_for(set_name):
+    """The V0 variants a set runs: all of V0_VARIANTS for V0_SWEEP_SETS, else (DEFAULT_V0,)."""
+    return V0_VARIANTS if set_name in V0_SWEEP_SETS else (DEFAULT_V0,)
 
 
-def _oat():
-    return [CaseSpec(d, **{field: val}) for d in DILUTION_CASES for _tok, field, val in OAT_VARIANTS]
+def _base(set_name, site=SITE_30N):
+    return [CaseSpec(d, site=site, v0=v) for d in DILUTION_CASES for v in v0_variants_for(set_name)]
 
 
-def _ctrl(site=SITE_30N):
+def _oat(set_name):
+    return [CaseSpec(d, v0=v, **{field: val}) for d in DILUTION_CASES
+            for _tok, field, val in OAT_VARIANTS for v in v0_variants_for(set_name)]
+
+
+def _ctrl(set_name, site=SITE_30N):
+    # no injection -> V0 is irrelevant; one twin per dilution case, paired with the DEFAULT_V0 run
     return [CaseSpec(d, kind="ctrl", site=site) for d in DILUTION_CASES]
 
 
-def _constoh():
-    return [CaseSpec("C1", kind="constoh")]
+def _constoh(set_name):
+    return [CaseSpec("C1", kind="constoh", v0=v) for v in v0_variants_for(set_name)]
 
 
-#: set name -> zero-arg function returning its ordered list of CaseSpec (or raising NotImplementedError)
+#: set name -> function(set_name) returning its ordered list of CaseSpec (or raising
+#: NotImplementedError). Within a dilution case the V0 variants run in V0_VARIANTS order.
 SETS = {
     "base": _base,
     "oat": _oat,
     "ctrl": _ctrl,
     "constoh": _constoh,
-    "geo": functools.partial(_base, SITES["geo"]),
-    "geo_ctrl": functools.partial(_ctrl, SITES["geo"]),
-    "site60N": functools.partial(_base, SITES["60N"]),
-    "site60N_ctrl": functools.partial(_ctrl, SITES["60N"]),
+    "geo": functools.partial(_base, site=SITES["geo"]),
+    "geo_ctrl": functools.partial(_ctrl, site=SITES["geo"]),
+    "site60N": functools.partial(_base, site=SITES["60N"]),
+    "site60N_ctrl": functools.partial(_ctrl, site=SITES["60N"]),
     "hour": _blocked("O3", "release-hour sweep IC resampling per hour from the ss20 control?"),
 }
 
@@ -207,7 +256,7 @@ SETS = {
 def cases_for(set_name):
     if set_name not in SETS:
         raise KeyError(f"unknown set {set_name!r}; known: {sorted(SETS)}")
-    return SETS[set_name]()
+    return SETS[set_name](set_name)
 
 
 def set_dir(set_name):
@@ -256,7 +305,7 @@ def build_scenario(spec, days=MAX_DAYS):
     if spec.kind == "ctrl":
         conc["SO2"] = site.bg_so2_ppt                         # no injection: background SO2
     else:
-        conc["SO2"] = SO2_SPIKE_MOLEC_CM3 / M * 1e12           # the 1 t spike (same molecules/V0)
+        conc["SO2"] = SO2_SPIKE_MOLEC_CM3[spec.v0] / M * 1e12  # 1 t / V0 (same molecules/V0)
     if spec.kind == "constoh":
         conc["OH"] = OH_PIN_MOLEC_CM3 / M * 1e12
     return CoupledScenario(
@@ -277,8 +326,9 @@ def build_scenario(spec, days=MAX_DAYS):
 
 
 def paired_spec(spec):
-    """The plume case a ctrl twin is paired to (same site and dilution case, default knobs)."""
-    return CaseSpec(spec.dil, site=spec.site)
+    """The plume case a ctrl twin is paired to (same site and dilution case, default knobs and
+    DEFAULT_V0)."""
+    return CaseSpec(spec.dil, site=spec.site, v0=DEFAULT_V0)
 
 
 def paired_base_npz(spec):
@@ -383,8 +433,10 @@ def manifest_row(set_name, i, spec):
         ic_set=spec.site.ic_tag,
         ic_file=os.path.relpath(ic_path(spec.site), _SANDBOX), ic_sha256=ic_sha256(spec.site),
         SO2_init_ppt=sc.concentrations["SO2"],
-        SO2_init_molec_cm3=(SO2_SPIKE_MOLEC_CM3 if injected else spec.site.bg_so2_ppt * 1e-12 * M),
-        SO2_injected_tonne=(1.0 if injected else 0.0), V0_cm3=_V0_CM3,
+        v0_variant=spec.v0, V0_cm3=V0_CM3[spec.v0],
+        SO2_init_molec_cm3=(SO2_SPIKE_MOLEC_CM3[spec.v0] if injected
+                            else spec.site.bg_so2_ppt * 1e-12 * M),
+        SO2_injected_tonne=(1.0 if injected else 0.0),
         oh_pinned_molec_cm3=(OH_PIN_MOLEC_CM3 if spec.kind == "constoh" else ""),
         days=days, days_source=days_src, max_days=MAX_DAYS, early_stop=(spec.kind != "ctrl"),
         DT=sc.DT, dt_couple=sc.dt_couple, photolysis=sc.photolysis,
