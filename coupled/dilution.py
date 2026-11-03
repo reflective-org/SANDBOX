@@ -16,8 +16,8 @@ Two families of V(t)/V0 schedules, both reached through ``volume_ratio`` / ``kdi
 * ``GAUSSIAN_CASES`` (C1..C5a) -- sheared-Gaussian plume cross-section, applied from t = 0. The
   second moments obey ``dszz/dt = 2 Kz``, ``dsyz/dt = S szz``, ``dsyy/dt = 2 S syz`` and
   ``V/V0 = sqrt(det Sigma(t) / det Sigma(0))``; integrated exactly for piecewise-constant Kz
-  (``shear_moments``). C3/C3a add a Kz = 10 m^2/s burst at 48 h whose duration is solved so that
-  V(7 d) matches C1/C2 respectively.
+  (``shear_moments``). Initial plume sigma_x = sigma_z = 25 m (L19). C3/C3a add a Kz = 10 m^2/s
+  burst at 48 h whose duration is solved so that V(7 d) matches C1/C2 respectively.
 """
 
 from __future__ import annotations
@@ -91,12 +91,15 @@ def _volume_ratio_schumann(t_seconds, regime):
 #     dszz/dt = 2 Kz,   dsyz/dt = S szz,   dsyy/dt = 2 S syz,   syy(0)=sy0^2, szz(0)=sz0^2, syz(0)=0
 # V(t)/V0 = sqrt(det/det0). For constant Kz this is the closed form
 #     [1 + 2Kz t/sz0^2 + (2/3) S^2 Kz t^3/sy0^2 + (1/3) S^2 Kz^2 t^4/(sy0^2 sz0^2)]^(1/2).
-# sz0 = 10 m tophat -> 10/sqrt(12); "across shear" sy0 = 30 m, "along shear" = 15 km tophat.
+# Initial plume (PI decision L19, 2026-11-03): Gaussian with sigma_x (across-track horizontal) =
+# sigma_z = 25 m. ``sigma_y0`` is the sigma in the SHEAR direction: "across shear" cases (C1/C3/C4/C5)
+# shear the 25 m across-track width, "along shear" cases (C2/C3a/C4a/C5a) shear the 15 km track
+# (uniform -> sigma = 15 km/sqrt(12)). Same S/Kz schedule as before; dilution applies from t = 0.
 # ---------------------------------------------------------------------------------------------
 _SHEAR = 2.0e-3                        # S [1/s], all cases
-_SIGMA_Z0 = 10.0 / math.sqrt(12.0)     # [m]
-_SIGMA_Y0_ACROSS = 30.0                # [m]
-_SIGMA_Y0_ALONG = 15000.0 / math.sqrt(12.0)   # [m]
+_SIGMA_Z0 = 25.0                       # [m] (L19)
+_SIGMA_Y0_ACROSS = 25.0                # [m] (L19: = sigma_x, the across-track Gaussian width)
+_SIGMA_Y0_ALONG = 15000.0 / math.sqrt(12.0)   # [m] 15 km uniform track
 _T_BURST_START = 48 * 3600.0           # [s]
 _KZ_BASE = 1.0e-3                      # [m^2/s] background Kz around the burst
 _KZ_BURST = 10.0                       # [m^2/s]
@@ -210,8 +213,9 @@ def _build_gaussian_cases():
     return {k: c[k] for k in order}
 
 
-#: Sheared-Gaussian dilution cases (S = 0.002 1/s, sz0 = 10/sqrt(12) m). Kept separate from
-#: DILUTION_REGIMES (whose structure studio code iterates over). C3/C3a tau solved at import.
+#: Sheared-Gaussian dilution cases (S = 0.002 1/s, sz0 = 25 m; sy0 = 25 m across / 15 km/sqrt(12)
+#: along shear -- L19). Kept separate from DILUTION_REGIMES (whose structure studio code iterates
+#: over). C3/C3a tau solved at import (~0.962 h / ~0.914 h for the L19 geometry).
 GAUSSIAN_CASES = _build_gaussian_cases()
 
 

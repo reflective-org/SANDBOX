@@ -84,19 +84,29 @@ def test_piecewise_integration_is_exact(name):
 
 def test_segments_must_end_at_inf():
     with pytest.raises(ValueError):
-        dl.shear_moments(1.0, 30.0, 3.0, 2e-3, ((1e6, 0.01),))
+        dl.shear_moments(1.0, 25.0, 25.0, 2e-3, ((1e6, 0.01),))
 
 
 def test_regression_values():
-    np.testing.assert_allclose(dl.volume_ratio(7 * DAY, "C1"), 4.884e4, rtol=1e-3)
-    np.testing.assert_allclose(dl.volume_ratio(7 * DAY, "C2"), 340.5, rtol=1e-3)
+    # L19 geometry (sigma_x = sigma_z = 25 m; along-shear sigma_y0 = 15 km/sqrt(12))
+    np.testing.assert_allclose(dl.volume_ratio(7 * DAY, "C1"), 7.424e3, rtol=1e-3)
+    np.testing.assert_allclose(dl.volume_ratio(7 * DAY, "C2"), 43.10, rtol=1e-3)
+    np.testing.assert_allclose(dl.GAUSSIAN_CASES["C3"].tau_burst / 3600.0, 0.9617, rtol=1e-3)
+    np.testing.assert_allclose(dl.GAUSSIAN_CASES["C3a"].tau_burst / 3600.0, 0.9145, rtol=1e-3)
+
+
+def test_l19_initial_geometry():
+    for name, c in dl.GAUSSIAN_CASES.items():
+        assert c.sigma_z0 == 25.0 and c.shear == 2.0e-3
+        along = name in ("C2", "C3a", "C4a", "C5a")
+        assert c.sigma_y0 == (15000.0 / np.sqrt(12.0) if along else 25.0)
 
 
 def test_case_metadata_json():
     md = dl.dilution_case_metadata("C3")
     json.dumps(md)                                               # flat + serializable
-    assert md["sigma_y0_m"] == 30.0 and md["shear_s-1"] == 0.002
-    np.testing.assert_allclose(md["sigma_z0_m"], 10.0 / np.sqrt(12.0))
+    assert md["sigma_y0_m"] == 25.0 and md["shear_s-1"] == 0.002
+    assert md["sigma_z0_m"] == 25.0
     assert md["tau_burst_s"] == dl.GAUSSIAN_CASES["C3"].tau_burst and "Kz=10" in md["kz_schedule"]
     assert dl.dilution_case_metadata("C1")["tau_burst_s"] is None
     np.testing.assert_allclose(dl.dilution_case_metadata("C2")["sigma_y0_m"], 15000.0 / np.sqrt(12.0))
