@@ -33,6 +33,11 @@ from coupled.backgrounds import (BACKGROUND_MODES, MODE_BASES, TABULATED_BACKGRO
 #: two in sync.
 GAUSSIAN_DILUTION_CASES = ("C1", "C2", "C3", "C3a", "C4", "C4a", "C5", "C5a")
 
+#: LEGACY Schumann dilution regimes (v1; removed from the model and the paper by PI decision L20).
+#: Accepted only with ``legacy_dilution=True``; mirrors ``coupled.dilution_legacy_schumann.
+#: DILUTION_REGIMES`` (a test keeps the two in sync).
+LEGACY_SCHUMANN_REGIMES = ("D1", "D2", "D3", "D5", "burst")
+
 #: Photolysis drivers understood by the model (validated -> no silent mis-gate of the sulfur chain).
 PHOTOLYSIS_MODES = ("reference", "sza", "tuvx")
 
@@ -123,10 +128,13 @@ class CoupledScenario:
     # First-order relaxation rate [1/s] toward the background when switches.dilution is on and
     # dilution_regime is "" (constant rate; AD-6.2). Ignored when a regime is set.
     dilution_rate: float = 1.157e-6
-    # Time-varying dilution regime "" (constant) | D1 (Low Kz) | D2 | D3 | D5 | burst, from the plume
-    # volume-expansion V(t)/V0 (Schumann scaling; coupled/dilution.DILUTION_REGIMES), or a
-    # sheared-Gaussian case C1..C5a (coupled/dilution.GAUSSIAN_CASES; paper runs v2).
+    # Time-varying dilution regime "" (constant) | a sheared-Gaussian case C1..C5a, from the plume
+    # volume expansion V(t)/V0 (coupled/dilution.GAUSSIAN_CASES; paper runs v2). The v1 Schumann
+    # regimes D1 | D2 | D3 | D5 | burst are LEGACY (L20) and accepted only with legacy_dilution=True.
     dilution_regime: str = ""
+    # Opt in to the legacy Schumann regimes (coupled/dilution_legacy_schumann.py; kept for the studio).
+    # False (default): a Schumann dilution_regime is rejected.
+    legacy_dilution: bool = False
     # Max ln(V(t1)/V(t0)) per outer interval: intervals where the plume expands faster are bisected
     # (and a Kz burst's start/end become edges) so the operator-split dilution step stays small.
     # 0 (default) = off, i.e. plain dt_couple intervals as in the v1 paper runs. v2 uses 0.1.
@@ -228,7 +236,14 @@ class CoupledScenario:
         if self.dilution_rate < 0.0:
             raise ValueError(f"dilution_rate must be >= 0, got {self.dilution_rate}")
         self.dilution_zero_species = tuple(self.dilution_zero_species)   # YAML list -> tuple
-        _VALID_REGIMES = ("", "D1", "D2", "D3", "D5", "burst", *GAUSSIAN_DILUTION_CASES)
+        if self.dilution_regime in LEGACY_SCHUMANN_REGIMES and not self.legacy_dilution:
+            raise ValueError(
+                f"dilution_regime {self.dilution_regime!r} is a legacy Schumann regime, removed from "
+                f"the coupled model (PI decision L20); use a sheared-Gaussian case "
+                f"{GAUSSIAN_DILUTION_CASES}, or set legacy_dilution=True to run it through "
+                f"coupled/dilution_legacy_schumann.py")
+        _VALID_REGIMES = ("", *GAUSSIAN_DILUTION_CASES,
+                          *(LEGACY_SCHUMANN_REGIMES if self.legacy_dilution else ()))
         if self.dilution_regime not in _VALID_REGIMES:
             raise ValueError(f"dilution_regime must be one of {_VALID_REGIMES}, got {self.dilution_regime!r}")
         if self.dilution_max_dlnv < 0.0:

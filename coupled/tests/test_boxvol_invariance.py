@@ -26,7 +26,8 @@ def _sc():
     return CoupledScenario(
         T=215.0, P=55.0, WTR=4.5, latitude=30.0, day_of_year=172, start_utc_hour=6.0,
         days=1, DT=600.0, dt_couple=600.0, photolysis="sza",   # sza: no TUV-x cost in the test
-        dilution_regime="D1", dilution_zero_species=("SO2", "SO3", "H2SO4", "OH", "HO2"),
+        dilution_regime="D1", legacy_dilution=True,   # legacy Schumann (L20)
+        dilution_zero_species=("SO2", "SO3", "H2SO4", "OH", "HO2"),
         dilution_background={"SO2": 15.0}, ion_pair_rate=30.0,
         switches=Switches(sulfur=True, nucleation=True, condensation=True, coagulation=True,
                           aerosol_to_j=False, heating_to_t=False, dilution=True),

@@ -9,15 +9,18 @@ box state (AD-6.3); the rate is either a constant ``dilution_rate`` [1/s] (AD-6.
 average ``k_dil = ln(V(t1)/V(t0))/(t1-t0)`` of a named plume-expansion schedule V(t)/V0. Applied once
 per outer interval, operator-split (AD-6.1/6.4).
 
-Two families of V(t)/V0 schedules, both reached through ``volume_ratio`` / ``kdil_from_regime``:
+The V(t)/V0 schedules, reached through ``volume_ratio`` / ``kdil_from_regime``, are:
 
-* ``DILUTION_REGIMES`` (D1/D2/D3/D5/burst) -- Schumann et al. (1998) two-piece scaling: early t^0.8
-  then a Kz-controlled exponential (ported from tomas-jax ``run_marianna_dilution.py``).
 * ``GAUSSIAN_CASES`` (C1..C5a) -- sheared-Gaussian plume cross-section, applied from t = 0. The
   second moments obey ``dszz/dt = 2 Kz``, ``dsyz/dt = S szz``, ``dsyy/dt = 2 S syz`` and
   ``V/V0 = sqrt(det Sigma(t) / det Sigma(0))``; integrated exactly for piecewise-constant Kz
   (``shear_moments``). Initial plume sigma_x = sigma_z = 25 m (L19). C3/C3a add a Kz = 10 m^2/s
   burst at 48 h whose duration is solved so that V(7 d) matches C1/C2 respectively.
+
+The v1 Schumann et al. (1998) regimes (D1/D2/D3/D5/burst) were removed from the coupled model and the
+paper (PI decision L20). They live on, unchanged, in ``coupled.dilution_legacy_schumann`` for the
+studio; a ``CoupledScenario`` accepts them only with ``legacy_dilution=True``, and the driver routes
+them through that module. This module never resolves a Schumann name.
 """
 
 from __future__ import annotations
@@ -31,59 +34,6 @@ from scipy.optimize import brentq
 from . import tomas_bridge as tb   # puts tomas_jax on sys.path
 
 from tomas_jax.physics.dilution import dilution_step  # noqa: E402
-
-# ---------------------------------------------------------------------------------------------
-# Time-varying dilution regimes (ported from tomas-jax experimental_case/run_marianna_dilution.py):
-# plume volume expansion V(t)/V0 -> k_dil(t) = d ln V / dt. Two-piece: early Schumann t^0.8 (clamped
-# >=1) then a turbulent-growth exponential whose Kz coefficient sets the regime (Schumann et al. 1998).
-# D1 'Low Kz' = low vertical diffusivity ~ high-altitude / low-latitude / clean stratosphere.
-# ---------------------------------------------------------------------------------------------
-_T_BREAK = 1.0e4
-_BIG_T = 1.0e12
-
-
-def _two_piece(k):
-    return ((_T_BREAK, ("power", 0.8)), (_BIG_T, ("exp", 1585.0, k, _T_BREAK, 1.5)))
-
-
-#: V(t)/V0 piecewise segments per regime (matches tomas-jax DILUTIONS).
-# "burst" = burst-of-turbulence (Kz=10 m^2/s for 14.2 h): 4-piece Schumann + slow/fast/slow exponential
-# growth; the prefactors (1585, 1906, 4.83e4) are chosen so V(t)/V0 is continuous at the breakpoints.
-# "D5" (Low Lx, 5.33e-8) is the user's "Very high" regime (its own t_max=509,300 s cap is irrelevant
-# for our 10-day runs -- the plume is fully diluted well before then; the exponential simply continues).
-DILUTION_REGIMES = {
-    "D1": ("Low Kz",  _two_piece(2.811e-9)),
-    "D2": ("Med Kz",  _two_piece(8.89e-9)),
-    "D3": ("High Kz", _two_piece(2.811e-8)),
-    "D5": ("Very high (Low Lx)", _two_piece(5.33e-8)),
-    "burst": ("Burst of turbulence", (
-        (1.0e4,   ("power", 0.8)),
-        (1.728e5, ("exp", 1585.0,  2.811e-9, 1.0e4,   1.5)),
-        (2.238e5, ("exp", 1906.0,  2.811e-7, 1.728e5, 1.5)),
-        (_BIG_T,  ("exp", 4.83e4,  2.811e-9, 2.238e5, 1.5)),
-    )),
-}
-
-
-def _eval_segment(t, seg):
-    if seg[0] == "power":
-        return np.maximum(1.0, t ** seg[1])
-    _kind, A, k, t0, q = seg
-    # clamp t-t0 >= 0: np.select evaluates every segment everywhere, so this branch is computed (and
-    # discarded) for t < t0 where (t-t0)**q would be NaN. Clamping avoids the spurious warning.
-    return A * np.exp(k * np.maximum(t - t0, 0.0) ** q)
-
-
-def _volume_ratio_schumann(t_seconds, regime):
-    segs = DILUTION_REGIMES[regime][1]
-    t = np.maximum(np.asarray(t_seconds, dtype=float), 0.0)
-    conds, vals, t0 = [], [], 0.0
-    for t_end, seg in segs:
-        conds.append((t >= t0) & (t < t_end))
-        vals.append(_eval_segment(t, seg))
-        t0 = t_end
-    return np.select(conds, vals, default=vals[-1])
-
 
 # ---------------------------------------------------------------------------------------------
 # Sheared-Gaussian dilution (PI parameterization). Plume cross-section second moments (y, z) under
@@ -214,14 +164,21 @@ def _build_gaussian_cases():
 
 
 #: Sheared-Gaussian dilution cases (S = 0.002 1/s, sz0 = 25 m; sy0 = 25 m across / 15 km/sqrt(12)
-#: along shear -- L19). Kept separate from DILUTION_REGIMES (whose structure studio code iterates
-#: over). C3/C3a tau solved at import (~0.962 h / ~0.914 h for the L19 geometry).
+#: along shear -- L19). C3/C3a tau solved at import (~0.962 h / ~0.914 h for the L19 geometry).
 GAUSSIAN_CASES = _build_gaussian_cases()
 
 
 def is_gaussian_case(name):
-    """True if ``name`` is a sheared-Gaussian case (GAUSSIAN_CASES) rather than a Schumann regime."""
+    """True if ``name`` is a sheared-Gaussian case (GAUSSIAN_CASES)."""
     return name in GAUSSIAN_CASES
+
+
+def _require_case(name):
+    if name not in GAUSSIAN_CASES:
+        hint = ("; Schumann regimes (D1/D2/D3/D5/burst) are legacy -- use "
+                "coupled.dilution_legacy_schumann" if name in ("D1", "D2", "D3", "D5", "burst") else "")
+        raise KeyError(f"unknown dilution case {name!r}; known: {tuple(GAUSSIAN_CASES)}{hint}")
+    return GAUSSIAN_CASES[name]
 
 
 def _kz_schedule_str(segs):
@@ -233,22 +190,17 @@ def _kz_schedule_str(segs):
 
 
 def dilution_case_metadata(name):
-    """Flat, JSON-serializable description of a dilution regime/case (for run manifests)."""
-    if is_gaussian_case(name):
-        c = GAUSSIAN_CASES[name]
-        return {"dilution_case": name, "family": "gaussian_shear", "label": c.label,
-                "sigma_y0_m": c.sigma_y0, "sigma_z0_m": c.sigma_z0, "shear_s-1": c.shear,
-                "kz_schedule": _kz_schedule_str(c.kz_segments), "tau_burst_s": c.tau_burst}
-    label, _segs = DILUTION_REGIMES[name]
-    return {"dilution_case": name, "family": "schumann", "label": label}
+    """Flat, JSON-serializable description of a dilution case (for run manifests)."""
+    c = _require_case(name)
+    return {"dilution_case": name, "family": "gaussian_shear", "label": c.label,
+            "sigma_y0_m": c.sigma_y0, "sigma_z0_m": c.sigma_z0, "shear_s-1": c.shear,
+            "kz_schedule": _kz_schedule_str(c.kz_segments), "tau_burst_s": c.tau_burst}
 
 
 def volume_ratio(t_seconds, regime):
-    """V(t)/V0 for a named regime (scalar or array t): a Schumann regime (DILUTION_REGIMES, continuous
-    piecewise) or a sheared-Gaussian case (GAUSSIAN_CASES)."""
-    if is_gaussian_case(regime):
-        return volume_ratio_gaussian(t_seconds, regime)
-    return _volume_ratio_schumann(t_seconds, regime)
+    """V(t)/V0 for a sheared-Gaussian case name (GAUSSIAN_CASES), scalar or array t."""
+    _require_case(regime)
+    return volume_ratio_gaussian(t_seconds, regime)
 
 
 def kdil_from_regime(regime, t0, t1):

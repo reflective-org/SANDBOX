@@ -1,6 +1,7 @@
 # Copyright (C) 2026 University Corporation for Atmospheric Research
 # SPDX-License-Identifier: Apache-2.0
-"""Sheared-Gaussian dilution cases (C1..C5a) + the unchanged Schumann regimes (D1..burst)."""
+"""Sheared-Gaussian dilution cases (C1..C5a). The legacy Schumann regimes are tested in
+test_dilution_legacy_schumann.py."""
 
 import json
 
@@ -22,11 +23,11 @@ def _closed_form(t, c):
                    + (1.0 / 3.0) * S ** 2 * kz ** 2 * t ** 4 / (sy2 * sz2))
 
 
-def test_registry_kept_separate():
+def test_registry_is_gaussian_only():
     assert set(dl.GAUSSIAN_CASES) == {"C1", "C2", "C3", "C3a", "C4", "C4a", "C5", "C5a"}
-    assert set(dl.DILUTION_REGIMES) == {"D1", "D2", "D3", "D5", "burst"}
     assert all(dl.is_gaussian_case(k) for k in dl.GAUSSIAN_CASES)
-    assert not any(dl.is_gaussian_case(k) for k in dl.DILUTION_REGIMES)
+    assert not hasattr(dl, "DILUTION_REGIMES")                  # Schumann moved out (L20)
+    assert not any(dl.is_gaussian_case(k) for k in ("D1", "D2", "D3", "D5", "burst"))
 
 
 @pytest.mark.parametrize("name", CONSTANT_CASES)
@@ -110,36 +111,16 @@ def test_case_metadata_json():
     assert md["tau_burst_s"] == dl.GAUSSIAN_CASES["C3"].tau_burst and "Kz=10" in md["kz_schedule"]
     assert dl.dilution_case_metadata("C1")["tau_burst_s"] is None
     np.testing.assert_allclose(dl.dilution_case_metadata("C2")["sigma_y0_m"], 15000.0 / np.sqrt(12.0))
-    json.dumps(dl.dilution_case_metadata("D1"))
-
-
-# Pinned from the ORIGINAL coupled/dilution.py (HEAD 888e5ff) before the Gaussian cases were added.
-_T_PIN = (0.0, 5e3, 1e4, 8.64e4, 2e5, 6.048e5, 1.728e6)
-_V_PIN = {
-    "D1": (1.0, 910.2821015130405, 1585.0, 1681.9357511037738, 2000.4833792942, 5755.019032308958,
-           889327.8753378616),
-    "D2": (1.0, 910.2821015130405, 1585.0, 1912.3214383261702, 3309.6618626868412, 93567.91194912167,
-           783524898280.9226),
-    "D3": (1.0, 910.2821015130405, 1585.0, 2869.661168597408, 16258.709657035946, 631254145.4698049,
-           4.901800736839264e+30),
-    "D5": (1.0, 910.2821015130405, 1585.0, 4884.860698029765, 130953.37809513675, 65863734438703.586,
-           2.1137433846195157e+55),
-    "burst": (1.0, 910.2821015130405, 1585.0, 1681.9357511037738, 6726.158886911432, 93550.63776425681,
-              8632356.973196236),
-}
-_K_PIN = {"D1": 1.1677490154519032e-06, "D2": 3.693094538373331e-06, "D3": 1.167749015451902e-05,
-          "D5": 2.2141950381923604e-05, "burst": 1.1677490154519032e-06}
-
-
-@pytest.mark.parametrize("regime", list(_V_PIN))
-def test_schumann_regimes_unchanged(regime):
-    for t, v in zip(_T_PIN, _V_PIN[regime]):
-        assert float(dl.volume_ratio(t, regime)) == v
-    np.testing.assert_array_equal(dl.volume_ratio(np.array(_T_PIN), regime), np.array(_V_PIN[regime]))
-    assert dl.kdil_from_regime(regime, 8.64e4, 8.64e4 + 600.0) == _K_PIN[regime]
 
 
 def test_unknown_regime_raises():
+    for legacy in ("D1", "burst"):                              # Schumann names: legacy module only
+        with pytest.raises(KeyError, match="dilution_legacy_schumann"):
+            dl.volume_ratio(1.0, legacy)
+        with pytest.raises(KeyError):
+            dl.kdil_from_regime(legacy, 0.0, 600.0)
+        with pytest.raises(KeyError):
+            dl.dilution_case_metadata(legacy)
     with pytest.raises(KeyError):
         dl.volume_ratio(1.0, "C9")
     with pytest.raises(KeyError):

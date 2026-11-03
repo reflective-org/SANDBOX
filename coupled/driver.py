@@ -50,8 +50,9 @@ from .tomas_bridge import (initial_tomas_state, make_microphysics_step, SRTSO4,
                            BOXVOL_CM3, MW_H2SO4, particle_sulfate_mw)
 from .aerosol_props import het_inputs
 from . import heating as _heating
-from .dilution import dilute_gas, dilute_aerosol, kdil_from_regime as dl_kdil_from_regime
-from .dilution import volume_ratio as dl_volume_ratio, GAUSSIAN_CASES as DL_GAUSSIAN_CASES
+from . import dilution as _dilution
+from . import dilution_legacy_schumann as _dilution_legacy
+from .dilution import dilute_gas, dilute_aerosol, GAUSSIAN_CASES as DL_GAUSSIAN_CASES
 from .units import conc_to_mass, mass_to_conc
 
 from config import IDX, air_number_density                   # noqa: E402  (gas model)
@@ -371,6 +372,10 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     # entrained air). Rate is constant (dilution_rate) or time-varying from a regime's V(t) expansion.
     dilution_active = bool(scenario.switches.dilution)
     regime = scenario.dilution_regime
+    # Legacy Schumann regimes (L20; only reachable with legacy_dilution=True, which CoupledScenario
+    # enforces) take V(t) and k_dil from the legacy module; everything else from coupled.dilution.
+    _legacy = scenario.legacy_dilution and _dilution_legacy.is_schumann_regime(regime)
+    dl_mod = _dilution_legacy if _legacy else _dilution
     gas_bg = np.asarray(y0, dtype=float).copy()
     for name in scenario.dilution_zero_species:
         if name not in IDX:
@@ -384,7 +389,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     tstate_bg = tstate                  # background aerosol = initial TomasState (immutable)
 
     def _kdil(t0, t1):
-        return dl_kdil_from_regime(regime, t0, t1) if regime else float(scenario.dilution_rate)
+        return dl_mod.kdil_from_regime(regime, t0, t1) if regime else float(scenario.dilution_rate)
 
     # Phase 4: aerosol -> photolysis. Active only with TOMAS on, tuvx photolysis, and the switch.
     aerosol_to_j = bool(scenario.switches.aerosol_to_j) and tomas_active and cfg.photolysis == "tuvx"
@@ -478,7 +483,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     _burst_edges = ((_gc.t_burst_start, _gc.t_burst_start + _gc.tau_burst)
                     if _gc is not None and _gc.tau_burst is not None else ())
     _intervals = _outer_intervals(cfg, scenario.days, scenario.dt_couple,
-                                  vratio=(lambda t: dl_volume_ratio(t, regime)) if _refine else None,
+                                  vratio=(lambda t: dl_mod.volume_ratio(t, regime)) if _refine else None,
                                   max_dlnv=float(scenario.dilution_max_dlnv), extra_edges=_burst_edges)
     for t0, t1 in _intervals:
         _ivl += 1
