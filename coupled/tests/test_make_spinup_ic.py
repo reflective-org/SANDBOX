@@ -36,8 +36,8 @@ def test_presets_and_outputs():
 
 def test_presets_l17_l18_defaults():
     """L17: start DOY 113 06:00, local06 sample. L18: SA from the coupled site background and
-    WTR = the coupled site value (run_ensemble.LAT_ALT)."""
-    from coupled.paper_ensemble.run_ensemble import LAT_ALT
+    WTR = the coupled site value (sites.LAT_ALT)."""
+    from coupled.paper_ensemble.sites import LAT_ALT
     site = {s: (lat, T, P, wtr) for s, lat, T, P, wtr in LAT_ALT}
     for p in m.PRESETS.values():
         assert (p.day_of_year, p.start_utc_hour, p.days, p.sample) == (113, 6.0, 60, "local06")

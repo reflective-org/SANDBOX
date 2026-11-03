@@ -1,5 +1,10 @@
 # SAI plume paper — runs & figures reproduction guide
 
+> **v1 guide (Schumann dilution).** Since 2026-11-03 (PI decision L20) the paper uses the v2
+> pipeline: `run_v2.py` / `launch_v2.py` / `make_spinup_ic.py`, documented in `RUNS_V2.md`. The v1
+> scripts this guide describes were moved to `legacy_v1/` (see its README) and run only at git tag
+> `paper-v1` (`git checkout paper-v1`), where the paths below are valid.
+
 This directory contains everything behind the paper's simulations and figures: the run
 scripts, the figure scripts, the paper tables, and the documentation. The model itself is
 the coupled box model in `SANDBOX/coupled/` (stratospheric gas-phase chemistry +

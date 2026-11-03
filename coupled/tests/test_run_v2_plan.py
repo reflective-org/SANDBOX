@@ -101,7 +101,7 @@ def test_v0_definitions_l21():
 
 
 def test_sites_follow_lat_alt_and_decisions():
-    from coupled.paper_ensemble.run_ensemble import LAT_ALT
+    from coupled.paper_ensemble.sites import LAT_ALT
     la = {r[0]: r[1:] for r in LAT_ALT}
     for s in rv.SITES.values():
         assert (s.latitude, s.T, s.P, s.WTR) == la[s.site]

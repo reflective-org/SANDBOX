@@ -47,7 +47,7 @@ def build_scenario(repo_root: Path) -> Any:
             "model submodules not checked out (`git submodule update --init`); the equivalence "
             "test compares against run_ensemble.build_scenario, which needs them"
         )
-    from coupled.paper_ensemble.run_ensemble import build_scenario as builder
+    from coupled.paper_ensemble.legacy_v1.run_ensemble import build_scenario as builder
 
     return builder
 

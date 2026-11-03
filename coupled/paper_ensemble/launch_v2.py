@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Launch a paper-runs-v2 set across N thread-pinned single-core worker processes.
 
-Same fan-out as ``launch_parallel.py``: each worker runs a contiguous slice of the set's case
-indices via ``run_v2 run <set> <lo> <hi>`` (skip-if-done, so re-launching resumes), pinned to ONE
-thread (OMP/OPENBLAS/MKL/XLA) so N workers do not oversubscribe the cores. Per-worker logs go to
+Same fan-out as ``legacy_v1/launch_parallel.py``: each worker runs a contiguous slice of the set's
+case indices via ``run_v2 run <set> <lo> <hi>`` (skip-if-done, so re-launching resumes), pinned to
+ONE thread (OMP/OPENBLAS/MKL/XLA) so N workers do not oversubscribe the cores. Per-worker logs go to
 ``runs_v2/<set>/worker_<lo>_<hi>.log``; the per-slice ``summary_*.csv`` files are merged into
 ``runs_v2/<set>/summary.csv`` at the end, and the manifest is refreshed.
 
@@ -22,7 +22,7 @@ from coupled.paper_ensemble import run_v2
 
 _SANDBOX = run_v2._SANDBOX
 
-_PIN = {  # single-thread pinning so N workers don't fight over cores (as launch_parallel)
+_PIN = {  # one thread per worker so N workers don't fight over cores (as legacy_v1/launch_parallel)
     "OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1", "MKL_NUM_THREADS": "1",
     "VECLIB_MAXIMUM_THREADS": "1", "NUMEXPR_NUM_THREADS": "1",
     "XLA_FLAGS": "--xla_cpu_multi_thread_eigen=false",

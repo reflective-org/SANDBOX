@@ -22,7 +22,7 @@ A ``Site`` bundles the site, background and spun-up IC (``SITES``):
         ic/30N_20km_ss20IC.json  (L17/L18 regenerated; the first 8 base runs used the legacy
         ic/30N_20km_ss20IC_legacy_noon_doy231.json)
   geo   30N_20km, aer_geo, bg SO2 100 ppt (L15), ic/30N_20km_ss100IC.json
-  60N   60N_15km (lat 60, 210 K, 120 hPa, WTR 3.1673 = run_ensemble.LAT_ALT, L14), sabr_220,
+  60N   60N_15km (lat 60, 210 K, 120 hPa, WTR 3.1673 = sites.LAT_ALT, L14), sabr_220,
         bg SO2 20 ppt, ic/60N_15km_ss20IC.json
 The background SO2 is both ``dilution_background`` (entrained air) and the no-injection SO2.
 
@@ -46,8 +46,8 @@ Named run sets (``SETS``), selected on the CLI:
   oat           40  30N: every case x {nucleation x0.01, x100; coag kernel x0.5, x2; alpha 0.5}
   ctrl          8   30N: no-injection twin per dilution case, same V(t) (length = the paired
                     DEFAULT_V0 base run's final t, rounded up to whole days, else 60 d -- as
-                    run_bgstop_control)
-  constoh       1   30N: C1 with OH pinned at 5e5 molec cm^-3 (as make_constant_oh_banana)
+                    legacy_v1/run_bgstop_control)
+  constoh       1   30N: C1 with OH pinned at 5e5 molec cm^-3 (as legacy_v1/make_constant_oh_banana)
   geo           8   the eight dilution cases on the geo site (aer_geo)
   geo_ctrl      8   no-injection twins of the geo set (O5 still open: defined, not yet approved)
   site60N       8   the eight dilution cases at 60N/15 km (O4: same sigma/Kz/S as 30N)
@@ -89,7 +89,7 @@ import coupled.model_bridge  # noqa: F401  (puts the flat gas model + tuvx on sy
 from config import IDX, air_number_density  # noqa: E402
 from coupled import CoupledScenario  # noqa: E402
 from coupled.coupled_scenario import GAUSSIAN_DILUTION_CASES, Switches  # noqa: E402
-from coupled.paper_ensemble.run_ensemble import LAT_ALT  # noqa: E402
+from coupled.paper_ensemble.sites import LAT_ALT  # noqa: E402
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _SANDBOX = os.path.abspath(os.path.join(_HERE, "..", ".."))
@@ -106,9 +106,9 @@ DILUTION_MAX_DLNV = 0.1                               # v2 (L12)
 WATER_EVERY_PROCESS = True                            # v2 (L8)
 NUC_ORG_MASS_FRAC = 0.0                               # v2 (L7)
 MOLAR_SO4_TRANSFER = True                             # v2 (L13): x96/98 at gas->particle sulfate
-OH_PIN_MOLEC_CM3 = 5.0e5                              # make_constant_oh_banana.OH_CONST
+OH_PIN_MOLEC_CM3 = 5.0e5                              # legacy_v1/make_constant_oh_banana OH_CONST
 
-# --- 1 t SO2 into the initial plume volume V0 (L21) -------------------------------------------------
+# --- 1 t SO2 into the initial plume volume V0 (L21) -----------------------------------------------
 _AVOG = 6.02214076e23
 SO2_MOLECULES = 1.0e6 / 64.0 * _AVOG                  # 1 t SO2 (64 g/mol), as run_60day
 PLUME_SIGMA_X_M = 25.0                                # across-track horizontal sigma (L19)
@@ -116,7 +116,7 @@ PLUME_SIGMA_Z_M = 25.0                                # vertical sigma (L19)
 PLUME_TRACK_M = 15000.0                               # uniform along-track length L
 _SXSZL_CM3 = PLUME_SIGMA_X_M * PLUME_SIGMA_Z_M * PLUME_TRACK_M * 1e6
 
-#: V0 variant -> V0 [cm^3] (L21; see the module docstring). Order = case order within a dilution case.
+#: V0 variant -> V0 [cm^3] (L21; see the module docstring). Order = case order within a dil. case.
 V0_CM3 = {
     "peak": 2.0 * math.pi * _SXSZL_CM3,
     "c1sig": 2.0 * math.pi * _SXSZL_CM3 * math.exp(0.5),
@@ -126,7 +126,7 @@ V0_CM3 = {
 }
 V0_VARIANTS = tuple(V0_CM3)                           # peak, c1sig, mwmean, tophat, c2sig
 DEFAULT_V0 = "mwmean"
-#: Sets that run EVERY V0 variant; all others use DEFAULT_V0 only. "Everything x 5" = add names here.
+#: Sets that run EVERY V0 variant; all others use DEFAULT_V0 only. "Everything x 5": add names here.
 V0_SWEEP_SETS = frozenset({"base"})
 #: Initial plume SO2 [molec cm^-3] per V0 variant (same molecules/V0 at every site).
 SO2_SPIKE_MOLEC_CM3 = {v: SO2_MOLECULES / v0 for v, v0 in V0_CM3.items()}
@@ -138,7 +138,7 @@ DILUTION_CASES = GAUSSIAN_DILUTION_CASES              # C1, C2, C3, C3a, C4, C4a
 class Site:
     """Site + background + spun-up IC of a family of run sets."""
     key: str
-    site: str                 # run_ensemble.LAT_ALT label (case-id prefix)
+    site: str                 # sites.LAT_ALT label (case-id prefix)
     latitude: float
     T: float
     P: float                  # hPa
@@ -349,7 +349,7 @@ def is_current(path, site):
 
 def ctrl_days(spec):
     """(days, source): the paired base run's final t rounded up to whole days if its state.npz
-    exists and was made on the same IC, else MAX_DAYS (mirrors run_bgstop_control; no early stop
+    exists and was made on the same IC, else MAX_DAYS (mirrors legacy_v1/run_bgstop_control; no early stop
     for the control itself)."""
     path = paired_base_npz(spec)
     if is_current(path, spec.site):
@@ -463,9 +463,10 @@ def write_manifest(set_name, cases=None):
 
 # --- running ---------------------------------------------------------------------------------------
 def _install_oh_pin():
-    """Pin OH (as make_constant_oh_banana): every rate sees OH = 5e5 and dOH/dt = 0. The driver builds
-    its gas step via ``jaxmodel.model.make_frozen_step``, which looks ``make_frozen_vf`` up in that
-    module's globals at call time, so patching it there (before ``run_coupled``) reaches the solve."""
+    """Pin OH (as legacy_v1/make_constant_oh_banana): every rate sees OH = 5e5 and dOH/dt = 0.
+    The driver builds its gas step via ``jaxmodel.model.make_frozen_step``, which looks
+    ``make_frozen_vf`` up in that module's globals at call time, so patching it there (before
+    ``run_coupled``) reaches the solve."""
     import jaxmodel.model as jm
     if getattr(jm.make_frozen_vf, "_oh_pinned", False):
         return

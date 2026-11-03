@@ -139,7 +139,8 @@ def _frozen_j_and_heating(cfg, t_mid: float, aerosol_props=None):
 
 # Gas-ODE stall handling: Diffrax Kvaerno5 with the standard first_step=1e-10 can enter a
 # reject/shrink loop of the PID controller on rare benign states (isolated to EXACTLY dt0=1e-10;
-# dt0 >= 1e-8 solves the same state in ~30 steps -- see paper_ensemble/debug_day12_isolation.py).
+# dt0 >= 1e-8 solves the same state in ~30 steps -- see
+# paper_ensemble/legacy_v1/debug_day12_isolation.py).
 # The remedy is a pure-Diffrax RETRY with a larger initial step; no SciPy fallback.
 _RETRY_FIRST_STEP = 1.0e-2
 

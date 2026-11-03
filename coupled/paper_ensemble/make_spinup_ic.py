@@ -21,7 +21,7 @@ the coupled release time. The preset defaults follow PI decisions L14, L15, L17 
 
 All: T 210 K, Yn2o5 0.1, opt 1, lon 0, DT 600 s, 60 d, photolysis "sza",
 initial_overrides={"SO2": ppt}, fixed_species=("SO2",). The coupled site values match
-run_ensemble.LAT_ALT (a test checks it). The background SA uses tomas_nbins = 80 (the v2 setting).
+sites.LAT_ALT (a test checks it). The background SA uses tomas_nbins = 80 (the v2 setting).
 
 Legacy ss20IC (the file the first 8 v2 base runs used, kept as
 ``ic/30N_20km_ss20IC_legacy_noon_doy231.json``) is reproducible only with explicit flags:
@@ -83,7 +83,7 @@ class Preset:
     """One spun-up control. ``sa`` is a number [um^2/cm^3] or ``"bg:<BACKGROUND_MODES key>"`` (the
     wet SA of that background at the coupled site conditions)."""
     name: str
-    site: str                 # output file prefix, = the coupled site label (run_ensemble.LAT_ALT)
+    site: str                 # output file prefix, = the coupled site label (sites.LAT_ALT)
     tag: str                  # output file suffix
     decision: str             # where the configuration comes from
     P_preset: int             # frank-model IC preset / control pressure [hPa]
