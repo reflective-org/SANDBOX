@@ -97,7 +97,8 @@ def build_scenario(ax):
     return CoupledScenario(
         T=T, P=P, WTR=WTR, latitude=lat, longitude=0.0, day_of_year=172, start_utc_hour=0.0,
         days=10, DT=600.0, dt_couple=600.0, photolysis="tuvx", tomas_nbins=80,
-        background_dist=bg[1], dilution_regime=dl[1], dilution_zero_species=(),
+        background_dist=bg[1], dilution_regime=dl[1], legacy_dilution=True,   # Schumann (L20)
+        dilution_zero_species=(),
         dilution_background={"SO2": float(bg[2])},           # plume SO2 relaxes to background SO2
         ion_pair_rate=30.0, so2_ho2_rate=1.0e-18,
         condensation_alpha=float(st[1]), nucleation_rate_scale=float(nu[1]),
@@ -132,7 +133,7 @@ def write_manifest():
 
 
 def run_one(cid, ax):
-    import coupled.dilution as dl
+    import coupled.dilution_legacy_schumann as dl
     sc = build_scenario(ax)
     out = os.path.join(_OUT, cid)
     os.makedirs(out, exist_ok=True)

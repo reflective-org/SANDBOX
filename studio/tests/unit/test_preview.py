@@ -6,8 +6,8 @@ Two things are worth testing here and one of them is not the arithmetic.
 
 **That each curve is the model's own.** A preview exists to tell the user what the run will do, so a
 panel that plots a re-derived formula is a lie with a plausible shape. ``test_the_dilution_curve_is
-_the_models`` compares against ``coupled.dilution.volume_ratio`` element for element rather than
-against a stored expectation, so the two cannot drift apart.
+_the_models`` compares against ``coupled.dilution_legacy_schumann.volume_ratio`` element for element
+rather than against a stored expectation, so the two cannot drift apart.
 
 **That the units survive the seam.** ``stp_to_ambient_factor`` takes pressure in **Pa** while the
 schema's canonical unit is mbar (ADR-003). Passing 55 where 5500 was meant scales the whole
@@ -37,10 +37,10 @@ def _needs_model(repo_root: Path) -> None:
 
 @pytest.mark.tier_a
 def test_the_dilution_curve_is_the_models() -> None:
-    """Element for element the same as ``coupled.dilution.volume_ratio``, not a lookalike."""
+    """Element for element the same as ``coupled.dilution_legacy_schumann.volume_ratio``."""
     import numpy as np
 
-    from coupled import dilution
+    from coupled import dilution_legacy_schumann as dilution
     from studio.modelio.preview import dilution_curve
 
     config = RunConfig()
@@ -212,7 +212,7 @@ def test_the_dilution_panel_reports_the_equation_and_each_regimes_k() -> None:
     Compared against the same tuples here, so if coupled/dilution.py changes a coefficient this
     fails on the spot rather than the panel quoting a k the model no longer uses.
     """
-    from coupled import dilution
+    from coupled import dilution_legacy_schumann as dilution
     from studio.modelio.preview import dilution_curve
 
     panel = dilution_curve(RunConfig())

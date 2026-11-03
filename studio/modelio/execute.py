@@ -139,10 +139,10 @@ def _max_sim_time_stop(config: ResolvedConfig) -> Any:
 def _volume_ratio(times: np.ndarray, scenario: Any) -> np.ndarray:
     """V(t)/V0 for the run, from the model's own tested implementation.
 
-    Reused rather than reimplemented: ``coupled.dilution.volume_ratio`` is tested, and a second copy
-    in ``studio/science`` is exactly what task 0.5 removed elsewhere.
+    Reused rather than reimplemented: ``coupled.dilution_legacy_schumann.volume_ratio`` is tested,
+    and a second copy in ``studio/science`` is exactly what task 0.5 removed elsewhere.
     """
-    from coupled import dilution
+    from coupled import dilution_legacy_schumann as dilution
 
     return dilution.volume_ratio(times, scenario.dilution_regime)
 

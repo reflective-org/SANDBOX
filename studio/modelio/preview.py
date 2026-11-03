@@ -8,9 +8,9 @@ SZA/OH diurnal)"* that *"must respond in well under a second"* and *"never invok
 **Every curve here is the model's own implementation, not a lookalike.** That is the whole design
 constraint: a preview that plots a re-derived formula would eventually disagree with what the run
 does, and the disagreement would be invisible -- the picture would still look like a dilution curve.
-So the dilution curve is ``coupled.dilution.volume_ratio``, the size distribution is the state
-``coupled.tomas_bridge.initial_tomas_state`` actually seeds, and the bin grid is TOMAS's own. This
-module converts and shapes for display; it computes no physics of its own.
+So the dilution curve is ``coupled.dilution_legacy_schumann.volume_ratio``, the size distribution is
+the state ``coupled.tomas_bridge.initial_tomas_state`` actually seeds, and the bin grid is TOMAS's
+own. This module converts and shapes for display; it computes no physics of its own.
 
 Measured on this machine (after the one-off import below):
 
@@ -132,7 +132,7 @@ def _custom_two_piece_curve(seconds: np.ndarray, k: float) -> np.ndarray:
     Exploration only: the schema runs named regimes (or a constant rate), so a custom k here is a
     picture of the family, never a runnable configuration -- the panel says so.
     """
-    from coupled import dilution
+    from coupled import dilution_legacy_schumann as dilution
 
     time = np.maximum(np.asarray(seconds, dtype=float), 0.0)
     conditions, values, t_start = [], [], 0.0
@@ -159,7 +159,7 @@ def dilution_curve(config: RunConfig, params: Mapping[str, Any] | None = None) -
     "turn the constant and watch the family move" the panel offers. The equation and each regime's
     k are reported so the panel can show WHAT the constant is, not just that there is one.
     """
-    from coupled import dilution
+    from coupled import dilution_legacy_schumann as dilution
 
     days = config.schedule.duration_days
     seconds = np.linspace(0.0, days * 86400.0, _CURVE_POINTS)

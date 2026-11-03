@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from coupled.coupled_scenario import CoupledScenario, Switches
+from coupled.coupled_scenario import LEGACY_SCHUMANN_REGIMES, CoupledScenario, Switches
 from studio.resolve import ResolvedConfig
 from studio.schema import DilutionRegime, RunConfig
 from studio.schema.enums import BackgroundAerosol
@@ -171,6 +171,9 @@ def to_scenario(config: RunConfig | ResolvedConfig) -> CoupledScenario:
             else ""
         ),
         dilution_regime=_REGIME_TO_MODEL[run.dilution.regime],
+        # The studio's named regimes are the model's LEGACY Schumann set (coupled PI decision L20),
+        # which the model accepts only with this opt-in; CONSTANT ("") needs none.
+        legacy_dilution=_REGIME_TO_MODEL[run.dilution.regime] in LEGACY_SCHUMANN_REGIMES,
         dilution_rate=run.dilution.rate_per_s,
         dilution_zero_species=tuple(run.dilution.zero_species),
         dilution_background=dilution_background,
