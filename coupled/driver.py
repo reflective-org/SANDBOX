@@ -13,8 +13,9 @@ docs/time-integration-plan.md):
   drives the gas sulfur gate.
 * INNER (micro) step -- ADAPTIVE, fine early: within each outer step the gas ODE is solved ONCE with a
   DENSE output (H2SO4 accumulates, no aerosol sink), then TOMAS consumes that H2SO4 envelope in
-  adaptive micro-steps (``_tomas_micro``). Each micro-step is sized so the fractional change in gaseous
-  H2SO4 and aerosol number stays <= ``micro_eps``, bounded to [``micro_floor_s``, ``micro_cap_s``]. This
+  adaptive micro-steps (``micro_consume``). Each micro-step is sized so the H2SO4 produced over it stays
+  <= ``micro_eps`` of the standing H2SO4 (opt-in: also the fractional particle-number increase <=
+  ``micro_nuc_eps``), bounded to [``micro_floor_s``, ``micro_cap_s``]. This
   is approach B: nucleation only ever sees one micro-step's worth of H2SO4 (so it self-limits instead of
   running away on a coarse step), while the expensive TUV-x solve stays on the coarse outer cadence.
 
@@ -152,7 +153,7 @@ _H2SO4_NEGLIGIBLE = 1.0e5
 
 
 def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, floor, cap, dt_start,
-                  on_accept=None):
+                  on_accept=None, nuc_eps=0.0, n_ref=1.0e3):
     """Adaptive TOMAS micro-loop over [t0, t1] consuming the gas H2SO4 envelope (approach B).
 
     ``env_h2so4_conc(t) -> gaseous H2SO4 [molec/cm^3]`` is the gas solution WITHOUT any aerosol sink
@@ -172,6 +173,24 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
     the step is accepted and a one-line under-resolution notice is printed (the coupling is slightly
     under-resolved but the microphysics itself is valid).
 
+    OPT-IN nucleation-aware control (``nuc_eps`` > 0; scenario ``micro_nuc_eps``): the step is ALSO
+    halved until the fractional increase of total particle number over the accepted step,
+    ``frac_nuc = max(N_end - N_start, 0) / max(N_start, n_ref)`` (N = sum(Nk)/boxvol, #/cm^3), is
+    <= ``nuc_eps``. Coagulation-driven decreases are not controlled (TOMAS resolves those internally).
+    The ``n_ref`` floor (scenario ``micro_nuc_nref_cm3``, default 1e3 cm^-3) is what makes this
+    feasible: with a bare dN/N the first nucleated particles in a near-empty box give dN/N >> 1 at
+    any dt, refining every step to the floor. Against max(N, n_ref) the control is an ABSOLUTE
+    bound (dN <= nuc_eps*n_ref per step) while N < n_ref and a RELATIVE one once the nucleated
+    population is large enough to matter for coagulation/condensation. At the floor an over-limit
+    step is accepted with at most ONE printed note per call (outer interval). The step relaxes
+    (doubles) only when BOTH metrics are under half their limits. With ``nuc_eps`` == 0 and no
+    ``on_accept`` hook the loop is exactly the production-only controller (no extra work or syncs).
+
+    ``on_accept(t, dt, frac_prod, frac_nuc)`` is an optional per-accepted-step diagnostics hook
+    (``t`` = step start [s]). Passing it turns on the N bookkeeping (``frac_nuc`` is reported even
+    when ``nuc_eps`` == 0) but never changes the stepping. N rides in the SAME single device->host
+    transfer as the finite flag and leftover H2SO4; the starting N costs one transfer per call.
+
     Shared verbatim by the JAX driver (``sol.evaluate``) and the NumPy mirror (SciPy ``sol.sol``) so the
     two-level stepping is identical across backends. Returns ``(tstate, removal_kg, next_dt, n_micro)``.
     """
@@ -181,6 +200,12 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
     env_prev = env_h2so4_conc(t0)                                    # H2SO4 envelope [molec/cm^3] at t
     dt = min(max(dt_start, floor), cap, t1 - t0)
     n_micro = 0
+    nuc_ctl = nuc_eps > 0.0
+    track_n = nuc_ctl or on_accept is not None        # N bookkeeping only when someone needs it
+    boxvol = float(tstate.boxvol)
+    n_prev = float(jnp.sum(Nk)) / boxvol if track_n else 0.0   # total number [#/cm^3] at t
+    frac_nuc = 0.0
+    nuc_noted = False
     while t < t1 - 1e-9:
         dt = min(dt, t1 - t)
         t_end = t + dt
@@ -198,7 +223,11 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
         # the TOMAS step itself), so batching + the host-interpolated envelope is the whole speedup.
         _finite_flag = (jnp.all(jnp.isfinite(Nk2)) & jnp.all(jnp.isfinite(Mk2))
                         & jnp.all(jnp.isfinite(Gc2))).astype(jnp.float64)
-        _flag, _gc_so4 = (float(v) for v in np.asarray(jnp.stack([_finite_flag, Gc2[SRTSO4]])))
+        if track_n:   # the new particle number rides in the same single transfer
+            _flag, _gc_so4, _nsum = (float(v) for v in np.asarray(
+                jnp.stack([_finite_flag, Gc2[SRTSO4], jnp.sum(Nk2)])))
+        else:
+            _flag, _gc_so4 = (float(v) for v in np.asarray(jnp.stack([_finite_flag, Gc2[SRTSO4]])))
         finite = _flag > 0.5
         at_floor = dt <= floor * (1.0 + 1e-9)
         if not finite:
@@ -214,6 +243,19 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
         if frac_prod > eps and not at_floor:                        # refine to resolve the coupling
             dt = max(dt * 0.5, floor)
             continue
+        if track_n:
+            n_new = _nsum / boxvol
+            frac_nuc = max(n_new - n_prev, 0.0) / max(n_prev, n_ref)   # nucleation metric
+        if nuc_ctl and frac_nuc > nuc_eps:
+            if not at_floor:                                        # refine to resolve the burst
+                dt = max(dt * 0.5, floor)
+                continue
+            if not nuc_noted:                                       # one note per outer interval
+                nuc_noted = True
+                print(f"[coupled] NOTE: micro-step at floor ({floor:g} s) on [{t0:.4g},{t1:.4g}] "
+                      f"t={t:.4g}s has number increase dN/max(N,N_ref) = {frac_nuc:.3f} > "
+                      f"micro_nuc_eps={nuc_eps}; accepting (further floor steps over the limit in "
+                      f"this interval are not reported). Lower micro_floor_s to resolve.")
         if frac_prod > eps and at_floor:                            # finite but coupling under-resolved
             print(f"[coupled] NOTE: micro-step at floor ({floor:g} s) on [{t0:.4g},{t1:.4g}] t={t:.4g}s "
                   f"has production fraction {frac_prod:.3f} > micro_eps={eps} (H2SO4 rising fast); "
@@ -221,13 +263,15 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
                   f"here. Lower micro_floor_s for a tighter split.")
         Nk, Mk, Gc = Nk2, Mk2, Gc2                                    # accept
         removal_kg += max(avail_kg - _gc_so4, 0.0)                     # leftover H2SO4 pulled above
-        if on_accept is not None:                                     # diagnostics hook (t, dt, frac)
-            on_accept(t, dt, frac_prod)
+        if on_accept is not None:                                     # diagnostics hook
+            on_accept(t, dt, frac_prod, frac_nuc)
+        if track_n:
+            n_prev = n_new
         t = t_end
         env_prev = env_end
         n_micro += 1
-        if frac_prod < 0.5 * eps:                                     # relax when comfortably under eps
-            dt = min(dt * 2.0, cap)
+        if frac_prod < 0.5 * eps and (not nuc_ctl or frac_nuc < 0.5 * nuc_eps):
+            dt = min(dt * 2.0, cap)                                   # relax: both comfortably under
     return tstate._replace(Nk=Nk, Mk=Mk, Gc=Gc), removal_kg, max(dt, floor), n_micro
 
 
@@ -297,7 +341,7 @@ def _adapt_stop_condition(stop_condition):
 
 
 def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_dist=False,
-                return_photolysis=False, stop_condition=None):
+                return_photolysis=False, stop_condition=None, micro_diagnostics=None):
     """Integrate a CoupledScenario with operator splitting.
 
     Returns ``(t [s], states [n_t, n_species])``. With ``return_aerosol=True`` also returns a dict of
@@ -345,6 +389,11 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     The NaNs are deliberate: a criterion such as ``diag["SA"] < x`` must not read "TOMAS is off" as
     "the plume has relaxed". The legacy two-argument shape ``f(t1_seconds, wet_SA)`` still works and
     is dispatched explicitly by arity -- see ``_adapt_stop_condition``.
+
+    ``micro_diagnostics`` is an optional ``f(t, dt, frac_prod, frac_nuc)`` called once per ACCEPTED
+    TOMAS micro-step (``t`` = step start [s], ``dt`` [s], ``frac_prod`` = H2SO4 production fraction,
+    ``frac_nuc`` = dN / max(N, micro_nuc_nref_cm3)); see ``micro_consume``. It never changes the
+    stepping and costs nothing when None (the default). Not called when TOMAS is inactive.
     """
     _stop = _adapt_stop_condition(stop_condition)   # fail fast on a mis-shaped callback
     cfg = to_model_config(scenario)
@@ -475,6 +524,8 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     eps = float(scenario.micro_eps)
     floor = float(scenario.micro_floor_s)
     cap = float(scenario.micro_cap_s)
+    nuc_eps = float(scenario.micro_nuc_eps)          # 0 = off (production-only controller)
+    n_ref = float(scenario.micro_nuc_nref_cm3)
     dt_micro = floor                # start fine (t=0 burst); carried/relaxed across outer intervals
     micro_total = 0
     t_list, x_list = [0.0], [np.asarray(y0)]
@@ -559,7 +610,8 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
             env_grid = np.asarray(sol.ys[:, h2so4_idx]); yc_end = sol.ys[-1]
             tstate, removal_kg, dt_micro, n_micro = micro_consume(
                 lambda tt: float(np.interp(tt, ts_grid, env_grid)), t0, t1, tstate, tomas_step,
-                nuc_scale, eps, floor, cap, dt_micro)
+                nuc_scale, eps, floor, cap, dt_micro, on_accept=micro_diagnostics,
+                nuc_eps=nuc_eps, n_ref=n_ref)
             micro_total += n_micro
             yc = yc_end
             env_end_kg = conc_to_mass(float(env_grid[-1]), BOXVOL_CM3, MW_H2SO4)   # envelope(t1)

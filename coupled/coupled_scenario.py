@@ -113,13 +113,23 @@ class CoupledScenario:
     dt_couple: float = 600.0
 
     # --- adaptive inner (micro) time step for the gas<->TOMAS handoff (two-level integration) ---
-    # Each micro-step is chosen so the fractional change in gaseous H2SO4 and in aerosol number N stays
-    # below ``micro_eps``, bounded to [``micro_floor_s``, ``micro_cap_s``]. It auto-shrinks where
-    # nucleation is fast (burst / high nucleation_rate_scale) and relaxes when slow -- no per-scenario
-    # tuning. Hitting the floor while still over eps raises (never silently under-resolve).
+    # Each micro-step is chosen so the gas H2SO4 PRODUCED over the step stays below ``micro_eps`` of
+    # the standing H2SO4 (production/standing <= micro_eps; the operator-split coupling error), bounded
+    # to [``micro_floor_s``, ``micro_cap_s``]: halve when over eps, double when under eps/2. Particle
+    # number N is NOT controlled by default (see coupled.driver.micro_consume for why). Reaching the
+    # floor while still over eps ACCEPTS the (finite) step with a printed note; it raises only if
+    # TOMAS goes non-finite at the floor.
     micro_eps: float = 0.1
     micro_floor_s: float = 1.0e-4
     micro_cap_s: float = 20.0
+    # Opt-in nucleation-aware control (default OFF = bitwise the production-only controller above):
+    # with ``micro_nuc_eps`` > 0 a micro-step is also refined until the fractional INCREASE of total
+    # particle number per accepted step, dN / max(N, micro_nuc_nref_cm3), is <= micro_nuc_eps. The
+    # reference floor (#/cm^3, ambient) keeps dN/N from refining to an infeasible step count while N
+    # is tiny (clean box before the burst): 1e3 cm^-3 is ~2 orders above the stratospheric background
+    # (~1-30 cm^-3), so the control engages only once nucleation adds a population that matters.
+    micro_nuc_eps: float = 0.0
+    micro_nuc_nref_cm3: float = 1.0e3
 
     # --- photolysis ---
     photolysis: str = "tuvx"
@@ -224,6 +234,11 @@ class CoupledScenario:
         if self.micro_cap_s < self.micro_floor_s:
             raise ValueError(f"micro_cap_s ({self.micro_cap_s}) must be >= micro_floor_s "
                              f"({self.micro_floor_s})")
+        if not self.micro_nuc_eps >= 0.0:            # also rejects NaN
+            raise ValueError(f"micro_nuc_eps must be >= 0 (0 = off), got {self.micro_nuc_eps}")
+        if not self.micro_nuc_nref_cm3 > 0.0:
+            raise ValueError(f"micro_nuc_nref_cm3 must be > 0 (denominator floor of dN/N), got "
+                             f"{self.micro_nuc_nref_cm3}")
         if self.days < 1:
             raise ValueError(f"days must be >= 1, got {self.days}")
         if self.aerosol_thickness_km <= 0.0:
