@@ -31,3 +31,9 @@ plot_so2ho2_aer_combined, animate_d1_plume, paper_matrix, paper_plots.
 
 The v2 pipeline (`run_v2.py`, `launch_v2.py`, `make_spinup_ic.py`, `sites.py`) does not import
 anything from here.
+
+Moved 2026-11-03 (Ali's decision): run_60day and make_60day_plots (`git mv`; Ali's uncommitted
+working-tree edits to both moved with them and stay uncommitted), plus Ali's untracked
+make_control_injection_plots and make_nucleation_number_plots (not under version control, so
+they are not at tag paper-v1 either; to use them, run them from a paper-v1 checkout's
+`coupled/paper_ensemble/`).
