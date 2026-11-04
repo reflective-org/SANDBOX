@@ -50,9 +50,9 @@ def main(set_name, n_proc=8):
     total = len(cases)
     sdir = run_v2.set_dir(set_name)
     os.makedirs(sdir, exist_ok=True)
-    if any(c.kind == "ctrl" for c in cases):
-        missing = [c.dil for c in cases
-                   if not run_v2.is_current(run_v2.paired_base_npz(c), c.site)]
+    if run_v2.EARLY_STOP and any(c.kind == "ctrl" for c in cases):
+        missing = [c.case_id for c in cases if c.kind == "ctrl"
+                   and not run_v2.is_current(run_v2.paired_base_npz(c), c.site)]
         if missing:
             print(f"WARNING: base runs not finished (or made on another IC) for {missing}; "
                   f"those controls will run the "

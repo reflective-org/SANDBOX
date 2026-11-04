@@ -50,9 +50,10 @@ Named run sets (``SETS``), selected on the CLI:
   ens           720 30N full factorial (L22): 8 dilution cases x 5 V0 x 18 microphysics combos.
                     Its 40 default-microphysics members ARE the base cases (same case_id, same
                     output dir runs_v2/base/<id>, see "Shared output dirs" below): 680 new runs
-  ctrl          8   30N: no-injection twin per dilution case, same V(t) (length = the paired
-                    DEFAULT_V0 base run's final t, rounded up to whole days, else MAX_DAYS -- as
-                    legacy_v1/run_bgstop_control)
+  ctrl          8   30N: no-injection twin per dilution case, default microphysics, same V(t)
+  ens_ctrl      144 30N (L23): no-injection twin per dilution case x microphysics combo; ctrl is
+                    its default-microphysics slice (same ids/dirs). ``paired_control(spec)`` maps
+                    any ens member (any V0) to its twin
   oat               RETIRED (L22): the one-at-a-time members are a subset of ens; asking for it
                     raises and points to ens
   constoh       1   30N: C1 with OH pinned at 5e5 molec cm^-3 (as legacy_v1/make_constant_oh_banana)
@@ -64,12 +65,14 @@ Named run sets (``SETS``), selected on the CLI:
 
 Case id: ``<site>__<bg>__<dil>__<alpha>__<nuc>__<coag>__V0<variant>__h06_<ic tag>`` (+ ``__ctrl`` /
 ``__constOH``), e.g. ``30N_20km__aergeo__C1__a1p0__nuc1__cg1__V0mwmean__h06_ss100IC``. A ctrl twin
-carries its paired plume's V0 token (DEFAULT_V0); V0 has no effect on a no-injection run.
+always carries the V0 token DEFAULT_V0: V0 has no effect on a no-injection run, so ONE twin serves
+every V0 variant of its (dilution case, microphysics) and the token is only a fixed placeholder.
 
-Shared output dirs (``SHARED_OUTPUT``): a set that contains another set's cases (ens > base)
-does not copy them. ``case_dir(set, spec)`` resolves such a member to the OWNER set's dir, so a
-finished base run is "done" for ens too (and vice versa) and nothing runs twice; the new members
-live in runs_v2/ens/. Every manifest row records the resolved ``output_dir``.
+Shared output dirs (``SHARED_OUTPUT``): a set that contains another set's cases (ens > base,
+ens_ctrl > ctrl) does not copy them. ``case_dir(set, spec)`` resolves such a member to the OWNER
+set's dir, so a finished base run is "done" for ens too (and vice versa) and nothing runs twice;
+the new members live in runs_v2/ens/ and runs_v2/ens_ctrl/. Every manifest row records the
+resolved ``output_dir``.
 
 Output: ``runs_v2/<set>/<case_id>/state.npz`` (run_60day layout; ``V_ratio`` from
 ``coupled.dilution.volume_ratio``; ``ic_sha256`` of the IC used; ``so2_chem_loss_cum`` [molec cm^-3
@@ -79,7 +82,8 @@ counter, L27] and ``V_ratio_applied`` from ``run_coupled``'s aerosol dict), ``ru
 provenance), ``runs_v2/<set>/summary_*.csv``.
 Cases whose ``state.npz`` exists AND records the current IC's sha256 are skipped. A state.npz with
 no or another IC hash (e.g. the base runs made on the legacy IC) is reported STALE and left alone:
-move it aside to rerun that case. A ctrl twin only takes its length from a non-stale base run.
+move it aside to rerun that case. Every run is MAX_DAYS long (L26); only with EARLY_STOP on would a
+ctrl twin take its length from its (non-stale) paired plume run (``ctrl_days``).
 
 CLI (from SANDBOX/):
   python -m coupled.paper_ensemble.run_v2 plan <set>          # list cases, write manifest, no run
@@ -267,6 +271,11 @@ def _ctrl(set_name, site=SITE_30N):
     return [CaseSpec(d, kind="ctrl", site=site) for d in DILUTION_CASES]
 
 
+def _ens_ctrl(set_name):
+    # one no-injection twin per (dilution case, microphysics combo); V0 token fixed at DEFAULT_V0
+    return [CaseSpec(d, kind="ctrl", **m) for d in DILUTION_CASES for m in MICROPHYSICS_COMBOS]
+
+
 def _constoh(set_name):
     return [CaseSpec("C1", kind="constoh", v0=v) for v in v0_variants_for(set_name)]
 
@@ -278,6 +287,7 @@ SETS = {
     "ens": _ens,
     "oat": _retired("ens", "L22"),
     "ctrl": _ctrl,
+    "ens_ctrl": _ens_ctrl,
     "constoh": _constoh,
     "geo": functools.partial(_base, site=SITES["geo"]),
     "geo_ctrl": functools.partial(_ctrl, site=SITES["geo"]),
@@ -294,7 +304,7 @@ def cases_for(set_name):
 
 
 #: set -> the set whose cases it contains and whose output dirs those shared members keep
-SHARED_OUTPUT = {"ens": "base"}
+SHARED_OUTPUT = {"ens": "base", "ens_ctrl": "ctrl"}
 
 
 @functools.lru_cache(maxsize=None)
@@ -317,6 +327,15 @@ def output_set(set_name, spec):
 
 def case_dir(set_name, spec):
     return os.path.join(set_dir(output_set(set_name, spec)), spec.case_id)
+
+
+def paired_control(spec):
+    """The no-injection twin (an ens_ctrl / ctrl case) of a plume case: same site, dilution case and
+    microphysics; V0 is ignored (one twin serves all five V0 variants, L23)."""
+    if spec.kind != "plume":
+        raise ValueError(f"paired_control needs a plume case, got kind={spec.kind!r} "
+                         f"({spec.case_id})")
+    return CaseSpec(spec.dil, kind="ctrl", site=spec.site, **spec.microphysics)
 
 
 # --- scenario ------------------------------------------------------------------------------------
@@ -378,14 +397,17 @@ def build_scenario(spec, days=MAX_DAYS):
 
 
 def paired_spec(spec):
-    """The plume case a ctrl twin is paired to (same site and dilution case, default knobs and
-    DEFAULT_V0)."""
-    return CaseSpec(spec.dil, site=spec.site, v0=DEFAULT_V0)
+    """The plume case a ctrl twin is paired to for its manifest row and (EARLY_STOP only) its
+    length: same site, dilution case and microphysics, at DEFAULT_V0."""
+    return CaseSpec(spec.dil, site=spec.site, v0=DEFAULT_V0, **spec.microphysics)
 
 
 def paired_base_npz(spec):
-    """state.npz of the site's base-set run that a ctrl twin is paired to."""
-    return os.path.join(set_dir(spec.site.base_set), paired_spec(spec).case_id, "state.npz")
+    """state.npz of the plume run a ctrl twin is paired to (the site's base set; ens for a
+    non-default microphysics twin at 30N)."""
+    plume = paired_spec(spec)
+    home = spec.site.base_set if plume.case_id in set_ids(spec.site.base_set) else "ens"
+    return os.path.join(set_dir(home), plume.case_id, "state.npz")
 
 
 def npz_ic_sha256(path):
@@ -412,8 +434,11 @@ def ctrl_days(spec):
 
 
 def resolved_days(spec):
-    return ctrl_days(spec) if spec.kind == "ctrl" else (
-        MAX_DAYS, "max_with_early_stop" if EARLY_STOP else "fixed")
+    """(days, source). Fixed MAX_DAYS for every case (L26); only with EARLY_STOP on does a ctrl
+    twin follow its paired plume run's length (without early stop that is MAX_DAYS anyway)."""
+    if spec.kind == "ctrl":
+        return ctrl_days(spec) if EARLY_STOP else (MAX_DAYS, "fixed")
+    return MAX_DAYS, "max_with_early_stop" if EARLY_STOP else "fixed"
 
 
 # --- early stop (verbatim logic of run_60day.make_stop) -----------------------------------------
@@ -470,6 +495,7 @@ def manifest_row(set_name, i, spec):
         set=set_name, index=i, case_id=spec.case_id, kind=spec.kind,
         output_dir=os.path.relpath(case_dir(set_name, spec), _HERE),
         paired_case_id=(paired_spec(spec).case_id if spec.kind == "ctrl" else ""),
+        paired_control_id=(paired_control(spec).case_id if spec.kind == "plume" else ""),
         site=spec.site.site, latitude=sc.latitude, longitude=sc.longitude, T=sc.T, P=sc.P,
         WTR=sc.WTR, day_of_year=sc.day_of_year, start_utc_hour=sc.start_utc_hour,
         background=spec.site.bg_token, background_dist=sc.background_dist,

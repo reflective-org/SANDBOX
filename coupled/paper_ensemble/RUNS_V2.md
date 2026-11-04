@@ -120,13 +120,15 @@ concentration on any fixed-r contour scales exactly like the peak.
 ## Run matrix
 
 All runs at 30N/20 km with SABR-220 background unless noted. The 30N microphysics uncertainty is a
-full factorial (`ens`, L22); geo and 60N stay default-microphysics sets (L25).
+full factorial (`ens`, L22) with per-microphysics controls (`ens_ctrl`, L23); geo and 60N stay
+default-microphysics sets (L25).
 
 | Set | Runs | Contents |
 |---|---|---|
 | base | 40 | 8 dilution cases × 5 V0 variants, microphysics at defaults |
 | ens | 720 | 8 cases × 5 V0 × nucleation ×{0.01, 1, 100} × coagulation ×{0.5, 1, 2} × α {0.5, 1}; the 40 default-microphysics members are the base runs (same ids, kept in `runs_v2/base/`), 680 new in `runs_v2/ens/` |
 | ctrl | 8 | no-injection twin per dilution case (same V(t)), for plume-excess budgets |
+| ens_ctrl | 144 | no-injection twin per dilution case × microphysics combination, V0-independent (`run_v2.paired_control`); ctrl is its default slice (kept in `runs_v2/ctrl/`) |
 | oat | — | retired (L22): a subset of ens |
 | geo | 8 | aer_geo background (N 120 cm⁻³, Dp 300 nm, σg 1.7), 100 ppt SO₂, ss100IC, V0 = mwmean |
 | site60N | 8 | 60N/15 km/120 hPa, 60N ss20IC, V0 = mwmean |
@@ -176,7 +178,7 @@ What carries over qualitatively:
 ```bash
 git submodule update --init       # tomas-jax at feat/dev-sai-coupling (PR #33)
 python -m coupled.paper_ensemble.make_spinup_ic run <preset>   # ss20_30N | ss100geo_30N | ss20_60N
-python -m coupled.paper_ensemble.run_v2 plan <set>             # base | ens | ctrl | constoh | geo | site60N
+python -m coupled.paper_ensemble.run_v2 plan <set>             # base | ens | ctrl | ens_ctrl | constoh | geo | site60N
 python -m coupled.paper_ensemble.run_v2 one <set> <i>
 python -m coupled.paper_ensemble.launch_v2 <set> [n_proc]      # resumable (skips finished, non-stale cases)
 ```

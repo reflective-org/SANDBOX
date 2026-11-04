@@ -11,12 +11,12 @@ import pytest
 
 from coupled.paper_ensemble import run_v2 as rv
 
-COUNTS = {"base": 40, "ens": 720, "ctrl": 8, "constoh": 1,
+COUNTS = {"base": 40, "ens": 720, "ctrl": 8, "ens_ctrl": 144, "constoh": 1,
           "geo": 8, "geo_ctrl": 8, "site60N": 8, "site60N_ctrl": 8}
-SET_SITE = {"base": "30N", "ens": "30N", "ctrl": "30N", "constoh": "30N",
+SET_SITE = {"base": "30N", "ens": "30N", "ctrl": "30N", "ens_ctrl": "30N", "constoh": "30N",
             "geo": "geo", "geo_ctrl": "geo", "site60N": "60N", "site60N_ctrl": "60N"}
 MANIFEST_COLS = {
-    "set", "index", "case_id", "kind", "output_dir",
+    "set", "index", "case_id", "kind", "output_dir", "paired_case_id", "paired_control_id",
     "dilution_regime", "sigma_y0_m", "sigma_z0_m", "shear_s-1",
     "kz_schedule", "tau_burst_s", "dilution_max_dlnv", "water_every_process", "nuc_org_mass_frac",
     "molar_so4_transfer",
@@ -50,7 +50,7 @@ def test_counts_and_unique_ids(name, n):
 
 
 def test_ids_unique_across_all_sets():
-    # a set that contains another (SHARED_OUTPUT: ens > base) shares those ids by
+    # a set that contains another (SHARED_OUTPUT: ens > base, ens_ctrl > ctrl) shares those ids by
     # design; apart from that every id belongs to exactly one set
     contained = set(rv.SHARED_OUTPUT.values())
     ids = [c.case_id for name in COUNTS if name not in contained for c in rv.cases_for(name)]
@@ -69,6 +69,8 @@ def test_case_id_format():
     assert "30N_20km__sabr220__C2__a1p0__nuc0p01__cg1__V0mwmean__h06_ss20IC" in ens_ids
     assert "30N_20km__sabr220__C5a__a0p5__nuc100__cg2__V0peak__h06_ss20IC" in ens_ids
     assert {c.case_id for c in rv.cases_for("base")} <= ens_ids
+    assert "30N_20km__sabr220__C4__a0p5__nuc0p01__cg0p5__V0mwmean__h06_ss20IC__ctrl" in \
+        {c.case_id for c in rv.cases_for("ens_ctrl")}
     assert rv.cases_for("geo")[0].case_id == \
         "30N_20km__aergeo__C1__a1p0__nuc1__cg1__V0mwmean__h06_ss100IC"
     assert rv.cases_for("site60N")[0].case_id == \
