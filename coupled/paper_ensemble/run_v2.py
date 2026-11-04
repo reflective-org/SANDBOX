@@ -4,8 +4,8 @@
 
 Decisions are recorded in RUNS_V2.md (same dir). Every v2 scenario is the ``run_60day.py``
 scenario (30N / 20 km / 210 K / 55 hPa, SABR-220 background with 20 ppt SO2, ``ss20IC`` spun-up
-gas ICs, 06:00 local release on DOY 172, 1 t SO2, 60 d max with the
-wet-SA-within-10%-of-background-for-24-h early stop) PLUS the v2 knobs:
+gas ICs, 06:00 local release on DOY 172, 1 t SO2) run for a FIXED 10 d (L26: no early stop, so every
+run reaches the evaluation days 1/2/7/10) PLUS the v2 knobs:
 
   dilution_regime in C1..C5a        sheared-Gaussian V(t)/V0 from t = 0, initial plume
                                     sigma_x = sigma_z = 25 m (L19; coupled/dilution.py)
@@ -45,7 +45,7 @@ Named run sets (``SETS``), selected on the CLI:
   base          40  30N: the eight dilution cases x the five V0 variants, microphysics at defaults
   oat           40  30N: every case x {nucleation x0.01, x100; coag kernel x0.5, x2; alpha 0.5}
   ctrl          8   30N: no-injection twin per dilution case, same V(t) (length = the paired
-                    DEFAULT_V0 base run's final t, rounded up to whole days, else 60 d -- as
+                    DEFAULT_V0 base run's final t, rounded up to whole days, else MAX_DAYS -- as
                     legacy_v1/run_bgstop_control)
   constoh       1   30N: C1 with OH pinned at 5e5 molec cm^-3 (as legacy_v1/make_constant_oh_banana)
   geo           8   the eight dilution cases on the geo site (aer_geo)
@@ -98,7 +98,8 @@ _IC_DIR = os.path.join(_HERE, "ic")                  # spun-up control ICs (make
 
 # --- fixed v2 configuration (every value traced to run_60day.py unless marked "v2") -----------------
 _LON, _DOY, _START_UTC_H = 0.0, 172, 6.0              # 06:00 local release (lon 0 -> local = UTC)
-MAX_DAYS = 60
+MAX_DAYS = 10                                         # L26: fixed 10-d runs (was 60 d + early stop)
+EARLY_STOP = False                                    # L26: every run reaches day 10
 ION_PAIR_RATE = 30.0
 SO2_HO2_RATE = 1.0e-18
 TOMAS_NBINS = 80                                      # v2 (also run_60day)
@@ -356,11 +357,12 @@ def ctrl_days(spec):
         with np.load(path, allow_pickle=True) as z:
             t_end_d = float(z["t"][-1]) / 86400.0
         return max(1, int(math.ceil(t_end_d - 1e-6))), "paired_base_run"
-    return MAX_DAYS, ("default_60d_paired_base_stale_ic" if os.path.exists(path) else "default_60d")
+    return MAX_DAYS, ("default_max_paired_base_stale_ic" if os.path.exists(path) else "default_max")
 
 
 def resolved_days(spec):
-    return ctrl_days(spec) if spec.kind == "ctrl" else (MAX_DAYS, "max_with_early_stop")
+    return ctrl_days(spec) if spec.kind == "ctrl" else (
+        MAX_DAYS, "max_with_early_stop" if EARLY_STOP else "fixed")
 
 
 # --- early stop (verbatim logic of run_60day.make_stop) -----------------------------------------
@@ -438,7 +440,7 @@ def manifest_row(set_name, i, spec):
                             else spec.site.bg_so2_ppt * 1e-12 * M),
         SO2_injected_tonne=(1.0 if injected else 0.0),
         oh_pinned_molec_cm3=(OH_PIN_MOLEC_CM3 if spec.kind == "constoh" else ""),
-        days=days, days_source=days_src, max_days=MAX_DAYS, early_stop=(spec.kind != "ctrl"),
+        days=days, days_source=days_src, max_days=MAX_DAYS, early_stop=(EARLY_STOP and spec.kind != "ctrl"),
         DT=sc.DT, dt_couple=sc.dt_couple, photolysis=sc.photolysis,
         aerosol_to_j=sc.switches.aerosol_to_j, heating_to_t=sc.switches.heating_to_t, M_air=M,
     )
@@ -495,7 +497,7 @@ def run_one(set_name, spec):
     sc = build_scenario(spec, days)
     if spec.kind == "constoh":
         _install_oh_pin()
-    stop = make_stop(sc) if spec.kind != "ctrl" else None
+    stop = make_stop(sc) if (EARLY_STOP and spec.kind != "ctrl") else None
     t0 = time.time()
     t, x, aero, st_final, sd, jrec = run_coupled(
         sc, return_aerosol=True, return_state=True, return_size_dist=True,

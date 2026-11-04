@@ -220,7 +220,7 @@ def test_ic_hashes_differ_between_sites():
 def test_ctrl_length_follows_current_paired_base_run(name):
     need_ic(name)
     spec = rv.cases_for(name)[0]
-    assert rv.ctrl_days(spec) == (60, "default_60d")
+    assert rv.ctrl_days(spec) == (rv.MAX_DAYS, "default_max")
     npz = rv.paired_base_npz(spec)
     assert os.path.basename(os.path.dirname(os.path.dirname(npz))) == spec.site.base_set
     os.makedirs(os.path.dirname(npz))
@@ -230,7 +230,7 @@ def test_ctrl_length_follows_current_paired_base_run(name):
     np.savez(npz, t=np.array([0.0, 5.0 * 86400.0]), ic_sha256=sha)
     assert rv.ctrl_days(spec)[0] == 5
     np.savez(npz, t=np.array([0.0, 5.0 * 86400.0]))           # made before ic_sha256 was recorded
-    assert rv.ctrl_days(spec) == (60, "default_60d_paired_base_stale_ic")
+    assert rv.ctrl_days(spec) == (rv.MAX_DAYS, "default_max_paired_base_stale_ic")
 
 
 def test_run_slice_reports_stale_state_and_does_not_rerun(capsys, monkeypatch):
@@ -257,3 +257,9 @@ def test_blocked_hour_set_raises(mode):
 def test_unknown_set_raises():
     with pytest.raises(KeyError):
         rv.cases_for("nope")
+
+
+def test_l26_fixed_ten_day_runs_without_early_stop():
+    assert rv.MAX_DAYS == 10 and rv.EARLY_STOP is False
+    spec = rv.cases_for("base")[0]
+    assert rv.resolved_days(spec) == (10, "fixed")
