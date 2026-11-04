@@ -89,6 +89,8 @@ CLI (from SANDBOX/):
   python -m coupled.paper_ensemble.run_v2 plan <set>          # list cases, write manifest, no run
   python -m coupled.paper_ensemble.run_v2 one <set> <i>       # run one case by index
   python -m coupled.paper_ensemble.run_v2 run <set> <lo> <hi> # run cases [lo, hi)
+  python -m coupled.paper_ensemble.run_v2 serve <set> <k>     # work-queue worker k (launch_v2):
+                                                              # reads case indices on stdin
 """
 from __future__ import annotations
 
@@ -628,19 +630,35 @@ def _append_summary(row, path):
         w.writerow(row)
 
 
-def run_slice(set_name, cases, lo, hi):
-    """Run cases[lo:hi] (skip-if-done); each worker appends to its own summary_<lo>_<hi>.csv."""
-    spath = os.path.join(set_dir(set_name), f"summary_{lo}_{hi}.csv")
+def case_status(set_name, spec):
+    """'todo' (no state.npz), 'done' (state.npz made from the current IC) or 'stale' (state.npz
+    from another / unrecorded IC: left alone, move it aside to rerun). Shared members resolve to
+    the owner set's dir (``case_dir``)."""
+    npz = os.path.join(case_dir(set_name, spec), "state.npz")
+    if not os.path.exists(npz):
+        return "todo"
+    return "done" if is_current(npz, spec.site) else "stale"
+
+
+def report_not_todo(i, set_name, spec, status):
+    npz = os.path.join(case_dir(set_name, spec), "state.npz")
+    if status == "done":
+        print(f"[{i}] {spec.case_id} SKIP (state.npz exists)", flush=True)
+    else:
+        print(f"[{i}] {spec.case_id} STALE: state.npz was made from another IC "
+              f"(ic_sha256 {npz_ic_sha256(npz)[:12] or 'not recorded'} != "
+              f"{ic_sha256(spec.site)[:12]}); move it aside to rerun", flush=True)
+
+
+def run_slice(set_name, cases, lo, hi, summary_name=None):
+    """Run cases[lo:hi] (skip-if-done); appends to runs_v2/<set>/``summary_name`` (default
+    summary_<lo>_<hi>.csv, one file per worker)."""
+    spath = os.path.join(set_dir(set_name), summary_name or f"summary_{lo}_{hi}.csv")
     for i in range(lo, min(hi, len(cases))):
         spec = cases[i]
-        npz = os.path.join(case_dir(set_name, spec), "state.npz")
-        if os.path.exists(npz):
-            if is_current(npz, spec.site):
-                print(f"[{i}] {spec.case_id} SKIP (state.npz exists)", flush=True)
-            else:
-                print(f"[{i}] {spec.case_id} STALE: state.npz was made from another IC "
-                      f"(ic_sha256 {npz_ic_sha256(npz)[:12] or 'not recorded'} != "
-                      f"{ic_sha256(spec.site)[:12]}); move it aside to rerun", flush=True)
+        status = case_status(set_name, spec)
+        if status != "todo":
+            report_not_todo(i, set_name, spec, status)
             continue
         try:
             days, src = resolved_days(spec)
@@ -656,12 +674,31 @@ def run_slice(set_name, cases, lo, hi):
             print(f"[{i}] FAILED: {type(e).__name__}: {str(e)[:200]}", flush=True)
 
 
+#: line a ``serve`` worker prints after each case so the launcher knows it is free again
+SERVE_DONE = "@@run_v2-done"
+
+
+def serve(set_name, cases, worker, stdin=None):
+    """Work-queue worker (launch_v2): run each case index read from ``stdin`` (one per line, until
+    EOF) with the usual skip-if-done, appending to summary_w<worker>.csv, and print
+    ``SERVE_DONE <i>`` after each. One process serves many cases, so JAX compiles once."""
+    for line in (sys.stdin if stdin is None else stdin):
+        if not line.strip():
+            continue
+        i = int(line)
+        run_slice(set_name, cases, i, i + 1, summary_name=f"summary_w{worker}.csv")
+        print(f"{SERVE_DONE} {i}", flush=True)
+
+
 def main(argv):
-    if len(argv) < 2 or argv[0] not in ("plan", "one", "run"):
+    if len(argv) < 2 or argv[0] not in ("plan", "one", "run", "serve"):
         print(__doc__)
         return
     mode, set_name = argv[0], argv[1]
     cases = cases_for(set_name)           # raises NotImplementedError for blocked sets
+    if mode == "serve":                   # the launcher owns the manifest
+        serve(set_name, cases, int(argv[2]))
+        return
     if mode == "plan":
         path, rows = write_manifest(set_name, cases)
         for r in rows:

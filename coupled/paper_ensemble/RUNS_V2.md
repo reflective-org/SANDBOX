@@ -180,7 +180,7 @@ git submodule update --init       # tomas-jax at feat/dev-sai-coupling (PR #33)
 python -m coupled.paper_ensemble.make_spinup_ic run <preset>   # ss20_30N | ss100geo_30N | ss20_60N
 python -m coupled.paper_ensemble.run_v2 plan <set>             # base | ens | ctrl | ens_ctrl | constoh | geo | site60N
 python -m coupled.paper_ensemble.run_v2 one <set> <i>
-python -m coupled.paper_ensemble.launch_v2 <set> [n_proc]      # resumable (skips finished, non-stale cases)
+python -m coupled.paper_ensemble.launch_v2 <set> [n_proc]      # work queue, resumable (skips finished, non-stale cases)
 ```
 Each manifest row records the dilution-case parameters, the V0 variant, the IC file and sha256,
 the v2 TOMAS options and the SANDBOX/tomas-jax SHAs. The v1 pipeline: `git checkout paper-v1`.
