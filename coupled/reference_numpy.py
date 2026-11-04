@@ -59,6 +59,8 @@ def run_coupled_numpy(scenario):
     cap = float(scenario.micro_cap_s)
     nuc_eps = float(scenario.micro_nuc_eps)
     n_ref = float(scenario.micro_nuc_nref_cm3)
+    prod_ref = str(scenario.micro_prod_ref)
+    handoff = str(scenario.micro_handoff)
     dt_micro = floor
     dilution_active = bool(scenario.switches.dilution)   # Phase 6 (mirror of the JAX driver)
     kdil = float(scenario.dilution_rate)
@@ -119,7 +121,8 @@ def run_coupled_numpy(scenario):
             env_grid = np.asarray(sol.sol(ts_grid))[h2so4_idx]
             tstate, removal_kg, dt_micro, _n = cd.micro_consume(
                 lambda tt: float(np.interp(tt, ts_grid, env_grid)), t0, t1, tstate, tomas_step,
-                nuc_scale, eps, floor, cap, dt_micro, nuc_eps=nuc_eps, n_ref=n_ref)
+                nuc_scale, eps, floor, cap, dt_micro, nuc_eps=nuc_eps, n_ref=n_ref,
+                prod_ref=prod_ref, handoff=handoff)
             yc = yc.copy()
             env_end_kg = conc_to_mass(float(env_grid[-1]), BOXVOL_CM3, MW_H2SO4)   # envelope(t1)
             yc[h2so4_idx] = mass_to_conc(max(env_end_kg - removal_kg, 0.0), BOXVOL_CM3, MW_H2SO4)

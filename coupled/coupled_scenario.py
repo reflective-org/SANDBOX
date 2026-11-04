@@ -130,6 +130,13 @@ class CoupledScenario:
     # (~1-30 cm^-3), so the control engages only once nucleation adds a population that matters.
     micro_nuc_eps: float = 0.0
     micro_nuc_nref_cm3: float = 1.0e3
+    # Production-fraction denominator: "envelope" (default, v1: the sink-free envelope, which lets
+    # the step reach micro_cap_s regardless of the condensation sink) or "standing" (the gas H2SO4
+    # actually standing, so micro_eps bounds the uptake fraction ~CS*dt). See micro_consume.
+    micro_prod_ref: str = "envelope"
+    # When a step's H2SO4 production reaches TOMAS: "end" (default, v1: all up front, first-order
+    # split) or "mid" (envelope at the step midpoint: symmetric Strang split, second order).
+    micro_handoff: str = "end"
 
     # --- photolysis ---
     photolysis: str = "tuvx"
@@ -236,6 +243,11 @@ class CoupledScenario:
                              f"({self.micro_floor_s})")
         if not self.micro_nuc_eps >= 0.0:            # also rejects NaN
             raise ValueError(f"micro_nuc_eps must be >= 0 (0 = off), got {self.micro_nuc_eps}")
+        if self.micro_prod_ref not in ("envelope", "standing"):
+            raise ValueError(f"micro_prod_ref must be 'envelope' or 'standing', got "
+                             f"{self.micro_prod_ref!r}")
+        if self.micro_handoff not in ("end", "mid"):
+            raise ValueError(f"micro_handoff must be 'end' or 'mid', got {self.micro_handoff!r}")
         if not self.micro_nuc_nref_cm3 > 0.0:
             raise ValueError(f"micro_nuc_nref_cm3 must be > 0 (denominator floor of dN/N), got "
                              f"{self.micro_nuc_nref_cm3}")

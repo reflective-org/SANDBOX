@@ -153,7 +153,7 @@ _H2SO4_NEGLIGIBLE = 1.0e5
 
 
 def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, floor, cap, dt_start,
-                  on_accept=None, nuc_eps=0.0, n_ref=1.0e3):
+                  on_accept=None, nuc_eps=0.0, n_ref=1.0e3, prod_ref="envelope", handoff="end"):
     """Adaptive TOMAS micro-loop over [t0, t1] consuming the gas H2SO4 envelope (approach B).
 
     ``env_h2so4_conc(t) -> gaseous H2SO4 [molec/cm^3]`` is the gas solution WITHOUT any aerosol sink
@@ -191,6 +191,20 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
     when ``nuc_eps`` == 0) but never changes the stepping. N rides in the SAME single device->host
     transfer as the finite flag and leftover H2SO4; the starting N costs one transfer per call.
 
+    ``prod_ref`` (scenario ``micro_prod_ref``) sets the production-fraction denominator:
+    ``"envelope"`` (default) divides by the sink-free envelope at step end, which keeps growing
+    through each outer interval, so the metric decays like dt / (time since t0) and the step reaches
+    ``cap`` within minutes regardless of the condensation sink; ``"standing"`` divides by the gas
+    H2SO4 actually standing (envelope minus what TOMAS already removed), so ``eps`` bounds the
+    uptake fraction ~CS*dt that sets the split error (convergence test 2026-11-03, RUNS_V2 L28).
+
+    ``handoff`` (scenario ``micro_handoff``) is WHEN the step's production reaches TOMAS:
+    ``"end"`` (default) hands TOMAS the envelope at step END (all of the step's production up front:
+    a first-order split, error ~ CS*dt/2 on gas H2SO4); ``"mid"`` hands it the envelope at the step
+    MIDPOINT (half the production before the microphysics, the rest after: the symmetric Strang
+    split, second order). The second half is not lost: the next step (or the interval end, where the
+    driver sets gas = envelope(t1) - removal) picks it up.
+
     Shared verbatim by the JAX driver (``sol.evaluate``) and the NumPy mirror (SciPy ``sol.sol``) so the
     two-level stepping is identical across backends. Returns ``(tstate, removal_kg, next_dt, n_micro)``.
     """
@@ -201,6 +215,11 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
     dt = min(max(dt_start, floor), cap, t1 - t0)
     n_micro = 0
     nuc_ctl = nuc_eps > 0.0
+    if prod_ref not in ("envelope", "standing") or handoff not in ("end", "mid"):
+        raise ValueError(f"prod_ref must be 'envelope'|'standing' and handoff 'end'|'mid', got "
+                         f"{prod_ref!r}, {handoff!r}")
+    standing = prod_ref == "standing"
+    mid = handoff == "mid"
     track_n = nuc_ctl or on_accept is not None        # N bookkeeping only when someone needs it
     boxvol = float(tstate.boxvol) if track_n else None         # host sync only when tracking N
     n_prev = float(jnp.sum(Nk)) / boxvol if track_n else 0.0   # total number [#/cm^3] at t
@@ -211,9 +230,15 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
         t_end = t + dt
         env_end = env_h2so4_conc(t_end)                             # envelope at step end
         produced = max(env_end - env_prev, 0.0)                     # gas H2SO4 made this step [/cm^3]
-        frac_prod = produced / max(env_end, _H2SO4_NEGLIGIBLE)      # coupling error metric
-        # standing H2SO4 available to TOMAS = envelope at step end minus what TOMAS already removed
-        avail_kg = max(conc_to_mass(env_end, BOXVOL_CM3, MW_H2SO4) - removal_kg, 0.0)
+        if standing:                                                # coupling error metric
+            frac_prod = produced / max(env_end - mass_to_conc(removal_kg, BOXVOL_CM3, MW_H2SO4),
+                                       _H2SO4_NEGLIGIBLE)
+        else:
+            frac_prod = produced / max(env_end, _H2SO4_NEGLIGIBLE)
+        # standing H2SO4 available to TOMAS = envelope at the handoff time minus what TOMAS already
+        # removed (handoff time: step end, or the midpoint for the symmetric split)
+        env_hand = env_h2so4_conc(t + 0.5 * dt) if mid else env_end
+        avail_kg = max(conc_to_mass(env_hand, BOXVOL_CM3, MW_H2SO4) - removal_kg, 0.0)
         Gc_in = Gc.at[SRTSO4].set(avail_kg)
         Nk2, Mk2, Gc2 = tomas_step(Nk, Mk, Gc_in, tstate.xk, tstate.temp, tstate.pres,
                                    tstate.boxvol, tstate.rh, tstate.alpha, float(dt),
@@ -526,6 +551,8 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     cap = float(scenario.micro_cap_s)
     nuc_eps = float(scenario.micro_nuc_eps)          # 0 = off (production-only controller)
     n_ref = float(scenario.micro_nuc_nref_cm3)
+    prod_ref = str(scenario.micro_prod_ref)
+    handoff = str(scenario.micro_handoff)
     dt_micro = floor                # start fine (t=0 burst); carried/relaxed across outer intervals
     micro_total = 0
     t_list, x_list = [0.0], [np.asarray(y0)]
@@ -611,7 +638,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
             tstate, removal_kg, dt_micro, n_micro = micro_consume(
                 lambda tt: float(np.interp(tt, ts_grid, env_grid)), t0, t1, tstate, tomas_step,
                 nuc_scale, eps, floor, cap, dt_micro, on_accept=micro_diagnostics,
-                nuc_eps=nuc_eps, n_ref=n_ref)
+                nuc_eps=nuc_eps, n_ref=n_ref, prod_ref=prod_ref, handoff=handoff)
             micro_total += n_micro
             yc = yc_end
             env_end_kg = conc_to_mass(float(env_grid[-1]), BOXVOL_CM3, MW_H2SO4)   # envelope(t1)
