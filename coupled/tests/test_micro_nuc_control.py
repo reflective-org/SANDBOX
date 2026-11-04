@@ -122,12 +122,20 @@ def test_floor_note_printed_once_per_call(capsys):
 
 def test_nref_floor_makes_control_absolute_at_small_n():
     rec = []
+    calls = [0]
+    inner = _stub(rate_cm3_s=30.0)
+
+    def counted(*a, **k):
+        calls[0] += 1
+        return inner(*a, **k)
     # N = 1 cm^-3, +30 cm^-3/s over 20 s (N stays < N_ref): a bare dN/N would refine every step to
-    # the floor; against N_ref = 1e3 the bound is absolute, dN <= 0.1 * 1e3 = 100 cm^-3 per step,
-    # so the controller settles on dt = 2 s (60 cm^-3; 4 s would give 120 > 100)
-    cd.micro_consume(_FLAT, 0.0, 20.0, _state(1.0), _stub(rate_cm3_s=30.0), 1.0, 0.1, 1.0e-4,
+    # the floor; against N_ref = 1e3 the bound is absolute, dN <= 0.1 * 1e3 = 100 cm^-3 per step.
+    # dt = 2 s gives 60 cm^-3 (frac_nuc 0.06): under the limit but NOT under half of it, so the
+    # step must stay at 2 s and never even try 4 s (which would be rejected at 120 > 100)
+    cd.micro_consume(_FLAT, 0.0, 20.0, _state(1.0), counted, 1.0, 0.1, 1.0e-4,
                      20.0, 1.0, on_accept=lambda *a: rec.append(a), nuc_eps=0.1, n_ref=1.0e3)
     r = np.asarray(rec)
+    assert calls[0] == len(rec)                     # no rejected attempts: relax needs BOTH < half
     assert r[:, 1].min() >= 1.0 - 1e-12             # never refined below the start step
     assert np.isclose(r[:, 1].max(), 2.0)
     assert np.all(r[:, 3] <= 0.1 + 1e-12)

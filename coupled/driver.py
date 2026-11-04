@@ -184,7 +184,7 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
     population is large enough to matter for coagulation/condensation. At the floor an over-limit
     step is accepted with at most ONE printed note per call (outer interval). The step relaxes
     (doubles) only when BOTH metrics are under half their limits. With ``nuc_eps`` == 0 and no
-    ``on_accept`` hook the loop is exactly the production-only controller (no extra work or syncs).
+    ``on_accept`` hook the loop is exactly the production-only controller (no extra work or host syncs).
 
     ``on_accept(t, dt, frac_prod, frac_nuc)`` is an optional per-accepted-step diagnostics hook
     (``t`` = step start [s]). Passing it turns on the N bookkeeping (``frac_nuc`` is reported even
@@ -202,7 +202,7 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
     n_micro = 0
     nuc_ctl = nuc_eps > 0.0
     track_n = nuc_ctl or on_accept is not None        # N bookkeeping only when someone needs it
-    boxvol = float(tstate.boxvol)
+    boxvol = float(tstate.boxvol) if track_n else None         # host sync only when tracking N
     n_prev = float(jnp.sum(Nk)) / boxvol if track_n else 0.0   # total number [#/cm^3] at t
     frac_nuc = 0.0
     nuc_noted = False
