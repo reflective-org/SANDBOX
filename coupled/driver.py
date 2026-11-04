@@ -303,6 +303,20 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     Returns ``(t [s], states [n_t, n_species])``. With ``return_aerosol=True`` also returns a dict of
     per-output-time aerosol diagnostics (``SA`` [um^2/cm^3], ``radius_cm``, ``h2so4wp`` [wt%],
     ``particulate_S`` [molec/cm^3 as H2SO4-equiv]); the arrays are all-NaN when TOMAS is inactive.
+    The same dict carries two sulfur-budget entries that are valid with or without TOMAS:
+
+    * ``so2_chem_loss_cum`` [molec/cm^3 on the V0 basis] -- the exact cumulative CHEMICAL SO2 loss
+      (RUNS_V2 L27): sum over outer intervals of ``(SO2 before gas solve - SO2 after gas solve) *
+      V(t0)/V0``, i.e. plume-integrated molecules consumed / V0. Only the gas solve changes SO2
+      within an interval (TOMAS's SO2 chemistry is off and it hands back only H2SO4; heating keeps
+      number densities), and the box volume during that solve is V(t0) -- the volume after the
+      PREVIOUS interval's end-of-interval dilution -- so weighting by V(t0) makes the bookkeeping
+      exact. Net loss: negative if chemistry produced SO2. 0 at t = 0.
+    * ``V_ratio_applied`` -- V/V0 implied by the dilution the driver actually applied,
+      ``exp(sum kdil*dt)`` over completed intervals (1 throughout with dilution off). For a regime
+      this equals ``dilution.volume_ratio`` to round-off. With relaxation-to-background dilution the
+      exact budget is ``(SO2(t) - SO2_bg) * V_ratio_applied(t) + so2_chem_loss_cum(t) =
+      SO2(0) - SO2_bg`` (V(0) = V0); see ``coupled/tests/test_so2_chem_counter.py``.
     With ``return_state=True`` also appends the final ``TomasState`` (or ``None`` if TOMAS inactive),
     e.g. for plotting the evolved size distribution. With ``return_photolysis=True`` also appends a
     dict of the FROZEN per-interval photolysis coefficients actually used by the gas solve:
@@ -349,6 +363,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     molar_so4 = bool(scenario.molar_so4_transfer)   # Mk[:,SRTSO4] is SO4 (96) vs H2SO4-equiv (98) mass
     het = het_inputs(tstate, molar_so4=molar_so4) if tomas_active else None
     h2so4_idx = IDX["H2SO4"]
+    so2_idx = IDX["SO2"]
 
     # Two-level integration: the gas ODE is solved ONCE per outer step. With TOMAS active we need a
     # DENSE solution so the adaptive micro-loop can query the gas H2SO4 envelope at sub-interval times
@@ -464,6 +479,11 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     micro_total = 0
     t_list, x_list = [0.0], [np.asarray(y0)]
     aero_list = [_aero_record()]
+    # exact SO2 oxidation counter (L27): V/V0 of the box as the dilution operator has actually grown
+    # it (exp(sum kdil*dt)), and the V(t0)/V0-weighted chemical SO2 loss of every gas solve
+    vr_applied = 1.0
+    so2_loss_cum = 0.0
+    budget_list = [(so2_loss_cum, vr_applied)]
     nk_list, dp_list = ([_sizedist_record()[0]], [_sizedist_record()[1]]) if (
         return_size_dist and tomas_active) else (None, None)
     env_pts = _envelope_pts(scenario.dt_couple)     # per-run constant -> one jit compile
@@ -504,6 +524,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         if tomas_active:   # freeze this interval's aerosol het inputs (end-of-previous-interval state)
             args = {**args, "SA": het["SA"], "particle_radius": het["radius_cm"],
                     "h2so4wp": het["h2so4wp"]}
+        so2_before = float(yc[so2_idx])   # this interval's gas solve is the only SO2 change before dilution
         if tomas_active:
             # ONE gas solve over the outer interval (H2SO4 accumulates, no aerosol sink), SAVED on a
             # fine grid; TOMAS then consumes that H2SO4 envelope in adaptive micro-steps (fine early),
@@ -567,6 +588,10 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
                               f"(stall #{len(_gas_retries)})", flush=True)
                 yc = step_retry(yc, t0, t1, args)
 
+        # chemistry ran at the box volume V(t0) (dilution only acts at the END of the interval), so the
+        # plume-integrated molecules it consumed, per V0, are dC * V(t0)/V0 (TOMAS only rewrote H2SO4)
+        so2_loss_cum += (so2_before - float(yc[so2_idx])) * vr_applied
+
         if heating_active:
             # radiative heating -> box T (forward-Euler over the interval). The updated T feeds the
             # NEXT interval's chemistry (rate constants) and M (ideal gas at fixed P; species number
@@ -583,6 +608,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         if dilution_active:   # relax gas + aerosol toward the background (operator-split, last)
             kdil = _kdil(t0, t1)
             yc = dilute_gas(yc, gas_bg, kdil, float(t1 - t0))
+            vr_applied *= float(np.exp(kdil * float(t1 - t0)))   # same factor dilute_gas decays by
             if tomas_active:
                 tstate = dilute_aerosol(tstate, tstate_bg, kdil, float(t1 - t0))
                 het = het_inputs(tstate, molar_so4=molar_so4)   # het inputs reflect the diluted aerosol
@@ -591,6 +617,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         x_list.append(np.asarray(yc))
         _aero = _aero_record()
         aero_list.append(_aero)
+        budget_list.append((so2_loss_cum, vr_applied))
         if nk_list is not None:
             nk, dp = _sizedist_record()
             nk_list.append(nk)
@@ -606,8 +633,10 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     out = [t, x]
     if return_aerosol:
         a = np.asarray(aero_list)
+        b = np.asarray(budget_list)
         out.append({"SA": a[:, 0], "radius_cm": a[:, 1], "h2so4wp": a[:, 2],
-                    "particulate_S": a[:, 3], "T": a[:, 4]})
+                    "particulate_S": a[:, 3], "T": a[:, 4],
+                    "so2_chem_loss_cum": b[:, 0], "V_ratio_applied": b[:, 1]})
     if return_state:
         out.append(tstate)
     if return_size_dist:

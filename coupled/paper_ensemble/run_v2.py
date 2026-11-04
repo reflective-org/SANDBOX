@@ -58,7 +58,9 @@ Case id: ``<site>__<bg>__<dil>__<alpha>__<nuc>__<coag>__V0<variant>__h06_<ic tag
 ``__constOH``), e.g. ``30N_20km__aergeo__C1__a1p0__nuc1__cg1__V0mwmean__h06_ss100IC``. A ctrl twin
 carries its paired plume's V0 token (DEFAULT_V0); V0 has no effect on a no-injection run.
 Output: ``runs_v2/<set>/<case_id>/state.npz`` (run_60day layout; ``V_ratio`` from
-``coupled.dilution.volume_ratio``; ``ic_sha256`` of the IC used), ``runs_v2/<set>/manifest.csv``
+``coupled.dilution.volume_ratio``; ``ic_sha256`` of the IC used; ``so2_chem_loss_cum`` [molec cm^-3
+on the V0 basis = plume-integrated SO2 molecules consumed by chemistry / V0, exact per-gas-solve
+counter, L27] and ``V_ratio_applied`` from ``run_coupled``'s aerosol dict), ``runs_v2/<set>/manifest.csv``
 (one row per case, all resolved parameters + dilution metadata + IC file and sha256 + git
 provenance), ``runs_v2/<set>/summary_*.csv``.
 Cases whose ``state.npz`` exists AND records the current IC's sha256 are skipped. A state.npz with
@@ -516,6 +518,7 @@ def run_one(set_name, spec):
              n_cm3=sd["n_cm3"], Dp_m=sd["Dp_m"], dp_mid_um=dp_mid,
              dNdlogDp=sd["n_cm3"] / np.diff(logdp)[None, :],
              V_ratio=V, total_n=sd["n_cm3"].sum(axis=1),
+             so2_chem_loss_cum=aero["so2_chem_loss_cum"], V_ratio_applied=aero["V_ratio_applied"],
              J_tmid=jrec["t_mid"], J=jrec["J"], J_equations=jrec["equations"],
              ic_file=os.path.relpath(ic_path(spec.site), _SANDBOX), ic_sha256=ic_sha256(spec.site))
     os.replace(tmp, final)
@@ -529,12 +532,15 @@ def run_one(set_name, spec):
                 SO2_end_ppt=float(x[-1, IDX["SO2"]] / M * 1e12),
                 H2SO4_max_ppt=float(np.max(x[:, IDX["H2SO4"]] / M * 1e12)),
                 N_max=float(sd["n_cm3"].sum(axis=1).max()), SA_max=float(np.nanmax(aero["SA"])),
-                sulfate_end=float(aero["particulate_S"][-1]), wall_s=time.time() - t0)
+                sulfate_end=float(aero["particulate_S"][-1]),
+                so2_chem_loss_cum_end=float(aero["so2_chem_loss_cum"][-1]),
+                wall_s=time.time() - t0)
 
 
 _SUMMARY_NAN = dict(steps=-1, t_end_d=float("nan"), early_stopped="", SO2_end_ppt=float("nan"),
                     H2SO4_max_ppt=float("nan"), N_max=float("nan"), SA_max=float("nan"),
-                    sulfate_end=float("nan"), wall_s=float("nan"))
+                    sulfate_end=float("nan"), so2_chem_loss_cum_end=float("nan"),
+                    wall_s=float("nan"))
 
 
 def _append_summary(row, path):
