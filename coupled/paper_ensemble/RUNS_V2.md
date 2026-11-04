@@ -58,6 +58,11 @@ pointers live in the plan and the commits; this page is the one to read.
 | L20 | (2026-11-03) Schumann removed from the coupled model and the paper. It survives only in `coupled/dilution_legacy_schumann.py` for the studio (accepted only with `legacy_dilution=True`) until the studio PR. The v1 pipeline lives in `coupled/paper_ensemble/legacy_v1/` and runs at git tag `paper-v1` (888e5ff) |
 | L21 | (2026-11-03) Five initial-concentration (V0) scenarios, defined below. The base set runs all five (8 × 5 = 40); every other set uses the mass-weighted mean. Running every set × 5 is a recorded option (one-line change: `run_v2.V0_SWEEP_SETS`) |
 | L26 | (2026-11-03) Runs are a fixed 10 days, no early stop (`run_v2.MAX_DAYS = 10`, `EARLY_STOP = False`); evaluation days 1, 2, 7 (burst-matching day) and 10 |
+| L22 | (2026-11-03) Full-factorial uncertainty ensemble at 30N SABR-220: 8 dilution cases × 5 V0 × nucleation ×{0.01, 1, 100} × coagulation ×{0.5, 1, 2} × α {0.5, 1} = 720 members; the 40 base runs are its default-microphysics slice (680 new). The separate OAT set is retired (a subset of the factorial) |
+| L23 | Paired no-injection controls per dilution case × microphysics combination (8 × 18 = 144), V0-independent, reused across V0 variants |
+| L24 | Radiative forcing of the integrated plume per Mt S injected, per Mt S of SO₂ consumed and per Mt S converted to particles (control-subtracted), at days 1, 2, 7, 10; Pierce et al. (2010) all-sky method as in v1 but with per-wavelength β |
+| L25 | Ensemble at 30N SABR-220 only; geo and 60N stay default-microphysics sets with their controls |
+| L27 | "SO₂ consumed" comes from an exact cumulative counter: the chemical SO₂ change in each gas solve (dilution is a separate operator-split step), weighted by V/V0, saved per run |
 
 **Not bitwise-comparable to v1 even at default knobs:** the TOMAS pin change alone alters the water
 scheme and the 80-bin coagulation algorithm (TFL → linear sub-bin). Any v1-vs-v2 comparison is a
@@ -152,6 +157,7 @@ What carries over qualitatively:
 | O5 | Paired controls for geo/60N too (+16 runs)? | after base | open |
 | O6 | What replaces t*? | figures | **answered → L16** |
 | O7 | TOMAS PR | submodule pin | **done**: reflective-org/TOMAS-JAX#33 |
+| O10 | Factorial microphysics levels | ens | **answered**: as v1 (×0.01/1/100, ×0.5/1/2, α 0.5/1) |
 
 ## Physics questions from the independent check (non-blocking)
 
