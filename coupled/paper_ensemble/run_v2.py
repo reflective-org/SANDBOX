@@ -133,6 +133,10 @@ WATER_EVERY_PROCESS = True                            # v2 (L8)
 NUC_ORG_MASS_FRAC = 0.0                               # v2 (L7)
 MOLAR_SO4_TRANSFER = True                             # v2 (L13): x96/98 at gas->particle sulfate
 OH_PIN_MOLEC_CM3 = 5.0e5                              # legacy_v1/make_constant_oh_banana OH_CONST
+# v2 (L28): micro-step control converged to <= ~1% at days 1/2/7/10 (10-d convergence test,
+# 2026-11-04): standing-H2SO4 metric, midpoint (Strang) handoff, eps 1%, cap 20 s
+MICRO_SETTINGS = dict(micro_eps=0.01, micro_cap_s=20.0, micro_floor_s=1.0e-4,
+                      micro_prod_ref="standing", micro_handoff="mid", micro_nuc_eps=0.0)
 
 # --- 1 t SO2 into the initial plume volume V0 (L21) -----------------------------------------------
 _AVOG = 6.02214076e23
@@ -394,7 +398,7 @@ def build_scenario(spec, days=MAX_DAYS):
         nucleation_rate_scale=spec.nucleation_rate_scale,
         coag_kernel_scale=spec.coag_kernel_scale,
         water_every_process=WATER_EVERY_PROCESS, nuc_org_mass_frac=NUC_ORG_MASS_FRAC,
-        molar_so4_transfer=MOLAR_SO4_TRANSFER,
+        molar_so4_transfer=MOLAR_SO4_TRANSFER, **MICRO_SETTINGS,
         switches=Switches(sulfur=True, nucleation=True, condensation=True, coagulation=True,
                           aerosol_to_j=False, heating_to_t=False, dilution=True),
         concentrations=conc)
@@ -512,7 +516,7 @@ def manifest_row(set_name, i, spec):
         condensation_alpha=sc.condensation_alpha, nucleation_rate_scale=sc.nucleation_rate_scale,
         coag_kernel_scale=sc.coag_kernel_scale, water_every_process=sc.water_every_process,
         nuc_org_mass_frac=sc.nuc_org_mass_frac, molar_so4_transfer=sc.molar_so4_transfer,
-        tomas_nbins=sc.tomas_nbins,
+        tomas_nbins=sc.tomas_nbins, **{k: getattr(sc, k) for k in MICRO_SETTINGS},
         ion_pair_rate=sc.ion_pair_rate, so2_ho2_rate=sc.so2_ho2_rate,
         ic_set=spec.site.ic_tag,
         ic_file=os.path.relpath(ic_path(spec.site), _SANDBOX), ic_sha256=ic_sha256(spec.site),
@@ -600,7 +604,8 @@ def run_one(set_name, spec):
              V_ratio=V, total_n=sd["n_cm3"].sum(axis=1),
              so2_chem_loss_cum=aero["so2_chem_loss_cum"], V_ratio_applied=aero["V_ratio_applied"],
              J_tmid=jrec["t_mid"], J=jrec["J"], J_equations=jrec["equations"],
-             ic_file=os.path.relpath(ic_path(spec.site), _SANDBOX), ic_sha256=ic_sha256(spec.site))
+             ic_file=os.path.relpath(ic_path(spec.site), _SANDBOX), ic_sha256=ic_sha256(spec.site),
+             micro_settings=micro_settings_json(sc))
     os.replace(tmp, final)
     if spec.kind == "constoh":
         oh = x[:, IDX["OH"]]
@@ -636,21 +641,37 @@ def _append_summary(row, path):
 REQUIRED_KEYS = ("so2_chem_loss_cum", "V_ratio_applied")
 
 
+def micro_settings_json(sc=None):
+    """Canonical JSON of the micro-step settings a run used (``sc``) or the current ones."""
+    vals = MICRO_SETTINGS if sc is None else {k: getattr(sc, k) for k in MICRO_SETTINGS}
+    return json.dumps(vals, sort_keys=True)
+
+
+def npz_micro_settings(path):
+    """The ``micro_settings`` a state.npz records ('' if none: runs made before L28)."""
+    with np.load(path, allow_pickle=False) as z:
+        return str(z["micro_settings"]) if "micro_settings" in z.files else ""
+
+
 def npz_missing_keys(path):
     with np.load(path, allow_pickle=True) as z:
         return [k for k in REQUIRED_KEYS if k not in z.files]
 
 
 def case_status(set_name, spec):
-    """'todo' (no state.npz), 'done' (state.npz made from the current IC with all REQUIRED_KEYS),
-    'stale' (state.npz from another / unrecorded IC: left alone, move it aside to rerun) or
-    'stale_schema' (current IC but missing REQUIRED_KEYS: run ``run_v2 backfill <set>``).
+    """'todo' (no state.npz), 'done' (state.npz made from the current IC and micro-step settings,
+    with all REQUIRED_KEYS), 'stale' (state.npz from another / unrecorded IC: left alone, move it
+    aside to rerun), 'stale_numerics' (other / unrecorded micro-step settings, L28: left alone,
+    move it aside to rerun) or 'stale_schema' (current IC and settings but missing REQUIRED_KEYS:
+    run ``run_v2 backfill <set>``).
     Shared members resolve to the owner set's dir (``case_dir``)."""
     npz = os.path.join(case_dir(set_name, spec), "state.npz")
     if not os.path.exists(npz):
         return "todo"
     if not is_current(npz, spec.site):
         return "stale"
+    if npz_micro_settings(npz) != micro_settings_json():
+        return "stale_numerics"
     return "stale_schema" if npz_missing_keys(npz) else "done"
 
 
@@ -682,7 +703,7 @@ def backfill_set(set_name, cases):
     n = 0
     for i, spec in enumerate(cases):
         npz = os.path.join(case_dir(set_name, spec), "state.npz")
-        if os.path.exists(npz) and is_current(npz, spec.site) and npz_missing_keys(npz):
+        if case_status(set_name, spec) == "stale_schema":
             backfill_so2_counter(npz, spec.site.bg_so2_ppt)
             n += 1
             print(f"[{i}] {spec.case_id} backfilled so2_chem_loss_cum", flush=True)
@@ -693,6 +714,10 @@ def report_not_todo(i, set_name, spec, status):
     npz = os.path.join(case_dir(set_name, spec), "state.npz")
     if status == "done":
         print(f"[{i}] {spec.case_id} SKIP (state.npz exists)", flush=True)
+    elif status == "stale_numerics":
+        print(f"[{i}] {spec.case_id} STALE: state.npz was made with other micro-step settings "
+              f"({npz_micro_settings(npz) or 'not recorded (pre-L28)'}); move it aside to rerun",
+              flush=True)
     elif status == "stale_schema":
         print(f"[{i}] {spec.case_id} STALE: state.npz lacks {npz_missing_keys(npz)}; run "
               f"'run_v2 backfill {set_name}'", flush=True)

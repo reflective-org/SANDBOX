@@ -4,6 +4,7 @@
 
 import csv
 import hashlib
+import json
 import os
 
 import numpy as np
@@ -248,7 +249,7 @@ def test_run_slice_reports_stale_state_and_does_not_rerun(capsys, monkeypatch):
     monkeypatch.setattr(rv, "run_one", lambda *a: pytest.fail("must not rerun"))
     rv.run_slice("base", cases, 0, 1)
     assert "STALE" in capsys.readouterr().out
-    np.savez(npz, t=np.array([0.0]), ic_sha256=rv.ic_sha256(cases[0].site), so2_chem_loss_cum=np.array([0.0]), V_ratio_applied=np.array([1.0]))
+    np.savez(npz, t=np.array([0.0]), ic_sha256=rv.ic_sha256(cases[0].site), so2_chem_loss_cum=np.array([0.0]), V_ratio_applied=np.array([1.0]), micro_settings=rv.micro_settings_json())
     rv.run_slice("base", cases, 0, 1)
     assert "SKIP (state.npz exists)" in capsys.readouterr().out
 
@@ -320,10 +321,22 @@ def test_finished_base_run_counts_as_done_for_ens(capsys, monkeypatch):
     os.makedirs(os.path.dirname(npz))
     ens = rv.cases_for("ens")
     i = [c.case_id for c in ens].index(base0.case_id)
-    np.savez(npz, t=np.array([0.0]), ic_sha256=rv.ic_sha256(base0.site))      # pre-L27 layout
+    np.savez(npz, t=np.array([0.0]), ic_sha256=rv.ic_sha256(base0.site),
+             so2_chem_loss_cum=np.array([0.0]), V_ratio_applied=np.array([1.0]))  # pre-L28 run
+    assert rv.case_status("ens", ens[i]) == "stale_numerics"
+    other = json.dumps({**rv.MICRO_SETTINGS, "micro_eps": 0.1}, sort_keys=True)
+    np.savez(npz, t=np.array([0.0]), ic_sha256=rv.ic_sha256(base0.site),
+             so2_chem_loss_cum=np.array([0.0]), V_ratio_applied=np.array([1.0]),
+             micro_settings=other)                                   # other step settings
+    assert rv.case_status("ens", ens[i]) == "stale_numerics"
+    monkeypatch.setattr(rv, "run_one", lambda *a: pytest.fail("must not rerun a stale case"))
+    rv.run_slice("ens", ens, i, i + 1)
+    assert "other micro-step settings" in capsys.readouterr().out
+    np.savez(npz, t=np.array([0.0]), ic_sha256=rv.ic_sha256(base0.site),
+             micro_settings=rv.micro_settings_json())                # pre-L27 layout
     assert rv.case_status("ens", ens[i]) == "stale_schema"
     np.savez(npz, t=np.array([0.0]), ic_sha256=rv.ic_sha256(base0.site),
-             so2_chem_loss_cum=np.array([0.0]), V_ratio_applied=np.array([1.0]))
+             so2_chem_loss_cum=np.array([0.0]), V_ratio_applied=np.array([1.0]), micro_settings=rv.micro_settings_json())
     assert rv.case_status("ens", ens[i]) == "done"
     monkeypatch.setattr(rv, "run_one", lambda *a: pytest.fail("must not rerun a base case"))
     rv.run_slice("ens", ens, i, i + 1)
@@ -369,3 +382,12 @@ def test_oat_set_is_retired_and_points_to_ens():
         rv.cases_for("oat")
     with pytest.raises(NotImplementedError, match="retired"):
         rv.main(["plan", "oat"])
+
+
+def test_v2_runs_use_the_l28_micro_step_settings():
+    sc = rv.build_scenario(rv.cases_for("base")[0])
+    assert (sc.micro_eps, sc.micro_cap_s, sc.micro_prod_ref, sc.micro_handoff) == (
+        0.01, 20.0, "standing", "mid")
+    assert json.loads(rv.micro_settings_json(sc)) == rv.MICRO_SETTINGS
+    row = rv.manifest_row("base", 0, rv.cases_for("base")[0])
+    assert row["micro_handoff"] == "mid" and row["micro_eps"] == 0.01

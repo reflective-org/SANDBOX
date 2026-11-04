@@ -31,7 +31,7 @@ def _write_npz(set_name, spec, sha):
         np.savez(npz, t=np.array([0.0]))                       # stale: no IC hash recorded
     else:
         np.savez(npz, t=np.array([0.0]), ic_sha256=sha,
-                 so2_chem_loss_cum=np.array([0.0]), V_ratio_applied=np.array([1.0]))
+                 so2_chem_loss_cum=np.array([0.0]), V_ratio_applied=np.array([1.0]), micro_settings=rv.micro_settings_json())
 
 
 class _FakeWorker:
