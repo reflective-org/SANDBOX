@@ -248,7 +248,7 @@ def test_run_slice_reports_stale_state_and_does_not_rerun(capsys, monkeypatch):
     monkeypatch.setattr(rv, "run_one", lambda *a: pytest.fail("must not rerun"))
     rv.run_slice("base", cases, 0, 1)
     assert "STALE" in capsys.readouterr().out
-    np.savez(npz, t=np.array([0.0]), ic_sha256=rv.ic_sha256(cases[0].site))
+    np.savez(npz, t=np.array([0.0]), ic_sha256=rv.ic_sha256(cases[0].site), so2_chem_loss_cum=np.array([0.0]), V_ratio_applied=np.array([1.0]))
     rv.run_slice("base", cases, 0, 1)
     assert "SKIP (state.npz exists)" in capsys.readouterr().out
 
@@ -318,9 +318,12 @@ def test_finished_base_run_counts_as_done_for_ens(capsys, monkeypatch):
     base0 = rv.cases_for("base")[0]
     npz = os.path.join(rv.case_dir("base", base0), "state.npz")
     os.makedirs(os.path.dirname(npz))
-    np.savez(npz, t=np.array([0.0]), ic_sha256=rv.ic_sha256(base0.site))
     ens = rv.cases_for("ens")
     i = [c.case_id for c in ens].index(base0.case_id)
+    np.savez(npz, t=np.array([0.0]), ic_sha256=rv.ic_sha256(base0.site))      # pre-L27 layout
+    assert rv.case_status("ens", ens[i]) == "stale_schema"
+    np.savez(npz, t=np.array([0.0]), ic_sha256=rv.ic_sha256(base0.site),
+             so2_chem_loss_cum=np.array([0.0]), V_ratio_applied=np.array([1.0]))
     assert rv.case_status("ens", ens[i]) == "done"
     monkeypatch.setattr(rv, "run_one", lambda *a: pytest.fail("must not rerun a base case"))
     rv.run_slice("ens", ens, i, i + 1)

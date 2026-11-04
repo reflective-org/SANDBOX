@@ -91,6 +91,8 @@ CLI (from SANDBOX/):
   python -m coupled.paper_ensemble.run_v2 run <set> <lo> <hi> # run cases [lo, hi)
   python -m coupled.paper_ensemble.run_v2 serve <set> <k>     # work-queue worker k (launch_v2):
                                                               # reads case indices on stdin
+  python -m coupled.paper_ensemble.run_v2 backfill <set>      # add the L27 SO2 counter to pre-L27
+                                                              # outputs (exact closed form)
 """
 from __future__ import annotations
 
@@ -630,20 +632,70 @@ def _append_summary(row, path):
         w.writerow(row)
 
 
+#: state.npz keys every finished v2 run must carry (L27); older files get them via ``backfill``.
+REQUIRED_KEYS = ("so2_chem_loss_cum", "V_ratio_applied")
+
+
+def npz_missing_keys(path):
+    with np.load(path, allow_pickle=True) as z:
+        return [k for k in REQUIRED_KEYS if k not in z.files]
+
+
 def case_status(set_name, spec):
-    """'todo' (no state.npz), 'done' (state.npz made from the current IC) or 'stale' (state.npz
-    from another / unrecorded IC: left alone, move it aside to rerun). Shared members resolve to
-    the owner set's dir (``case_dir``)."""
+    """'todo' (no state.npz), 'done' (state.npz made from the current IC with all REQUIRED_KEYS),
+    'stale' (state.npz from another / unrecorded IC: left alone, move it aside to rerun) or
+    'stale_schema' (current IC but missing REQUIRED_KEYS: run ``run_v2 backfill <set>``).
+    Shared members resolve to the owner set's dir (``case_dir``)."""
     npz = os.path.join(case_dir(set_name, spec), "state.npz")
     if not os.path.exists(npz):
         return "todo"
-    return "done" if is_current(npz, spec.site) else "stale"
+    if not is_current(npz, spec.site):
+        return "stale"
+    return "stale_schema" if npz_missing_keys(npz) else "done"
+
+
+def backfill_so2_counter(path, bg_so2_ppt):
+    """Add ``so2_chem_loss_cum`` / ``V_ratio_applied`` to a state.npz written before L27, exactly.
+
+    The operator split makes the counter a closed form of saved quantities (identity (*) in
+    coupled/tests/test_so2_chem_counter.py): cum(t) = (SO2(0) - SO2_bg) - (SO2(t) - SO2_bg)*V(t)/V0,
+    with SO2_bg = bg_so2_ppt * 1e-12 * M and V from the saved ``V_ratio`` (equal to the applied
+    V to ~1e-10). Rewrites atomically and flags the file ``so2_counter_backfilled=True``. Returns
+    False if nothing was missing."""
+    with np.load(path, allow_pickle=True) as z:
+        data = {k: z[k] for k in z.files}
+    if all(k in data for k in REQUIRED_KEYS):
+        return False
+    so2 = np.asarray(data["x"])[:, IDX["SO2"]]
+    vr = np.asarray(data["V_ratio"], dtype=float)
+    bg = float(bg_so2_ppt) * 1e-12 * float(np.asarray(data["M"]).ravel()[0])
+    data["so2_chem_loss_cum"] = (so2[0] - bg) - (so2 - bg) * vr
+    data["V_ratio_applied"] = vr
+    data["so2_counter_backfilled"] = np.array(True)
+    tmp = path.replace("state.npz", "state.partial.npz")
+    np.savez(tmp, **data)
+    os.replace(tmp, path)
+    return True
+
+
+def backfill_set(set_name, cases):
+    n = 0
+    for i, spec in enumerate(cases):
+        npz = os.path.join(case_dir(set_name, spec), "state.npz")
+        if os.path.exists(npz) and is_current(npz, spec.site) and npz_missing_keys(npz):
+            backfill_so2_counter(npz, spec.site.bg_so2_ppt)
+            n += 1
+            print(f"[{i}] {spec.case_id} backfilled so2_chem_loss_cum", flush=True)
+    print(f"{n} state.npz backfilled in set {set_name!r}")
 
 
 def report_not_todo(i, set_name, spec, status):
     npz = os.path.join(case_dir(set_name, spec), "state.npz")
     if status == "done":
         print(f"[{i}] {spec.case_id} SKIP (state.npz exists)", flush=True)
+    elif status == "stale_schema":
+        print(f"[{i}] {spec.case_id} STALE: state.npz lacks {npz_missing_keys(npz)}; run "
+              f"'run_v2 backfill {set_name}'", flush=True)
     else:
         print(f"[{i}] {spec.case_id} STALE: state.npz was made from another IC "
               f"(ic_sha256 {npz_ic_sha256(npz)[:12] or 'not recorded'} != "
@@ -691,11 +743,14 @@ def serve(set_name, cases, worker, stdin=None):
 
 
 def main(argv):
-    if len(argv) < 2 or argv[0] not in ("plan", "one", "run", "serve"):
+    if len(argv) < 2 or argv[0] not in ("plan", "one", "run", "serve", "backfill"):
         print(__doc__)
         return
     mode, set_name = argv[0], argv[1]
     cases = cases_for(set_name)           # raises NotImplementedError for blocked sets
+    if mode == "backfill":                # add L27 counter keys to pre-L27 outputs, exactly
+        backfill_set(set_name, cases)
+        return
     if mode == "serve":                   # the launcher owns the manifest
         serve(set_name, cases, int(argv[2]))
         return

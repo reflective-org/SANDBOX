@@ -101,3 +101,22 @@ def test_sulfur_gate_off_still_counts_the_legacy_so2_sink():
     assert np.all(x[:, IDX["H2SO4"]] == 0.0) and x[-1, _SO2] < x[0, _SO2]
     np.testing.assert_allclose(aero["so2_chem_loss_cum"][1:], x[0, _SO2] - x[1:, _SO2],
                                rtol=1e-10, atol=0.0)
+
+
+def test_backfill_reproduces_driver_counter(tmp_path):
+    """run_v2.backfill_so2_counter (for outputs written before L27) equals the driver's counter."""
+    from coupled.paper_ensemble import run_v2 as rv
+    sc = _scn(dilution_regime="C1", dilution_max_dlnv=0.1, dilution_background={"SO2": 20.0},
+              switches=_switches(dilution=True))
+    t, x, aero = run_coupled(sc, return_aerosol=True)
+    M = air_number_density(sc.P, sc.T)
+    path = tmp_path / "state.npz"
+    np.savez(path, t=t, x=x, M=np.array(M), V_ratio=dl.volume_ratio(t, "C1"))   # pre-L27 layout
+    assert rv.npz_missing_keys(str(path)) == list(rv.REQUIRED_KEYS)
+    assert rv.backfill_so2_counter(str(path), 20.0) is True
+    with np.load(path, allow_pickle=True) as z:
+        assert bool(z["so2_counter_backfilled"])
+        np.testing.assert_allclose(z["so2_chem_loss_cum"], aero["so2_chem_loss_cum"],
+                                   rtol=1e-8, atol=1e-6 * float(x[0, _SO2]))
+    assert rv.npz_missing_keys(str(path)) == []
+    assert rv.backfill_so2_counter(str(path), 20.0) is False                   # idempotent
