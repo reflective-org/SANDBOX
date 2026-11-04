@@ -80,9 +80,10 @@ on the V0 basis = plume-integrated SO2 molecules consumed by chemistry / V0, exa
 counter, L27] and ``V_ratio_applied`` from ``run_coupled``'s aerosol dict), ``runs_v2/<set>/manifest.csv``
 (one row per case, all resolved parameters + dilution metadata + IC file and sha256 + git
 provenance), ``runs_v2/<set>/summary_*.csv``.
-Cases whose ``state.npz`` exists AND records the current IC's sha256 are skipped. A state.npz with
-no or another IC hash (e.g. the base runs made on the legacy IC) is reported STALE and left alone:
-move it aside to rerun that case. Every run is MAX_DAYS long (L26); only with EARLY_STOP on would a
+Cases whose ``state.npz`` exists AND records the current IC's sha256 AND the current micro-step
+settings (``micro_settings``, L28) are skipped. A state.npz with no or another IC hash (e.g. the base
+runs made on the legacy IC) or other / unrecorded micro-step settings (every run before L28) is
+reported STALE and left alone: move it aside to rerun that case. Every run is MAX_DAYS long (L26); only with EARLY_STOP on would a
 ctrl twin take its length from its (non-stale) paired plume run (``ctrl_days``).
 
 CLI (from SANDBOX/):
@@ -431,14 +432,18 @@ def is_current(path, site):
 
 def ctrl_days(spec):
     """(days, source): the paired base run's final t rounded up to whole days if its state.npz
-    exists and was made on the same IC, else MAX_DAYS (mirrors legacy_v1/run_bgstop_control; no early stop
+    exists and was made on the same IC and micro-step settings, else MAX_DAYS (mirrors legacy_v1/run_bgstop_control; no early stop
     for the control itself)."""
     path = paired_base_npz(spec)
-    if is_current(path, spec.site):
-        with np.load(path, allow_pickle=True) as z:
-            t_end_d = float(z["t"][-1]) / 86400.0
-        return max(1, int(math.ceil(t_end_d - 1e-6))), "paired_base_run"
-    return MAX_DAYS, ("default_max_paired_base_stale_ic" if os.path.exists(path) else "default_max")
+    if not os.path.exists(path):
+        return MAX_DAYS, "default_max"
+    if not is_current(path, spec.site):
+        return MAX_DAYS, "default_max_paired_base_stale_ic"
+    if npz_micro_settings(path) != micro_settings_json():
+        return MAX_DAYS, "default_max_paired_base_stale_numerics"
+    with np.load(path, allow_pickle=True) as z:
+        t_end_d = float(z["t"][-1]) / 86400.0
+    return max(1, int(math.ceil(t_end_d - 1e-6))), "paired_base_run"
 
 
 def resolved_days(spec):

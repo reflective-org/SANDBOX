@@ -232,10 +232,13 @@ def test_ctrl_length_follows_current_paired_base_run(name):
     assert os.path.basename(os.path.dirname(os.path.dirname(npz))) == spec.site.base_set
     os.makedirs(os.path.dirname(npz))
     sha = rv.ic_sha256(spec.site)
-    np.savez(npz, t=np.array([0.0, 3.2 * 86400.0]), ic_sha256=sha)
+    ms = rv.micro_settings_json()
+    np.savez(npz, t=np.array([0.0, 3.2 * 86400.0]), ic_sha256=sha, micro_settings=ms)
     assert rv.ctrl_days(spec) == (4, "paired_base_run")
-    np.savez(npz, t=np.array([0.0, 5.0 * 86400.0]), ic_sha256=sha)
+    np.savez(npz, t=np.array([0.0, 5.0 * 86400.0]), ic_sha256=sha, micro_settings=ms)
     assert rv.ctrl_days(spec)[0] == 5
+    np.savez(npz, t=np.array([0.0, 5.0 * 86400.0]), ic_sha256=sha)   # pre-L28 step settings
+    assert rv.ctrl_days(spec) == (rv.MAX_DAYS, "default_max_paired_base_stale_numerics")
     np.savez(npz, t=np.array([0.0, 5.0 * 86400.0]))           # made before ic_sha256 was recorded
     assert rv.ctrl_days(spec) == (rv.MAX_DAYS, "default_max_paired_base_stale_ic")
 
