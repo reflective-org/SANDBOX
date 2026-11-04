@@ -60,6 +60,39 @@ def test_defaults_are_explicit_envelope_end():
     b = cd.micro_consume(_env, 0.0, 300.0, _state(), _uptake, 1.0, 0.1, 1e-3, 20.0, 1e-3,
                          on_accept=lambda *r: rec_b.append(r), prod_ref="envelope", handoff="end")
     assert rec_a == rec_b and a[1:] == b[1:]
+    # golden values from the pre-option controller (0e95fbb micro_consume, same problem): the
+    # default path must keep reproducing them
+    assert a[3] == 78 and math.isclose(a[2], 9.154, rel_tol=1e-12)
+    assert math.isclose(a[1], 4.579913154947048e-13, rel_tol=1e-12)
+
+
+@pytest.mark.parametrize("handoff", ["end", "mid"])
+@pytest.mark.parametrize("prod_ref", ["envelope", "standing"])
+def test_h2so4_bookkeeping_with_adaptive_and_clipped_steps(prod_ref, handoff):
+    # adaptive steps over an interval that is not a multiple of any step. The uptake TOMAS reports
+    # on the ACCEPTED steps (tallied in the hook, which runs right after the accepted call) must
+    # equal the loop's removal_kg, so env(t1) - removal is the true leftover gas
+    t1 = 137.3
+    last, taken = [0.0], [0.0]
+
+    def tomas(Nk, Mk, Gc, *a, **k):
+        out = _uptake(Nk, Mk, Gc, *a, **k)
+        last[0] = float(Gc[SRTSO4] - out[2][SRTSO4])
+        return out
+
+    def on_accept(*_):
+        taken[0] += last[0]
+    _, removal_kg, _, n = cd.micro_consume(_env, 0.0, t1, _state(), tomas, 1.0, 0.02, 1e-3, 20.0,
+                                           1e-3, on_accept=on_accept, prod_ref=prod_ref,
+                                           handoff=handoff)
+    assert n > 10 and math.isclose(taken[0], removal_kg, rel_tol=1e-12)
+    # and the leftover gas tracks the exact solution; the v1 default (envelope, end) is the
+    # outlier this option set exists to fix (measured -3.5% / +0.05% / -0.5% / +0.001%)
+    gas = _env(t1) - mass_to_conc(removal_kg, BOXVOL_CM3, MW_H2SO4)
+    err = abs(gas / (_P / _CS * (1.0 - math.exp(-_CS * t1))) - 1.0)
+    bound = {("envelope", "end"): 5e-2, ("envelope", "mid"): 1e-3,
+             ("standing", "end"): 1e-2, ("standing", "mid"): 1e-4}[prod_ref, handoff]
+    assert err < bound
 
 
 @pytest.mark.parametrize("handoff, order", [("end", 1), ("mid", 2)])
