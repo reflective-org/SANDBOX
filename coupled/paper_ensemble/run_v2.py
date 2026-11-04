@@ -37,16 +37,24 @@ contours of the 2-D Gaussian, c(r) = c_peak exp(-r^2/2). The initial box SO2 is 
   c2sig    V0 = 2 pi sx sz L e^2        c on the 2-sigma contour (0.135 c_peak)
 
 V0 is the same for across- and along-shear cases (same physical plume) and D(t) applies to all five.
-Scope: ONLY the ``base`` set runs every variant (``V0_SWEEP_SETS``); every other set uses
-``DEFAULT_V0``. "Every set x 5 V0" is a one-line change: put the set name in ``V0_SWEEP_SETS``.
+Scope: ONLY the ``base`` and ``ens`` sets run every variant (``V0_SWEEP_SETS``); every other set
+uses ``DEFAULT_V0``. "Every set x 5 V0" is a one-line change: put the set name in ``V0_SWEEP_SETS``.
+
+Microphysics levels of the factorial ensemble (L22, ``MICROPHYSICS_COMBOS``, default first):
+nucleation_rate_scale {1, 0.01, 100} x coag_kernel_scale {1, 0.5, 2} x condensation_alpha {1, 0.5}
+= 18 combinations.
 
 Named run sets (``SETS``), selected on the CLI:
 
   base          40  30N: the eight dilution cases x the five V0 variants, microphysics at defaults
-  oat           40  30N: every case x {nucleation x0.01, x100; coag kernel x0.5, x2; alpha 0.5}
+  ens           720 30N full factorial (L22): 8 dilution cases x 5 V0 x 18 microphysics combos.
+                    Its 40 default-microphysics members ARE the base cases (same case_id, same
+                    output dir runs_v2/base/<id>, see "Shared output dirs" below): 680 new runs
   ctrl          8   30N: no-injection twin per dilution case, same V(t) (length = the paired
                     DEFAULT_V0 base run's final t, rounded up to whole days, else MAX_DAYS -- as
                     legacy_v1/run_bgstop_control)
+  oat               RETIRED (L22): the one-at-a-time members are a subset of ens; asking for it
+                    raises and points to ens
   constoh       1   30N: C1 with OH pinned at 5e5 molec cm^-3 (as legacy_v1/make_constant_oh_banana)
   geo           8   the eight dilution cases on the geo site (aer_geo)
   geo_ctrl      8   no-injection twins of the geo set (O5 still open: defined, not yet approved)
@@ -57,6 +65,12 @@ Named run sets (``SETS``), selected on the CLI:
 Case id: ``<site>__<bg>__<dil>__<alpha>__<nuc>__<coag>__V0<variant>__h06_<ic tag>`` (+ ``__ctrl`` /
 ``__constOH``), e.g. ``30N_20km__aergeo__C1__a1p0__nuc1__cg1__V0mwmean__h06_ss100IC``. A ctrl twin
 carries its paired plume's V0 token (DEFAULT_V0); V0 has no effect on a no-injection run.
+
+Shared output dirs (``SHARED_OUTPUT``): a set that contains another set's cases (ens > base)
+does not copy them. ``case_dir(set, spec)`` resolves such a member to the OWNER set's dir, so a
+finished base run is "done" for ens too (and vice versa) and nothing runs twice; the new members
+live in runs_v2/ens/. Every manifest row records the resolved ``output_dir``.
+
 Output: ``runs_v2/<set>/<case_id>/state.npz`` (run_60day layout; ``V_ratio`` from
 ``coupled.dilution.volume_ratio``; ``ic_sha256`` of the IC used; ``so2_chem_loss_cum`` [molec cm^-3
 on the V0 basis = plume-integrated SO2 molecules consumed by chemistry / V0, exact per-gas-solve
@@ -78,6 +92,7 @@ import csv
 import dataclasses
 import functools
 import hashlib
+import itertools
 import json
 import math
 import os
@@ -130,7 +145,7 @@ V0_CM3 = {
 V0_VARIANTS = tuple(V0_CM3)                           # peak, c1sig, mwmean, tophat, c2sig
 DEFAULT_V0 = "mwmean"
 #: Sets that run EVERY V0 variant; all others use DEFAULT_V0 only. "Everything x 5": add names here.
-V0_SWEEP_SETS = frozenset({"base"})
+V0_SWEEP_SETS = frozenset({"base", "ens"})
 #: Initial plume SO2 [molec cm^-3] per V0 variant (same molecules/V0 at every site).
 SO2_SPIKE_MOLEC_CM3 = {v: SO2_MOLECULES / v0 for v, v0 in V0_CM3.items()}
 
@@ -169,14 +184,15 @@ SITES = {s.key: s for s in [
 ]}
 SITE_30N = SITES["30N"]
 
-# one-at-a-time microphysics sensitivities: (token, field, value)
-OAT_VARIANTS = (
-    ("nuc0p01", "nucleation_rate_scale", 0.01),
-    ("nuc100", "nucleation_rate_scale", 100.0),
-    ("cg0p5", "coag_kernel_scale", 0.5),
-    ("cg2", "coag_kernel_scale", 2.0),
-    ("a0p5", "condensation_alpha", 0.5),
-)
+# factorial microphysics levels (L22; O10: as v1), default level first in each
+NUCLEATION_LEVELS = (1.0, 0.01, 100.0)
+COAG_LEVELS = (1.0, 0.5, 2.0)
+ALPHA_LEVELS = (1.0, 0.5)
+#: the 18 microphysics combinations as CaseSpec keyword dicts; MICROPHYSICS_COMBOS[0] = defaults
+MICROPHYSICS_COMBOS = tuple(
+    dict(nucleation_rate_scale=n, coag_kernel_scale=c, condensation_alpha=a)
+    for n, c, a in itertools.product(NUCLEATION_LEVELS, COAG_LEVELS, ALPHA_LEVELS))
+DEFAULT_MICROPHYSICS = MICROPHYSICS_COMBOS[0]
 _TOKEN = {  # numeric value -> case-id token
     "condensation_alpha": {1.0: "a1p0", 0.5: "a0p5"},
     "nucleation_rate_scale": {1.0: "nuc1", 0.01: "nuc0p01", 100.0: "nuc100"},
@@ -211,10 +227,23 @@ class CaseSpec:
     def case_id(self):
         return self.base_id + {"plume": "", "ctrl": "__ctrl", "constoh": "__constOH"}[self.kind]
 
+    @property
+    def microphysics(self):
+        return dict(nucleation_rate_scale=self.nucleation_rate_scale,
+                    coag_kernel_scale=self.coag_kernel_scale,
+                    condensation_alpha=self.condensation_alpha)
+
 
 def _blocked(question, why):
     def fn(_set_name=None):
         raise NotImplementedError(f"blocked on open question {question} in RUNS_V2.md: {why}")
+    return fn
+
+
+def _retired(replacement, decision):
+    def fn(set_name=None):
+        raise NotImplementedError(f"set {set_name!r} is retired ({decision} in RUNS_V2.md): its "
+                                  f"cases are part of {replacement!r}; run that set instead")
     return fn
 
 
@@ -227,13 +256,14 @@ def _base(set_name, site=SITE_30N):
     return [CaseSpec(d, site=site, v0=v) for d in DILUTION_CASES for v in v0_variants_for(set_name)]
 
 
-def _oat(set_name):
-    return [CaseSpec(d, v0=v, **{field: val}) for d in DILUTION_CASES
-            for _tok, field, val in OAT_VARIANTS for v in v0_variants_for(set_name)]
+def _ens(set_name):
+    # dilution case outer, microphysics combo (default first), V0 variant inner
+    return [CaseSpec(d, v0=v, **m) for d in DILUTION_CASES for m in MICROPHYSICS_COMBOS
+            for v in v0_variants_for(set_name)]
 
 
 def _ctrl(set_name, site=SITE_30N):
-    # no injection -> V0 is irrelevant; one twin per dilution case, paired with the DEFAULT_V0 run
+    # no injection -> V0 is irrelevant; one twin per dilution case, default microphysics
     return [CaseSpec(d, kind="ctrl", site=site) for d in DILUTION_CASES]
 
 
@@ -245,7 +275,8 @@ def _constoh(set_name):
 #: NotImplementedError). Within a dilution case the V0 variants run in V0_VARIANTS order.
 SETS = {
     "base": _base,
-    "oat": _oat,
+    "ens": _ens,
+    "oat": _retired("ens", "L22"),
     "ctrl": _ctrl,
     "constoh": _constoh,
     "geo": functools.partial(_base, site=SITES["geo"]),
@@ -262,12 +293,30 @@ def cases_for(set_name):
     return SETS[set_name](set_name)
 
 
+#: set -> the set whose cases it contains and whose output dirs those shared members keep
+SHARED_OUTPUT = {"ens": "base"}
+
+
+@functools.lru_cache(maxsize=None)
+def set_ids(set_name):
+    """Frozen set of a set's case ids."""
+    return frozenset(c.case_id for c in cases_for(set_name))
+
+
 def set_dir(set_name):
     return os.path.join(_OUT, set_name)
 
 
+def output_set(set_name, spec):
+    """The set whose dir holds ``spec``'s outputs when run as part of ``set_name``: the owner set
+    for a member shared with it (SHARED_OUTPUT, e.g. an ens default-microphysics member -> base),
+    else ``set_name`` itself."""
+    owner = SHARED_OUTPUT.get(set_name)
+    return owner if owner is not None and spec.case_id in set_ids(owner) else set_name
+
+
 def case_dir(set_name, spec):
-    return os.path.join(set_dir(set_name), spec.case_id)
+    return os.path.join(set_dir(output_set(set_name, spec)), spec.case_id)
 
 
 # --- scenario ------------------------------------------------------------------------------------
@@ -419,6 +468,7 @@ def manifest_row(set_name, i, spec):
     injected = spec.kind != "ctrl"
     row = dict(
         set=set_name, index=i, case_id=spec.case_id, kind=spec.kind,
+        output_dir=os.path.relpath(case_dir(set_name, spec), _HERE),
         paired_case_id=(paired_spec(spec).case_id if spec.kind == "ctrl" else ""),
         site=spec.site.site, latitude=sc.latitude, longitude=sc.longitude, T=sc.T, P=sc.P,
         WTR=sc.WTR, day_of_year=sc.day_of_year, start_utc_hour=sc.start_utc_hour,

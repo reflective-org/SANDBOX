@@ -11,12 +11,13 @@ import pytest
 
 from coupled.paper_ensemble import run_v2 as rv
 
-COUNTS = {"base": 40, "oat": 40, "ctrl": 8, "constoh": 1,
+COUNTS = {"base": 40, "ens": 720, "ctrl": 8, "constoh": 1,
           "geo": 8, "geo_ctrl": 8, "site60N": 8, "site60N_ctrl": 8}
-SET_SITE = {"base": "30N", "oat": "30N", "ctrl": "30N", "constoh": "30N",
+SET_SITE = {"base": "30N", "ens": "30N", "ctrl": "30N", "constoh": "30N",
             "geo": "geo", "geo_ctrl": "geo", "site60N": "60N", "site60N_ctrl": "60N"}
 MANIFEST_COLS = {
-    "set", "index", "case_id", "kind", "dilution_regime", "sigma_y0_m", "sigma_z0_m", "shear_s-1",
+    "set", "index", "case_id", "kind", "output_dir",
+    "dilution_regime", "sigma_y0_m", "sigma_z0_m", "shear_s-1",
     "kz_schedule", "tau_burst_s", "dilution_max_dlnv", "water_every_process", "nuc_org_mass_frac",
     "molar_so4_transfer",
     "tomas_nbins", "ion_pair_rate", "condensation_alpha", "nucleation_rate_scale",
@@ -49,8 +50,11 @@ def test_counts_and_unique_ids(name, n):
 
 
 def test_ids_unique_across_all_sets():
-    ids = [c.case_id for name in COUNTS for c in rv.cases_for(name)]
-    assert len(ids) == len(set(ids)) == sum(COUNTS.values())
+    # a set that contains another (SHARED_OUTPUT: ens > base) shares those ids by
+    # design; apart from that every id belongs to exactly one set
+    contained = set(rv.SHARED_OUTPUT.values())
+    ids = [c.case_id for name in COUNTS if name not in contained for c in rv.cases_for(name)]
+    assert len(ids) == len(set(ids)) == sum(n for k, n in COUNTS.items() if k not in contained)
 
 
 def test_case_id_format():
@@ -61,10 +65,10 @@ def test_case_id_format():
     assert rv.CaseSpec("C3a", kind="ctrl").case_id.endswith("__V0mwmean__h06_ss20IC__ctrl")
     assert rv.cases_for("constoh")[0].case_id == \
         "30N_20km__sabr220__C1__a1p0__nuc1__cg1__V0mwmean__h06_ss20IC__constOH"
-    oat_ids = {c.case_id for c in rv.cases_for("oat")}
-    assert "30N_20km__sabr220__C2__a1p0__nuc0p01__cg1__V0mwmean__h06_ss20IC" in oat_ids
-    assert "30N_20km__sabr220__C5a__a0p5__nuc1__cg1__V0mwmean__h06_ss20IC" in oat_ids
-    assert not oat_ids & {c.case_id for c in rv.cases_for("base")}
+    ens_ids = {c.case_id for c in rv.cases_for("ens")}
+    assert "30N_20km__sabr220__C2__a1p0__nuc0p01__cg1__V0mwmean__h06_ss20IC" in ens_ids
+    assert "30N_20km__sabr220__C5a__a0p5__nuc100__cg2__V0peak__h06_ss20IC" in ens_ids
+    assert {c.case_id for c in rv.cases_for("base")} <= ens_ids
     assert rv.cases_for("geo")[0].case_id == \
         "30N_20km__aergeo__C1__a1p0__nuc1__cg1__V0mwmean__h06_ss100IC"
     assert rv.cases_for("site60N")[0].case_id == \
@@ -77,12 +81,12 @@ def test_case_id_format():
 
 def test_v0_variants_and_set_scope():
     assert rv.V0_VARIANTS == ("peak", "c1sig", "mwmean", "tophat", "c2sig")
-    assert rv.DEFAULT_V0 == "mwmean" and rv.V0_SWEEP_SETS == {"base"}
+    assert rv.DEFAULT_V0 == "mwmean" and rv.V0_SWEEP_SETS == {"base", "ens"}
     base = rv.cases_for("base")                       # dilution case outer, V0 inner
     assert [(c.dil, c.v0) for c in base] == \
         [(d, v) for d in rv.DILUTION_CASES for v in rv.V0_VARIANTS]
     for name in COUNTS:
-        if name != "base":
+        if name not in rv.V0_SWEEP_SETS:
             assert {c.v0 for c in rv.cases_for(name)} == {"mwmean"}, name
 
 
@@ -205,7 +209,7 @@ def test_plan_writes_manifest(name, capsys):
         else:
             assert so2 == pytest.approx(rv.SO2_MOLECULES / float(r["V0_cm3"]), rel=1e-12)
         assert float(r["SO2_init_ppt"]) * 1e-12 * float(r["M_air"]) == pytest.approx(so2, rel=1e-12)
-    if name == "base":
+    if name in rv.V0_SWEEP_SETS:
         assert sorted({r["v0_variant"] for r in rows}) == sorted(rv.V0_VARIANTS)
 
 
@@ -263,3 +267,4 @@ def test_l26_fixed_ten_day_runs_without_early_stop():
     assert rv.MAX_DAYS == 10 and rv.EARLY_STOP is False
     spec = rv.cases_for("base")[0]
     assert rv.resolved_days(spec) == (10, "fixed")
+
