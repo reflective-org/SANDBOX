@@ -30,7 +30,7 @@ pointers live in the plan and the commits; this page is the one to read.
    The organics/SOA stack on dev is **not** used, because nothing in the coupled path calls it.
 4. **Initial conditions**: spun-up controls sampled at true 06:00 on DOY 172, with the site's own
    aerosol surface area and H₂O (L17, L18). Release at 06:00 local.
-5. **Run length**: 60 days maximum (the early-stop rule never triggers with this dilution, L16).
+5. **Run length**: fixed 10 days, evaluated at days 1, 2, 7 and 10 (L26).
 
 ## Locked decisions
 
@@ -45,18 +45,19 @@ pointers live in the plan and the commits; this page is the one to read.
 | L7 | Nucleation: TOMAS `ricco_dunne` → Dunne et al. (2016) binary H₂SO₄–H₂O, neutral + ion-induced, 30 ion pairs cm⁻³ s⁻¹, NH₃ = 0, organics = 0 (so the Riccobono/ternary channels are 0). Nucleated mass 100% sulfate |
 | L8 | Water: Tabazadeh H₂SO₄ scheme, re-equilibrated after every process (TOMAS box.f order) |
 | L9 | Run sets: base cases, one-at-a-time (OAT) microphysics sensitivities, paired no-injection controls, extra axes (geo background, 60N site, release-hour sweep, constant-OH twin). No full Cartesian ensemble |
-| L10 | 60 d max + early stop (as in the v1 60-day/bgstop runs) |
+| L10 | ~~60 d max + early stop~~ — superseded by L26 |
 | L11 | Release 06:00 local |
 | L12 | Adaptive outer steps: any 600 s interval where V grows more than 10% (ln ≤ 0.1) is bisected, and the burst start/end are interval edges (`dilution_max_dlnv = 0.1`). Adds < 1% intervals |
 | L13 | Particle sulfate slot = SO₄ mass (96); gas H₂SO₄ = 98. Condensation and nucleation transfers convert ×96/98 (TOMAS `molar_so4_transfer=True`); dev's ×98/96 in the Tabazadeh water is kept; coupled sulfur diagnostics use 96. The H⁺ mass (2/98) is not carried in dry mass: a known TOMAS approximation for pure acid |
 | L14 | 60N/15 km: runs at 120 hPa (≈ US Standard Atmosphere at 15 km; set in the July ensemble, `1e3df00`, no literature source); spun-up control from the frank-model 100 hPa preset (same convention as 30N: run 55 hPa, control 60 hPa preset) |
 | L15 | Geo set gets its own 60-day spun-up control ("ss100IC"): SO₂ held at 100 ppt, het chemistry sees the aer_geo aerosol |
-| L16 | Evaluation days replace t*: compare all cases at fixed days 7 (burst-matching day), 30 and 60, on plume-integrated metrics with the paired no-injection control subtracted |
+| L16 | Evaluation days replace t*: compare all cases at fixed days on plume-integrated metrics with the paired no-injection control subtracted (days revised by L26 to 1, 2, 7, 10) |
 | L17 | Spun-up controls are sampled at true local 06:00 on DOY 172 (60-d control starting DOY 113, 06:00; sample at elapsed 1416 h). The legacy ss20IC was a local-noon state from ≈DOY 231; it is kept as `ic/30N_20km_ss20IC_legacy_noon_doy231.json` |
 | L18 | Each control's aerosol surface area and H₂O match its coupled site: SA = wet SA of the site's coupled background (30N SABR-220, geo aer_geo, 60N SABR-220 at 120 hPa) and WTR = the coupled value (6.91 ppmv at 30N, 3.17 at 60N) |
 | L19 | (2026-11-03) Initial plume is Gaussian, σx (across-track horizontal) = σz (vertical) = 25 m. Same 8 cases: across-shear σL = 25 m; along-shear σL = 15 km/√12 = 4.33 km (the 15 km track as a tophat converted to σ); σz0 = 25 m for all |
 | L20 | (2026-11-03) Schumann removed from the coupled model and the paper. It survives only in `coupled/dilution_legacy_schumann.py` for the studio (accepted only with `legacy_dilution=True`) until the studio PR. The v1 pipeline lives in `coupled/paper_ensemble/legacy_v1/` and runs at git tag `paper-v1` (888e5ff) |
 | L21 | (2026-11-03) Five initial-concentration (V0) scenarios, defined below. The base set runs all five (8 × 5 = 40); every other set uses the mass-weighted mean. Running every set × 5 is a recorded option (one-line change: `run_v2.V0_SWEEP_SETS`) |
+| L26 | (2026-11-03) Runs are a fixed 10 days, no early stop (`run_v2.MAX_DAYS = 10`, `EARLY_STOP = False`); evaluation days 1, 2, 7 (burst-matching day) and 10 |
 
 **Not bitwise-comparable to v1 even at default knobs:** the TOMAS pin change alone alters the water
 scheme and the 80-bin coagulation algorithm (TFL → linear sub-bin). Any v1-vs-v2 comparison is a
@@ -126,8 +127,7 @@ not a Cartesian ensemble.
 | constoh | 1 | C1 with OH pinned at 5e5 cm⁻³, V0 = mwmean |
 | hour | — | blocked on O3 |
 
-About 105 runs at ~1.5 h each on one core (≈ 20 h on 8 cores). "Everything × 5 V0" would add
-≈ 260 runs.
+Runs are 10 d (L26): roughly 15 min each on one core (to be measured on the base set).
 
 ## Results so far
 
