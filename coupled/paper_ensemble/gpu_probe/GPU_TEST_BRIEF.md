@@ -96,8 +96,8 @@ profilers attached; profile in separate runs.
   driver. For the micro-step, separate device compute from host overhead: time 1000 back-to-back
   calls of the jitted step on a representative state, then the same with a host sync after each call.
 - Reference from the Mac (production settings, 10-day runs, 3 runs sharing the machine): M1 41 min
-  for 394k micro-steps; M3 90 min for 875k; M2 (projected from its progress at day 8) about 3.4 h
-  for about 2.1M. That is about 6 ms per micro-step. A 1-day M1 run on the Mac is noted at the
+  for 394k micro-steps; M3 90 min for 875k; M2 175 min for 1.80M. That is about 6 ms per micro-step
+  in every case. A 1-day M1 run on the Mac is noted at the
   bottom.
 
 ### P3: batched TOMAS step (the main question)
@@ -133,8 +133,8 @@ Include:
   - (c) GPU as is, one or a few processes sharing the GPU;
   - (d) GPU batched, from P3. Say what rewrite (d) would need: the micro-loop as a
     `lax.while_loop` with per-member step sizes and masking, and the gas solve batched too. Say
-    how the slowest member sets the pace in a batch: nucleation ×100 members take about 2× the
-    micro-steps of default members.
+    how the slowest member sets the pace in a batch: per 10 days, the slow-dilution C4a member
+    takes about 4.5× the micro-steps of C1, and C1 with nucleation ×100 about 2.2×.
 - Your recommendation, and anything surprising.
 
 ## Rules
