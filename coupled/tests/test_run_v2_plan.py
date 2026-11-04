@@ -270,3 +270,99 @@ def test_l26_fixed_ten_day_runs_without_early_stop():
     spec = rv.cases_for("base")[0]
     assert rv.resolved_days(spec) == (10, "fixed")
 
+
+# --- factorial ensemble + per-microphysics controls (L22, L23) ------------------------------------
+def test_microphysics_combos_are_the_l22_factorial():
+    combos = rv.MICROPHYSICS_COMBOS
+    assert len(combos) == 18 == len({tuple(sorted(m.items())) for m in combos})
+    assert {m["nucleation_rate_scale"] for m in combos} == {0.01, 1.0, 100.0}
+    assert {m["coag_kernel_scale"] for m in combos} == {0.5, 1.0, 2.0}
+    assert {m["condensation_alpha"] for m in combos} == {0.5, 1.0}
+    assert combos[0] == rv.DEFAULT_MICROPHYSICS == rv.CaseSpec("C1").microphysics
+
+
+def test_ens_default_microphysics_slice_is_exactly_base():
+    ens = rv.cases_for("ens")
+    default = [c for c in ens if c.microphysics == rv.DEFAULT_MICROPHYSICS]
+    assert [c.case_id for c in default] == [c.case_id for c in rv.cases_for("base")]
+    assert {(c.dil, c.v0) for c in ens if c.microphysics == rv.DEFAULT_MICROPHYSICS} == \
+        {(d, v) for d in rv.DILUTION_CASES for v in rv.V0_VARIANTS}
+    assert {c.kind for c in ens} == {"plume"} and {c.site.key for c in ens} == {"30N"}
+
+
+def test_ctrl_is_the_default_slice_of_ens_ctrl():
+    ens_ctrl = rv.cases_for("ens_ctrl")
+    assert {c.kind for c in ens_ctrl} == {"ctrl"} and {c.v0 for c in ens_ctrl} == {rv.DEFAULT_V0}
+    default = [c.case_id for c in ens_ctrl if c.microphysics == rv.DEFAULT_MICROPHYSICS]
+    assert default == [c.case_id for c in rv.cases_for("ctrl")]
+    assert rv.set_ids("ctrl") <= rv.set_ids("ens_ctrl")
+
+
+def test_shared_members_resolve_to_the_owner_set_dir():
+    # an ens member that is a base case lives in runs_v2/base/<id>: a finished base run is done
+    # for ens (no duplicate run); the 680 new members live in runs_v2/ens/
+    for name, owner in (("ens", "base"), ("ens_ctrl", "ctrl")):
+        cases = rv.cases_for(name)
+        dirs = {c.case_id: rv.case_dir(name, c) for c in cases}
+        shared = rv.set_ids(owner)
+        for cid, d in dirs.items():
+            assert os.path.basename(d) == cid
+            assert os.path.dirname(d) == rv.set_dir(owner if cid in shared else name)
+        for c in rv.cases_for(owner):                  # same dir whichever set asks
+            assert rv.case_dir(owner, c) == rv.case_dir(name, c)
+    assert rv.output_set("geo", rv.cases_for("geo")[0]) == "geo"
+
+
+def test_finished_base_run_counts_as_done_for_ens(capsys, monkeypatch):
+    need_ic("ens")
+    base0 = rv.cases_for("base")[0]
+    npz = os.path.join(rv.case_dir("base", base0), "state.npz")
+    os.makedirs(os.path.dirname(npz))
+    np.savez(npz, t=np.array([0.0]), ic_sha256=rv.ic_sha256(base0.site))
+    ens = rv.cases_for("ens")
+    i = [c.case_id for c in ens].index(base0.case_id)
+    assert rv.case_status("ens", ens[i]) == "done"
+    monkeypatch.setattr(rv, "run_one", lambda *a: pytest.fail("must not rerun a base case"))
+    rv.run_slice("ens", ens, i, i + 1)
+    assert "SKIP (state.npz exists)" in capsys.readouterr().out
+    assert not os.path.exists(os.path.join(rv.set_dir("ens"), base0.case_id))
+
+
+def test_paired_control_maps_every_ens_member_and_ignores_v0():
+    ens_ctrl = rv.set_ids("ens_ctrl")
+    twins = {}
+    for c in rv.cases_for("ens"):
+        twin = rv.paired_control(c)
+        assert twin.case_id in ens_ctrl
+        assert (twin.kind, twin.dil, twin.site, twin.microphysics) == \
+            ("ctrl", c.dil, c.site, c.microphysics)
+        twins.setdefault((c.dil, tuple(sorted(c.microphysics.items()))), set()).add(twin.case_id)
+    assert len(twins) == 144 and all(len(v) == 1 for v in twins.values())   # one twin for all V0
+    assert {t for v in twins.values() for t in v} == ens_ctrl                 # and every twin used
+    a = rv.CaseSpec("C2", v0="peak", nucleation_rate_scale=100.0)
+    b = rv.CaseSpec("C2", v0="c2sig", nucleation_rate_scale=100.0)
+    assert rv.paired_control(a) == rv.paired_control(b)
+    assert rv.paired_control(rv.CaseSpec("C1")).case_id == rv.cases_for("ctrl")[0].case_id
+    with pytest.raises(ValueError, match="plume"):
+        rv.paired_control(rv.CaseSpec("C1", kind="ctrl"))
+
+
+def test_ctrl_paired_spec_keeps_microphysics():
+    twin = rv.CaseSpec("C3", kind="ctrl", coag_kernel_scale=2.0, condensation_alpha=0.5)
+    plume = rv.paired_spec(twin)
+    assert plume.kind == "plume" and plume.v0 == rv.DEFAULT_V0
+    assert plume.microphysics == twin.microphysics
+    assert rv.paired_control(plume) == twin
+    assert os.path.basename(os.path.dirname(os.path.dirname(rv.paired_base_npz(twin)))) == "ens"
+
+
+def test_controls_are_fixed_length_without_early_stop():
+    for spec in rv.cases_for("ens_ctrl") + rv.cases_for("ctrl"):
+        assert rv.resolved_days(spec) == (rv.MAX_DAYS, "fixed")
+
+
+def test_oat_set_is_retired_and_points_to_ens():
+    with pytest.raises(NotImplementedError, match="retired.*'ens'"):
+        rv.cases_for("oat")
+    with pytest.raises(NotImplementedError, match="retired"):
+        rv.main(["plan", "oat"])
