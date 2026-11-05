@@ -138,7 +138,9 @@ OH_PIN_MOLEC_CM3 = 5.0e5                              # legacy_v1/make_constant_
 # 2026-11-04): standing-H2SO4 metric, midpoint (Strang) handoff, eps 1%, cap 20 s
 MICRO_SETTINGS = dict(micro_eps=0.01, micro_cap_s=20.0, micro_floor_s=1.0e-4,
                       micro_prod_ref="standing", micro_handoff="mid", micro_nuc_eps=0.0,
-                      tomas_coag_substeps=1)                       # L31: 1 coag sub-step per TOMAS call
+                      tomas_coag_substeps=1,                       # L31: 1 coag sub-step per TOMAS call
+                      dt_couple=60.0)                              # L32: 60 s operator-split coupling
+OUTPUT_DT_S = 600.0                                   # saved output step (L32: coupling is finer)
 
 # --- 1 t SO2 into the initial plume volume V0 (L21) -----------------------------------------------
 _AVOG = 6.02214076e23
@@ -391,7 +393,7 @@ def build_scenario(spec, days=MAX_DAYS):
         conc["OH"] = OH_PIN_MOLEC_CM3 / M * 1e12
     return CoupledScenario(
         T=site.T, P=site.P, WTR=site.WTR, latitude=site.latitude, longitude=_LON, day_of_year=_DOY,
-        start_utc_hour=_START_UTC_H, days=int(days), DT=600.0, dt_couple=600.0, photolysis="tuvx",
+        start_utc_hour=_START_UTC_H, days=int(days), DT=OUTPUT_DT_S, photolysis="tuvx",
         tomas_nbins=TOMAS_NBINS, background_dist=site.background_dist, dilution_regime=spec.dil,
         dilution_max_dlnv=DILUTION_MAX_DLNV,
         dilution_zero_species=(), dilution_background={"SO2": site.bg_so2_ppt},
@@ -533,7 +535,7 @@ def manifest_row(set_name, i, spec):
         SO2_injected_tonne=(1.0 if injected else 0.0),
         oh_pinned_molec_cm3=(OH_PIN_MOLEC_CM3 if spec.kind == "constoh" else ""),
         days=days, days_source=days_src, max_days=MAX_DAYS, early_stop=(EARLY_STOP and spec.kind != "ctrl"),
-        DT=sc.DT, dt_couple=sc.dt_couple, photolysis=sc.photolysis,
+        DT=sc.DT, photolysis=sc.photolysis,
         aerosol_to_j=sc.switches.aerosol_to_j, heating_to_t=sc.switches.heating_to_t, M_air=M,
     )
     row.update(provenance())
@@ -577,6 +579,18 @@ def _install_oh_pin():
     jm.make_frozen_vf = pinned_factory
 
 
+def output_indices(t, dt_out):
+    """Indices of the outputs to save: every time on the ``dt_out`` grid, every time before the
+    first ``dt_out`` (the bisected early intervals, L12) and the last time. The driver records
+    every outer interval, so with ``dt_couple`` < DT this keeps the files at the 600 s size; the
+    kept states are the same numbers (checked bitwise, 2026-11-05)."""
+    t = np.asarray(t, dtype=float)
+    on_grid = np.abs(t - np.round(t / dt_out) * dt_out) < 1e-6
+    keep = on_grid | (t < dt_out)
+    keep[-1] = True
+    return np.flatnonzero(keep)
+
+
 def run_one(set_name, spec):
     """Run one case and save its state.npz; returns a summary-row dict."""
     from coupled import dilution as dl
@@ -595,6 +609,10 @@ def run_one(set_name, spec):
         sc, return_aerosol=True, return_state=True, return_size_dist=True,
         return_photolysis=True, stop_condition=stop)
     M = air_number_density(sc.P, sc.T)
+    keep = output_indices(t, sc.DT)                   # L32: save on the DT grid, not every interval
+    t, x = np.asarray(t)[keep], np.asarray(x)[keep]
+    aero = {k: np.asarray(v)[keep] for k, v in aero.items()}   # all per-interval series
+    sd = {k: np.asarray(v)[keep] for k, v in sd.items()}
     V = dl.volume_ratio(t, sc.dilution_regime)
     dp_edges = _bad._xk_to_dp_um(np.asarray(st_final.xk))
     logdp = np.log10(dp_edges)

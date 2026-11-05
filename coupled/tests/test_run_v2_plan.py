@@ -392,6 +392,28 @@ def test_v2_runs_use_the_l28_micro_step_settings():
     assert (sc.micro_eps, sc.micro_cap_s, sc.micro_prod_ref, sc.micro_handoff) == (
         0.01, 20.0, "standing", "mid")
     assert sc.tomas_coag_substeps == 1                               # L31
+    assert (sc.dt_couple, sc.DT) == (60.0, 600.0)                    # L32: 60 s coupling, 600 s output
     assert json.loads(rv.micro_settings_json(sc)) == rv.MICRO_SETTINGS
     row = rv.manifest_row("base", 0, rv.cases_for("base")[0])
     assert row["micro_handoff"] == "mid" and row["micro_eps"] == 0.01
+    assert row["dt_couple"] == 60.0 and row["DT"] == 600.0
+
+
+def test_coupling_step_is_part_of_the_stale_check():
+    # a run made at the v1 600 s coupling must not count as done under L32
+    old = json.loads(rv.micro_settings_json())
+    old["dt_couple"] = 600.0
+    assert json.dumps(old, sort_keys=True) != rv.micro_settings_json()
+
+
+def test_output_indices_keep_the_600s_grid_early_intervals_and_the_end():
+    # 60 s coupling; first interval bisected (L12); a terminator edge at 1234.5 s; early stop at 1980 s
+    t = np.array([0.0, 7.5, 15.0, 30.0, 60.0] + [60.0 * k for k in range(2, 21)] + [1234.5]
+                 + [60.0 * k for k in range(21, 34)])
+    t = np.unique(np.append(t, 1980.0))
+    kept = t[rv.output_indices(t, 600.0)]
+    assert list(kept) == [0.0, 7.5, 15.0, 30.0, 60.0, 120.0, 180.0, 240.0, 300.0, 360.0, 420.0,
+                          480.0, 540.0, 600.0, 1200.0, 1800.0, 1980.0]
+    # at DT == dt_couple (v1 layout) everything on the grid is kept
+    t2 = np.arange(0.0, 6001.0, 600.0)
+    assert np.array_equal(rv.output_indices(t2, 600.0), np.arange(t2.size))

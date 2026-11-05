@@ -67,6 +67,7 @@ pointers live in the plan and the commits; this page is the one to read.
 | L29 | (2026-11-04) Particle number is reported as N>3 nm and N>10 nm. Total N is not converged even at the finest setting (by day 70–99% of it is < 3 nm and moves 5–14% between fine settings); it stays in the outputs but carries no conclusions |
 | L30 | (2026-11-04) The mass-weighted mean (`mwmean`) is the baseline V0, and σ stays 25 m. `ens` runs its 144 mwmean members first (`launch_v2 ens 12 --v0 mwmean`; 8 of them are base runs, so 136 new). The other 576 (peak, c1sig, tophat, c2sig) are deferred: a plain `launch_v2 ens 12` runs them later if needed. The base set keeps all five V0 (V0 sensitivity at default microphysics). Considered and not adopted: a uniform 100 m × 100 m × 15 km box (6.27e13 molec cm⁻³) |
 | L31 | (2026-11-05) TOMAS coagulation runs 1 forward-Euler sub-step per TOMAS call instead of TOMAS's default 10 (`tomas_coag_substeps = 1`, in `run_v2.MICRO_SETTINGS`, so outputs made with 10 are `stale_numerics`). The driver's micro-step already limits each call to a 1% H₂SO₄ change (0.5–3 s), so the inner sub-steps were redundant. 10-day check: within 0.2% of the 10-sub-step runs on every reported quantity and 3.3–3.5× faster. The 40 base runs made with 10 sub-steps (2026-11-04) are kept in `runs_v2_pre_L31/` |
+| L32 | (2026-11-05) Operator-split coupling interval 60 s instead of 600 s (`dt_couple = 60`, in `run_v2.MICRO_SETTINGS`, so outputs made at 600 s are `stale_numerics`); output is still saved every 600 s (`run_v2.OUTPUT_DT_S`, plus the first 600 s and the last time; the kept states are bitwise the same as saving every interval). At 600 s, N>100 nm at day 1 was 3.6–3.9% off in the C1 cases; at 60 s the worst error is about 0.5% against the extrapolated limit. Days 2–10 are within 1% at any interval. Cost 1.6–2.7× the 600 s wall time. See "Coupling-interval convergence" |
 
 **Not bitwise-comparable to v1 even at default knobs:** the TOMAS pin change alone alters the water
 scheme and the 80-bin coagulation algorithm (TFL → linear sub-bin). Any v1-vs-v2 comparison is a
@@ -79,7 +80,7 @@ comparison of model versions, not only of dilution.
   `fixed_species` feature is committed on frank-model branch `feat/fixed-species` (8aa3c07, local)
 - TOMAS 80 bins
 - condensation α = 1 (default)
-- Diffrax Kvaerno5 with 600 s operator-split coupling
+- Diffrax Kvaerno5 (operator-split coupling now 60 s, L32)
 - JPL 19-5 kinetics + TUV-x photolysis
 - SABR-220 background (Dg 0.12 µm, σg 1.6, N 3.5 cm⁻³ ambient)
 - site 30N/20 km, 210 K, 55 hPa, RH 3%, DOY 172
@@ -139,11 +140,11 @@ default-microphysics sets (L25).
 | constoh | 1 | C1 with OH pinned at 5e5 cm⁻³, V0 = mwmean |
 | hour | — | blocked on O3 |
 
-Runs are 10 d (L26). At the L28 + L31 settings a 10-day run took 12 min (C1), 26 min (C1,
+Runs are 10 d (L26). At the L28 + L31 settings with 600 s coupling a 10-day run took 12 min (C1), 26 min (C1,
 nucleation ×100) and 50 min (C4a) on one core (3 runs sharing the machine; 41, 90 and 175 min
 with 10 coagulation sub-steps), depending mostly on how slowly the case dilutes. All 864 unique
 runs on 12 workers came to roughly a week before L31; the L30 first stage (144 ens members, 144 controls,
-geo, site60N, constoh) has about a quarter of the plume runs: roughly a day at L31 speed. Early stop (L26) would not save time: in all 40 base
+geo, site60N, constoh) has about a quarter of the plume runs: roughly a day at L31 speed. 60 s coupling (L32) takes 32 / 79 / 49 min for the same three runs (12 runs sharing 12 cores), 1.6–2.7× longer, so that stage is roughly 2 days. Early stop (L26) would not save time: in all 40 base
 runs made with the v1 step (2026-11-03) wet SA at day 10 was still 4.6–980× background. The 40 base and 49 smoke runs made with the v1 step settings
 (2026-11-03) are kept in `runs_v2_pre_L28/` and are not v2 results.
 
@@ -168,6 +169,26 @@ is within 0.2% of the L28 row. The extrapolated values assume first-order conver
 the estimate from eps 0.02 and 0.01 agrees within half a point). Wall times: eps 0.05 and 0.02
 with 13 runs sharing 14 cores, eps 0.01 (with and without L31) with 3 runs. Scripts and data: session scratchpad
 `convergence/` (run_member10.py, analyze10.py).
+
+## Coupling-interval convergence (L32)
+
+Same three members, 10 days, L28 + L31 settings, coupling interval 600 to 30 s (12 runs sharing 12
+cores, 2026-11-05). Worst |difference| against the 30 s run over N>3, N>10, N>100 nm, SA, r_eff,
+particulate S and plume-integrated N at days 1, 2, 7, 10:
+
+| dt_couple | C1 peak | C4a peak | C1 peak, nuc ×100 | 10-d wall (C1 / C4a / C1 nuc ×100) |
+|---|---|---|---|---|
+| 600 s | 3.6% (N>100 nm, day 1) | 0.9% (N>3 nm, day 1) | 3.9% (N>100 nm, day 1) | 12 / 50 / 26 min |
+| 300 s | 2.1% | 0.5% | 2.2% | 21 / 70 / 41 min |
+| 120 s | 0.7% | 0.3% | 0.7% | 25 / 76 / 44 min |
+| **60 s (L32)** | 0.24% | 0.14% | 0.61% (SA/r_eff, day 2) | 32 / 79 / 49 min |
+
+The error is first order in dt_couple (Richardson from 120/60/30 s gives p = 0.98–1.0 for N>100 nm
+and particulate S at day 1). Against the extrapolated limit the worst error is about 1.0% at 120 s,
+0.5% at 60 s and 0.26% at 30 s. By day 2 every quantity is within 1% at 600 s and by days 7–10
+within 0.1%. In the nucleation ×100 member SA and r_eff at days 1–2 scatter by up to 0.6% between
+120, 60 and 30 s with no trend: a noise floor from the 1% micro-step tolerance (L28), not the
+coupling. Scripts and data: session scratchpad `convergence/` (run_dt.py, analyze_dt.py).
 
 ## Results so far
 
