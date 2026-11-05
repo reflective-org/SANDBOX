@@ -16,6 +16,7 @@ ctrl runs, which are not made yet.
     python -m coupled.paper_ensemble.make_v2_base_plots [runs_dir]    # default runs_v2/base
     -> <runs_dir>/../plots/base/{timeseries_v2_base, sizedist_day10_v2_grid, sizedist_evaldays_v2,
                                  banana_v2_base, banana_v2_base_SA}.{png,pdf}
+       and the *_per_mass versions (divided by the H2SO4 in particles), banana_v2_base{,_SA}_per_mass
 """
 import glob
 import os
@@ -294,9 +295,16 @@ def fig_sizedist_evaldays(data, out, tag, per_mass=False, sa=False):
              + ("_per_mass" if per_mass else ""))
 
 
-def fig_banana(data, out, tag, sa=False):
-    norm = LogNorm(vmin=1e-2, vmax=2e3) if sa else LogNorm(vmin=1e2, vmax=1e8)
-    label = "dSA/dlogD$_p$ [µm$^2$ cm$^{-3}$]" if sa else "dN/dlogD$_p$ [cm$^{-3}$]"
+#: banana colour limits: (absolute, per mass), each spanning the v1 number of decades
+_BANANA_NORM = {False: ((1e2, 1e8), (1e7, 1e13)), True: ((1e-2, 2e3), (1e-2, 2e3))}
+_BANANA_LABEL = {False: ("dN/dlogD$_p$ [cm$^{-3}$]", "dN/dlogD$_p$ per mass [µg$^{-1}$ H$_2$SO$_4$]"),
+                 True: ("dSA/dlogD$_p$ [µm$^2$ cm$^{-3}$]",
+                        "dSA/dlogD$_p$ per mass [m$^2$ g$^{-1}$ H$_2$SO$_4$]")}
+
+
+def fig_banana(data, out, tag, sa=False, per_mass=False):
+    norm = LogNorm(*_BANANA_NORM[sa][per_mass])
+    label = _BANANA_LABEL[sa][per_mass]
     fig, axs = plt.subplots(4, 2, figsize=(11, 12), sharex=True, sharey=True)
     pc = None
     for j, cases in enumerate((ACROSS, ALONG)):
@@ -306,7 +314,7 @@ def fig_banana(data, out, tag, sa=False):
             r = data.get((dil, rv.DEFAULT_V0))
             if r is None:
                 continue
-            field = r["dndlogdp"] * np.pi * r["dp"] ** 2 if sa else r["dndlogdp"]
+            field = np.stack([_dist(r, k, per_mass, sa) for k in range(r["t"].size)])
             pc = ax.pcolormesh(r["t"], r["dp"], np.maximum(field, 1e-9).T, norm=norm,
                                cmap=CMAP, rasterized=True, shading="nearest")
             ax.set_yscale("log")
@@ -319,11 +327,18 @@ def fig_banana(data, out, tag, sa=False):
                 ax.set_xlabel("day since release (06:00 local)")
             if j == 0:
                 ax.set_ylabel("dry diameter [µm]")
-    _finish(fig, "Plume size-distribution evolution\nv2 base set, mass-weighted-mean V0, default "
-            f"microphysics.{tag}", right=0.9)
+    what = "surface-area" if sa else "size"
+    head = (f"Plume {what}-distribution evolution per unit H2SO4 in particles" if per_mass
+            else f"Plume {what}-distribution evolution")
+    norm_txt = (" Each time divided by the particulate H2SO4 mass in the same box (dilution cancels). "
+                "Values above the colour range in the first hours, when little sulfate has formed, "
+                "show at the top colour." if per_mass else "")
+    _finish(fig, f"{head}\nv2 base set, mass-weighted-mean V0, default microphysics.{norm_txt}{tag}",
+            right=0.9)
     cax = fig.add_axes((0.92, 0.12, 0.02, 0.76))
-    fig.colorbar(pc, cax=cax, label=label)
-    _savefig(fig, out, "banana_v2_base_SA" if sa else "banana_v2_base")
+    fig.colorbar(pc, cax=cax, label=label, extend="max" if per_mass else "neither")
+    _savefig(fig, out, ("banana_v2_base_SA" if sa else "banana_v2_base")
+             + ("_per_mass" if per_mass else ""))
 
 
 def main(runs=None):
@@ -348,6 +363,8 @@ def main(runs=None):
     fig_sizedist_day10(data, out, tag, per_mass=True)
     fig_sizedist_evaldays(data, out, tag, per_mass=True)
     fig_sizedist_evaldays(data, out, tag, per_mass=True, sa=True)
+    fig_banana(data, out, tag, per_mass=True)
+    fig_banana(data, out, tag, sa=True, per_mass=True)
 
 
 if __name__ == "__main__":
