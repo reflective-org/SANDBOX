@@ -19,7 +19,10 @@ Do not launch two sets whose cases overlap (``run_v2.SHARED_OUTPUT``: ens contai
 contains ctrl) at the same time: a case that one launch is still running has no state.npz yet, so
 the other would start it as well.
 
-Run (from SANDBOX/):  python -m coupled.paper_ensemble.launch_v2 <set> [n_proc]   (default n_proc 8)
+Run (from SANDBOX/):  python -m coupled.paper_ensemble.launch_v2 <set> [n_proc] [--v0 V[,V...]]
+(default n_proc 8). ``--v0`` queues only the cases with those V0 variants; the set, its case indices,
+output dirs and manifest stay the full set, so a later launch without ``--v0`` runs just the rest
+(L30: ``ens --v0 mwmean`` = the 144 mass-weighted-mean members first).
 """
 import csv
 import glob
@@ -61,11 +64,18 @@ def expected_cost(spec):
             spec.nucleation_rate_scale)
 
 
-def pending_cases(set_name, cases):
+def pending_cases(set_name, cases, v0=None):
     """[(index, spec)] of the cases still to run, longest-expected-first; 'done' and 'stale' cases
-    are reported (as ``run_v2.run_slice`` does) and left out."""
+    are reported (as ``run_v2.run_slice`` does) and left out. ``v0`` (a collection of V0 variant
+    names) keeps only those variants; indices stay those of the full ``cases`` list."""
+    if v0 is not None:
+        unknown = set(v0) - set(run_v2.V0_VARIANTS)
+        if unknown:
+            raise ValueError(f"unknown V0 variant(s) {sorted(unknown)}; known: {run_v2.V0_VARIANTS}")
     todo = []
     for i, spec in enumerate(cases):
+        if v0 is not None and spec.v0 not in v0:
+            continue
         status = run_v2.case_status(set_name, spec)
         if status == "todo":
             todo.append((i, spec))
@@ -174,7 +184,7 @@ def merge_summaries(set_name):
     return rows
 
 
-def main(set_name, n_proc=8):
+def main(set_name, n_proc=8, v0=None):
     cases = run_v2.cases_for(set_name)           # raises NotImplementedError for blocked sets
     sdir = run_v2.set_dir(set_name)
     os.makedirs(sdir, exist_ok=True)
@@ -186,11 +196,12 @@ def main(set_name, n_proc=8):
                   f"those controls will run the full {run_v2.MAX_DAYS} d instead of the paired "
                   f"length", flush=True)
     path, _ = run_v2.write_manifest(set_name, cases)
-    todo = pending_cases(set_name, cases)
+    todo = pending_cases(set_name, cases, v0)
     env = dict(os.environ, **_PIN)
     n_proc = max(1, min(int(n_proc), len(todo) or 1))
     t0 = time.time()
-    print(f"[{set_name}] {len(todo)} of {len(cases)} cases to run on {n_proc} workers "
+    only = f" (V0 {','.join(sorted(v0))} only)" if v0 is not None else ""
+    print(f"[{set_name}] {len(todo)} of {len(cases)} cases to run{only} on {n_proc} workers "
           f"(work queue, longest-expected-first); pinned 1 thread/proc; manifest {path}",
           flush=True)
     if todo:
@@ -203,8 +214,19 @@ def main(set_name, n_proc=8):
           f"-> {os.path.join(sdir, 'summary.csv')}", flush=True)
 
 
+def _parse(argv):
+    """(set_name, n_proc, v0) from ``<set> [n_proc] [--v0 V[,V...]]``."""
+    args, v0 = list(argv), None
+    if "--v0" in args:
+        k = args.index("--v0")
+        if k + 1 >= len(args):
+            raise SystemExit("--v0 needs a comma-separated list of V0 variants")
+        v0 = frozenset(x for x in args[k + 1].split(",") if x)
+        del args[k:k + 2]
+    if not args or len(args) > 2:
+        raise SystemExit(__doc__)
+    return args[0], int(args[1]) if len(args) > 1 else 8, v0
+
+
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print(__doc__)
-        sys.exit(2)
-    main(sys.argv[1], int(sys.argv[2]) if len(sys.argv) > 2 else 8)
+    main(*_parse(sys.argv[1:]))

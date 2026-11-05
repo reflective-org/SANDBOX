@@ -65,6 +65,7 @@ pointers live in the plan and the commits; this page is the one to read.
 | L27 | "SO₂ consumed" comes from an exact cumulative counter: the chemical SO₂ change in each gas solve (dilution is a separate operator-split step), weighted by V/V0, saved per run |
 | L28 | (2026-11-04) Micro-step control converged to ≤ 1% (Ali's bar: within 1%, never over 2%): the step is limited against the gas H₂SO₄ actually standing (`micro_prod_ref="standing"`), the step's production reaches TOMAS at the step midpoint (`micro_handoff="mid"`, symmetric split), `micro_eps` = 0.01, cap 20 s, floor 1e-4 s (`run_v2.MICRO_SETTINGS`, saved per run as `micro_settings`; outputs made with other settings are `stale_numerics`). The v1 settings (envelope metric, end handoff, eps 0.1, cap 20 s) were 5–47% off on N>3 nm, up to 8% on N>100 nm and 20–24% on gas H₂SO₄ at day 10. The opt-in nucleation-aware rule (`micro_nuc_eps`) did not help and stays off. See "Time-step convergence" |
 | L29 | (2026-11-04) Particle number is reported as N>3 nm and N>10 nm. Total N is not converged even at the finest setting (by day 70–99% of it is < 3 nm and moves 5–14% between fine settings); it stays in the outputs but carries no conclusions |
+| L30 | (2026-11-04) The mass-weighted mean (`mwmean`) is the baseline V0, and σ stays 25 m. `ens` runs its 144 mwmean members first (`launch_v2 ens 12 --v0 mwmean`; 8 of them are base runs, so 136 new). The other 576 (peak, c1sig, tophat, c2sig) are deferred: a plain `launch_v2 ens 12` runs them later if needed. The base set keeps all five V0 (V0 sensitivity at default microphysics). Considered and not adopted: a uniform 100 m × 100 m × 15 km box (6.27e13 molec cm⁻³) |
 
 **Not bitwise-comparable to v1 even at default knobs:** the TOMAS pin change alone alters the water
 scheme and the 80-bin coagulation algorithm (TFL → linear sub-bin). Any v1-vs-v2 comparison is a
@@ -139,7 +140,9 @@ default-microphysics sets (L25).
 
 Runs are 10 d (L26). At the L28 settings a 10-day run took 41 min (C1), 90 min (C1, nucleation
 ×100) and 175 min (C4a) on one core, depending mostly on how slowly the case dilutes. All 864 unique runs
-on 12 workers come to roughly a week. The 40 base and 49 smoke runs made with the v1 step settings
+on 12 workers come to roughly a week; the L30 first stage (144 ens members, 144 controls,
+geo, site60N, constoh) roughly 2–3 days, since it has about a quarter of the plume runs. Early stop (L26) would not save time: in all 40 base
+runs made with the v1 step (2026-11-03) wet SA at day 10 was still 4.6–980× background. The 40 base and 49 smoke runs made with the v1 step settings
 (2026-11-03) are kept in `runs_v2_pre_L28/` and are not v2 results.
 
 ## Time-step convergence (L28)

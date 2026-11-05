@@ -157,3 +157,32 @@ def test_serve_worker_protocol_logs_and_restarts_after_death(tmp_path):
         assert f"running {i}\n" in log
     assert "process died (exit 3) during [13]" in log and "bye" in log
     assert rv.SERVE_DONE not in log
+
+
+def test_v0_filter_queues_only_those_variants_with_full_set_indices(capsys):
+    # L30: `launch_v2 ens 12 --v0 mwmean` runs the 144 mass-weighted-mean members first; the case
+    # indices stay those of the full 720 set, so a later launch without --v0 runs only the rest
+    _need_ic()
+    cases = rv.cases_for("ens")
+    sha = rv.ic_sha256(rv.SITE_30N)
+    i_done = next(i for i, c in enumerate(cases) if c.v0 == "mwmean")
+    _write_npz("ens", cases[i_done], sha)
+    todo = lv.pending_cases("ens", cases, frozenset({"mwmean"}))
+    idx = [i for i, _s in todo]
+    expect = {i for i, c in enumerate(cases) if c.v0 == "mwmean"} - {i_done}
+    assert sorted(idx) == sorted(expect) and len(expect) == 143
+    assert all(cases[i] is s for i, s in todo)
+    two = lv.pending_cases("ens", cases, frozenset({"peak", "c2sig"}))
+    assert {s.v0 for _i, s in two} == {"peak", "c2sig"} and len(two) == 288
+    with pytest.raises(ValueError):
+        lv.pending_cases("ens", cases, frozenset({"box100"}))
+
+
+def test_launcher_cli_parsing():
+    assert lv._parse(["ens"]) == ("ens", 8, None)
+    assert lv._parse(["ens", "12"]) == ("ens", 12, None)
+    assert lv._parse(["ens", "12", "--v0", "mwmean"]) == ("ens", 12, frozenset({"mwmean"}))
+    assert lv._parse(["ens", "--v0", "peak,c2sig", "4"]) == ("ens", 4, frozenset({"peak", "c2sig"}))
+    for bad in ([], ["ens", "--v0"], ["ens", "1", "2"]):
+        with pytest.raises(SystemExit):
+            lv._parse(bad)
