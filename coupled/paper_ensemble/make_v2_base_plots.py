@@ -39,6 +39,8 @@ CMAP = LinearSegmentedColormap.from_list("reflective_seq", [CHARCOAL, BLUE, GREE
 HEADLINE = {"family": None}                   # set by _style()
 
 DAY = 86400.0
+#: particulate_S is molec/cm^3 H2SO4-equivalent (one S each); as H2SO4 mass [ug] per molecule
+_UG_PER_MOLEC = 98.079 / 6.02214076e23 * 1e6
 EVAL_DAYS = (1, 2, 7, 10)
 ACROSS = ("C4", "C1", "C5", "C3")             # low -> high mixing, then burst
 ALONG = ("C4a", "C2", "C5a", "C3a")
@@ -61,19 +63,27 @@ def _title(ax, text, **kw):
                  color=kw.pop("color", CHARCOAL), **kw)
 
 
-def _suptitle(fig, text, y=0.995):
-    """Headline (first line) in the headline font; the rest as a wrapped Slate subtitle below it,
-    offset in points so it never overlaps whatever the figure height."""
+def _finish(fig, text, legend_ax=None, right=1.0):
+    """Lay the figure out under a headline (first line of ``text``, headline font) and a wrapped
+    Slate subtitle (the rest), plus an optional one-row legend of ``legend_ax`` under the subtitle.
+    Space is reserved in inches, so nothing overlaps whatever the figure height or text length."""
     import textwrap
-    from matplotlib.transforms import ScaledTranslation
     head, _, rest = text.partition("\n")
-    fig.text(0.5, y, head, ha="center", va="top", fontfamily=HEADLINE["family"], fontsize=15,
-             color=CHARCOAL)
-    if rest:
-        width = int(fig.get_figwidth() * 13)          # ~characters per line at 9 pt
-        fig.text(0.5, y, "\n".join(textwrap.wrap(rest, width)), ha="center", va="top",
-                 fontsize=9, color=SLATE, linespacing=1.4,
-                 transform=fig.transFigure + ScaledTranslation(0, -24 / 72, fig.dpi_scale_trans))
+    lines = textwrap.wrap(rest, int(fig.get_figwidth() * 13)) if rest else []
+    h = fig.get_figheight()
+    sub_in = 0.55 + 0.19 * len(lines)                  # headline + subtitle block [in]
+    top_in = sub_in + (0.38 if legend_ax is not None else 0.0) + 0.12
+    fig.tight_layout(rect=(0, 0, right, 1 - top_in / h))
+    fig.text(0.5, 1 - 0.08 / h, head, ha="center", va="top", fontfamily=HEADLINE["family"],
+             fontsize=15, color=CHARCOAL)
+    if lines:
+        fig.text(0.5, 1 - 0.50 / h, "\n".join(lines), ha="center", va="top", fontsize=9,
+                 color=SLATE, linespacing=1.4)
+    if legend_ax is not None:
+        hd, lab = legend_ax.get_legend_handles_labels()
+        fig.legend(hd, lab, loc="upper center", ncols=len(hd), fontsize=8.5,
+                   bbox_to_anchor=(0.5, 1 - (sub_in + 0.05) / h), handlelength=2.6,
+                   columnspacing=1.6)
 
 
 def _savefig(fig, out, name):
@@ -97,7 +107,11 @@ def load(runs):
             t=z["t"] / DAY, dp=dp, dndlogdp=z["dNdlogDp"],
             N3=n[:, dp >= 0.003].sum(1), N10=n[:, dp >= 0.01].sum(1), SA=z["SA"],
             reff=z["radius_cm"] * 1e4, SO2=z["x"][:, species.index("SO2")],
-            conv=z["so2_chem_loss_cum"] / rv.SO2_SPIKE_MOLEC_CM3[v0])
+            conv=z["so2_chem_loss_cum"] / rv.SO2_SPIKE_MOLEC_CM3[v0],
+            m_ug=z["particulate_S"] * _UG_PER_MOLEC)                 # particulate H2SO4 [ug/cm^3]
+        r = data[dil, v0]
+        r["N3m"], r["N10m"] = r["N3"] / r["m_ug"], r["N10"] / r["m_ug"]          # [1/ug]
+        r["SAm"] = r["SA"] * 1e-12 / (r["m_ug"] * 1e-6)                        # [m^2/g]
     return data
 
 
@@ -132,95 +146,152 @@ def fig_timeseries(data, out, tag):
                 ax.set_ylabel(ylab, fontsize=10)
             if i == 0:
                 _title(ax, COL_TITLE[j])
-                ax.legend(fontsize=8.5, loc="lower left")
             if i == len(rows) - 1:
                 ax.set_xlabel("day since release (06:00 local)")
+                ax.legend(fontsize=8.5, loc="upper center", bbox_to_anchor=(0.5, -0.32), ncols=2)
     axs[0, 0].set_xlim(0, 10)
-    fig.tight_layout(rect=(0, 0, 1, 0.935))
-    _suptitle(fig, "Plume box evolution by dilution case\nv2 base set. Bold: mass-weighted-mean V0; "
-              f"shading: range over the 5 V0 variants; dotted: evaluation days 1, 2, 7, 10.{tag}",
-              y=0.995)
+    _finish(fig, "Plume box evolution by dilution case\nv2 base set. Bold: mass-weighted-mean V0; "
+              f"shading: range over the 5 V0 variants; dotted: evaluation days 1, 2, 7, 10.{tag}")
     _savefig(fig, out, "timeseries_v2_base")
 
 
-def _background(ax, data, dil):
-    """The SABR-220 background (the t = 0 distribution, also the entrained air) as a reference line."""
+def _background(ax, data, dil, per_mass=False, sa=False):
+    """The SABR-220 background (the t = 0 distribution, also the entrained air) as a reference line
+    (per mass: the background aerosol over its own sulfate)."""
     r = next((v for k, v in data.items() if k[0] == dil), None)
     if r is not None:
-        ax.loglog(r["dp"], r["dndlogdp"][0], color=CHARCOAL, lw=1.1, ls=(0, (4, 2)),
+        ax.loglog(r["dp"], _dist(r, 0, per_mass, sa), color=CHARCOAL, lw=1.1, ls=(0, (4, 2)),
                   label="background (SABR-220)", zorder=2)
 
 
-def _fig_legend(fig, ax):
-    """One legend row under the subtitle, so no panel's curves are covered."""
-    h, lab = ax.get_legend_handles_labels()
-    fig.legend(h, lab, loc="upper center", ncols=len(h), fontsize=8.5, bbox_to_anchor=(0.5, 0.925),
-               handlelength=2.6, columnspacing=1.6)
+def fig_timeseries_per_mass(data, out, tag):
+    rows = [("N3m", "N > 3 nm per mass\n[µg$^{-1}$ H$_2$SO$_4$]", "log"),
+            ("N10m", "N > 10 nm per mass\n[µg$^{-1}$ H$_2$SO$_4$]", "log"),
+            ("SAm", "surface area per mass\n[m$^2$ g$^{-1}$ H$_2$SO$_4$]", "log"),
+            ("m_ug", "particulate H$_2$SO$_4$ (box)\n[µg cm$^{-3}$]", "log")]
+    fig, axs = plt.subplots(len(rows), 2, figsize=(11, 11), sharex=True, sharey="row")
+    for j, cases in enumerate((ACROSS, ALONG)):
+        for i, (key, ylab, scale) in enumerate(rows):
+            ax = axs[i, j]
+            for dil in cases:
+                _band(ax, data, dil, key)
+            r0 = next(iter(data.values()))
+            if key != "m_ug":                                    # background aerosol's own ratio
+                ax.axhline(r0[key][0], color=CHARCOAL, lw=1.0, ls=(0, (4, 2)),
+                           label="background (SABR-220)" if (i, j) == (0, 0) else None)
+            ax.set_yscale(scale)
+            for d in EVAL_DAYS:
+                ax.axvline(d, color=SAGE, lw=0.8, ls=":", zorder=0)
+            if j == 0:
+                ax.set_ylabel(ylab, fontsize=10)
+            if i == 0:
+                _title(ax, COL_TITLE[j])
+            if i == len(rows) - 1:
+                ax.set_xlabel("day since release (06:00 local)")
+                h, lab = axs[0, j].get_legend_handles_labels()       # cases (+ background)
+                ax.legend(h, lab, fontsize=8.5, loc="upper center", bbox_to_anchor=(0.5, -0.32),
+                          ncols=2)
+    axs[0, 0].set_xlim(0, 10)
+    _finish(fig, "Plume aerosol per unit H2SO4 in particles\nEach quantity divided by the "
+              "particulate H2SO4 in the same box (dilution cancels; gas-phase H2SO4 is < 0.1% of "
+              "it, so this is also per H2SO4 produced). Bold: mass-weighted-mean V0; shading: V0 range; "
+              "dashed: the SABR-220 background's own ratio. Box values: background sulfate is < 5% "
+              f"of the total at day 10 except C5 (33%).{tag}")
+    _savefig(fig, out, "timeseries_v2_base_per_mass")
 
 
 def _nearest(r, day):
     return int(np.argmin(np.abs(r["t"] - day)))
 
 
-def fig_sizedist_day10(data, out, tag):
+def _dist(r, i, per_mass, sa=False):
+    y = r["dndlogdp"][i] * (np.pi * r["dp"] ** 2 if sa else 1.0)
+    if sa and per_mass:
+        return y * 1e-12 / (r["m_ug"][i] * 1e-6)                # m^2 g^-1 per dlogDp
+    return y / r["m_ug"][i] if per_mass else y
+
+
+def _ylim(axs, data, per_mass, sa=False, days=EVAL_DAYS):
+    if not per_mass and not sa:
+        return (1e-2, 3e5)
+    top = max(_dist(r, i, per_mass, sa).max() for r in data.values()
+              for i in (_nearest(r, d) for d in days))
+    return (top / 3e7, top * 3)
+
+
+def fig_sizedist_day10(data, out, tag, per_mass=False):
     fig, axs = plt.subplots(4, 2, figsize=(10, 12), sharex=True, sharey=True)
+    ylim = _ylim(axs, data, per_mass, days=(10,))
+    ylab = "dN/dlogD$_p$ per mass [µg$^{-1}$]" if per_mass else "dN/dlogD$_p$ [cm$^{-3}$]"
     for j, cases in enumerate((ACROSS, ALONG)):
         for i, dil in enumerate(cases):
             ax = axs[i, j]
-            _background(ax, data, dil)
+            _background(ax, data, dil, per_mass)
             for (d, v0), r in sorted(data.items()):
                 if d != dil:
                     continue
-                y = r["dndlogdp"][_nearest(r, 10)]
+                y = _dist(r, _nearest(r, 10), per_mass)
                 if v0 == rv.DEFAULT_V0:
                     ax.loglog(r["dp"], y, color=COLOR[dil], lw=1.9, zorder=3)
                 else:
                     ax.loglog(r["dp"], y, color=SLATE, lw=0.9, alpha=0.8, ls=V0_LS[v0], label=v0)
-            ax.set_ylim(1e-2, 3e5)
+            ax.set_ylim(*ylim)
             ax.set_xlim(*XLIM)
             _title(ax, LABEL[dil], fontsize=10.5, loc="left", color=COLOR[dil])
             if j == 0:
-                ax.set_ylabel("dN/dlogD$_p$ [cm$^{-3}$]", fontsize=9.5)
+                ax.set_ylabel(ylab, fontsize=9.5)
             if i == 3:
                 ax.set_xlabel("dry diameter [µm]")
-    _fig_legend(fig, axs[0, 0])
+    legend_ax = axs[0, 0]
     for j in range(2):
         axs[0, j].annotate(COL_TITLE[j], (0.5, 1.22), xycoords="axes fraction", ha="center",
                            fontsize=12, fontfamily=HEADLINE["family"], color=CHARCOAL)
-    fig.tight_layout(rect=(0, 0, 1, 0.895))
-    _suptitle(fig, "Day-10 size distribution\nBold: mass-weighted-mean V0; grey: the other V0 "
-              f"variants; dashed: the SABR-220 background (t = 0, also the entrained air).{tag}",
-              y=0.995)
-    _savefig(fig, out, "sizedist_day10_v2_grid")
+    head = ("Day-10 size distribution per unit H2SO4 in particles" if per_mass
+            else "Day-10 size distribution")
+    norm = (" Each distribution divided by the particulate H2SO4 mass in the same box; the background "
+            "line by the background's own sulfate." if per_mass else "")
+    _finish(fig, f"{head}\nBold: mass-weighted-mean V0; grey: the other V0 variants; dashed: the "
+            f"SABR-220 background (t = 0, also the entrained air).{norm}{tag}", legend_ax)
+    _savefig(fig, out, "sizedist_day10_v2_grid" + ("_per_mass" if per_mass else ""))
 
 
-def fig_sizedist_evaldays(data, out, tag):
+def fig_sizedist_evaldays(data, out, tag, per_mass=False, sa=False):
     fig, axs = plt.subplots(4, 2, figsize=(10, 12), sharex=True, sharey=True)
+    ylim = _ylim(axs, data, per_mass, sa)
+    if sa:
+        ylab = ("dSA/dlogD$_p$ per mass\n[m$^2$ g$^{-1}$]" if per_mass
+                else "dSA/dlogD$_p$ [µm$^2$ cm$^{-3}$]")
+    else:
+        ylab = "dN/dlogD$_p$ per mass [µg$^{-1}$]" if per_mass else "dN/dlogD$_p$ [cm$^{-3}$]"
     for j, cases in enumerate((ACROSS, ALONG)):
         for i, dil in enumerate(cases):
             ax = axs[i, j]
             r = data.get((dil, rv.DEFAULT_V0))
             if r is None:
                 continue
-            _background(ax, data, dil)
+            _background(ax, data, dil, per_mass, sa)
             for d in EVAL_DAYS:
-                ax.loglog(r["dp"], r["dndlogdp"][_nearest(r, d)], color=DAY_SHADE[d], lw=1.7,
-                          label=f"day {d}")
-            ax.set_ylim(1e-2, 3e5)
+                ax.loglog(r["dp"], _dist(r, _nearest(r, d), per_mass, sa), color=DAY_SHADE[d],
+                          lw=1.7, label=f"day {d}")
+            ax.set_ylim(*ylim)
             ax.set_xlim(*XLIM)
             _title(ax, LABEL[dil], fontsize=10.5, loc="left", color=COLOR[dil])
             if j == 0:
-                ax.set_ylabel("dN/dlogD$_p$ [cm$^{-3}$]", fontsize=9.5)
+                ax.set_ylabel(ylab, fontsize=9.5)
             if i == 3:
                 ax.set_xlabel("dry diameter [µm]")
-    _fig_legend(fig, axs[0, 0])
+    legend_ax = axs[0, 0]
     for j in range(2):
         axs[0, j].annotate(COL_TITLE[j], (0.5, 1.22), xycoords="axes fraction", ha="center",
                            fontsize=12, fontfamily=HEADLINE["family"], color=CHARCOAL)
-    fig.tight_layout(rect=(0, 0, 1, 0.895))
-    _suptitle(fig, "Size distribution on the evaluation days\nAt 06:00 local, mass-weighted-mean V0; "
-              f"dashed: the SABR-220 background (t = 0, also the entrained air).{tag}", y=0.995)
-    _savefig(fig, out, "sizedist_evaldays_v2")
+    what = "Surface-area distribution" if sa else "Size distribution"
+    head = f"{what} on the evaluation days" + (" per unit H2SO4 in particles" if per_mass else "")
+    norm = (" Divided by the particulate H2SO4 mass in the same box; the background line by the "
+            "background's own sulfate." if per_mass else "")
+    _finish(fig, f"{head}\nAt 06:00 local, mass-weighted-mean V0; dashed: the SABR-220 background "
+            f"(t = 0, also the entrained air).{norm}{tag}", legend_ax)
+    _savefig(fig, out, "sizedist" + ("_SA" if sa else "") + "_evaldays_v2"
+             + ("_per_mass" if per_mass else ""))
 
 
 def fig_banana(data, out, tag, sa=False):
@@ -248,9 +319,8 @@ def fig_banana(data, out, tag, sa=False):
                 ax.set_xlabel("day since release (06:00 local)")
             if j == 0:
                 ax.set_ylabel("dry diameter [µm]")
-    fig.tight_layout(rect=(0, 0, 0.9, 0.93))
-    _suptitle(fig, "Plume size-distribution evolution\nv2 base set, mass-weighted-mean V0, default "
-              f"microphysics.{tag}", y=0.995)
+    _finish(fig, "Plume size-distribution evolution\nv2 base set, mass-weighted-mean V0, default "
+            f"microphysics.{tag}", right=0.9)
     cax = fig.add_axes((0.92, 0.12, 0.02, 0.76))
     fig.colorbar(pc, cax=cax, label=label)
     _savefig(fig, out, "banana_v2_base_SA" if sa else "banana_v2_base")
@@ -273,6 +343,11 @@ def main(runs=None):
     fig_sizedist_evaldays(data, out, tag)
     fig_banana(data, out, tag)
     fig_banana(data, out, tag, sa=True)
+    # normalised to the H2SO4 in particles
+    fig_timeseries_per_mass(data, out, tag)
+    fig_sizedist_day10(data, out, tag, per_mass=True)
+    fig_sizedist_evaldays(data, out, tag, per_mass=True)
+    fig_sizedist_evaldays(data, out, tag, per_mass=True, sa=True)
 
 
 if __name__ == "__main__":
