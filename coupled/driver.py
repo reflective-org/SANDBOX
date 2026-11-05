@@ -431,7 +431,8 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
                                         coag_kernel_scale=float(scenario.coag_kernel_scale),
                                         water_every_process=bool(scenario.water_every_process),
                                         nuc_org_mass_frac=float(scenario.nuc_org_mass_frac),
-                                        molar_so4_transfer=bool(scenario.molar_so4_transfer))
+                                        molar_so4_transfer=bool(scenario.molar_so4_transfer),
+                                        n_coag_substeps=int(scenario.tomas_coag_substeps))
     tomas_active = tomas_step is not None
     tstate = initial_tomas_state(scenario) if tomas_active else None
     molar_so4 = bool(scenario.molar_so4_transfer)   # Mk[:,SRTSO4] is SO4 (96) vs H2SO4-equiv (98) mass

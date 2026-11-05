@@ -134,3 +134,32 @@ def test_invalid_options_rejected():
         CoupledScenario(**base, micro_prod_ref="nope")
     with pytest.raises(ValueError):
         CoupledScenario(**base, micro_handoff="nope")
+
+
+def test_tomas_coag_substeps_option():
+    # default 10 = TOMAS make_step's own default (v1 runs bitwise); validated int >= 1
+    base = dict(T=215.0, P=55.0, WTR=4.5, latitude=30.0, day_of_year=172, days=1)
+    assert CoupledScenario(**base).tomas_coag_substeps == 10
+    assert CoupledScenario(**base, tomas_coag_substeps=1).tomas_coag_substeps == 1
+    for bad in (0, -1, 1.0, True, "1"):
+        with pytest.raises(ValueError):
+            CoupledScenario(**base, tomas_coag_substeps=bad)
+
+
+def test_bridge_passes_coag_substeps_to_make_step(monkeypatch):
+    import inspect
+    import coupled.tomas_bridge as tb
+    from coupled.coupled_scenario import Switches
+    assert inspect.signature(tb.make_step).parameters["n_coag_substeps"].default == 10
+    seen = []
+    real = tb.make_step
+
+    def spy(*a, **k):
+        seen.append(k.get("n_coag_substeps"))
+        return real(*a, **k)
+    monkeypatch.setattr(tb, "make_step", spy)
+    sw = Switches(sulfur=True, nucleation=True, condensation=True, coagulation=True,
+                  aerosol_to_j=False, heating_to_t=False, dilution=False)
+    tb.make_microphysics_step(sw)
+    tb.make_microphysics_step(sw, n_coag_substeps=1)
+    assert seen == [10, 1]

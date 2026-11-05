@@ -195,7 +195,7 @@ def particle_sulfate_mw(molar_so4_transfer=False) -> float:
 
 
 def make_microphysics_step(switches, ion_pair_rate=0.0, coag_kernel_scale=1.0, water_every_process=False,
-                           nuc_org_mass_frac=0.1, molar_so4_transfer=False):
+                           nuc_org_mass_frac=0.1, molar_so4_transfer=False, n_coag_substeps=10):
     """Build the TOMAS ``step_fn(Nk,Mk,Gc,xk,temp,pres,boxvol,rh,alpha,dt,**kw)->(Nk,Mk,Gc)``.
 
     Uses the Marianna-validated scheme choices; SO2 chemistry is omitted. Returns ``None`` if no
@@ -209,13 +209,15 @@ def make_microphysics_step(switches, ion_pair_rate=0.0, coag_kernel_scale=1.0, w
     in the organic slot (TOMAS default 0.1; 0 = all sulfate). ``molar_so4_transfer`` (static) makes every
     TOMAS gas->particle sulfate transfer (nucleation incl. its gas-limited clamp, condensation incl. the
     tiny-sink dump) conserve moles: kg H2SO4 leaving ``Gc`` -> x96/98 kg SO4 into ``Mk`` (L13); False is
-    TOMAS's kg-for-kg default, bitwise."""
+    TOMAS's kg-for-kg default, bitwise. ``n_coag_substeps`` (static) is the number of forward-Euler
+    coagulation sub-steps per call (TOMAS default 10, bitwise)."""
     procs = active_processes(switches)
     if not procs:
         return None
     step = make_step(procs, cond_method=_COND_METHOD, nucl_scheme=_NUCL_SCHEME,
                      water_scheme=_WATER_SCHEME, water_every_process=bool(water_every_process),
-                     molar_so4_transfer=bool(molar_so4_transfer))
+                     molar_so4_transfer=bool(molar_so4_transfer),
+                     n_coag_substeps=int(n_coag_substeps))
     fion = float(ion_pair_rate)
     coag_scale = float(coag_kernel_scale)
     org_frac = float(nuc_org_mass_frac)

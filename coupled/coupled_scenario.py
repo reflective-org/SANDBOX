@@ -202,6 +202,10 @@ class CoupledScenario:
     # coupled readers of that slot (particulate_S, h2so4wp) use MW 96. False = the kg-for-kg v1 behaviour
     # (slot read as H2SO4-equivalent mass, AD-3.8), bitwise.
     molar_so4_transfer: bool = False
+    # Forward-Euler coagulation sub-steps INSIDE each TOMAS call (tomas-jax make_step n_coag_substeps;
+    # default 10 = TOMAS's own default, bitwise the v1 runs). The driver's adaptive micro-step already
+    # resolves the coupling, so 1 is enough there and ~3x cheaper per run (RUNS_V2.md L31).
+    tomas_coag_substeps: int = 10
 
     # --- aerosol -> photolysis (Phase 4) ---
     # Where the box aerosol sits in the TUV-x RT column when switches.aerosol_to_j is on. By DEFAULT
@@ -251,6 +255,9 @@ class CoupledScenario:
         if not self.micro_nuc_nref_cm3 > 0.0:
             raise ValueError(f"micro_nuc_nref_cm3 must be > 0 (denominator floor of dN/N), got "
                              f"{self.micro_nuc_nref_cm3}")
+        if isinstance(self.tomas_coag_substeps, bool) or not isinstance(self.tomas_coag_substeps, int) \
+                or self.tomas_coag_substeps < 1:
+            raise ValueError(f"tomas_coag_substeps must be an int >= 1, got {self.tomas_coag_substeps!r}")
         if self.days < 1:
             raise ValueError(f"days must be >= 1, got {self.days}")
         if self.aerosol_thickness_km <= 0.0:
