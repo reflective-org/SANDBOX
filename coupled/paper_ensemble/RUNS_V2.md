@@ -66,6 +66,7 @@ pointers live in the plan and the commits; this page is the one to read.
 | L28 | (2026-11-04) Micro-step control converged to ≤ 1% (Ali's bar: within 1%, never over 2%): the step is limited against the gas H₂SO₄ actually standing (`micro_prod_ref="standing"`), the step's production reaches TOMAS at the step midpoint (`micro_handoff="mid"`, symmetric split), `micro_eps` = 0.01, cap 20 s, floor 1e-4 s (`run_v2.MICRO_SETTINGS`, saved per run as `micro_settings`; outputs made with other settings are `stale_numerics`). The v1 settings (envelope metric, end handoff, eps 0.1, cap 20 s) were 5–47% off on N>3 nm, up to 8% on N>100 nm and 20–24% on gas H₂SO₄ at day 10. The opt-in nucleation-aware rule (`micro_nuc_eps`) did not help and stays off. See "Time-step convergence" |
 | L29 | (2026-11-04) Particle number is reported as N>3 nm and N>10 nm. Total N is not converged even at the finest setting (by day 70–99% of it is < 3 nm and moves 5–14% between fine settings); it stays in the outputs but carries no conclusions |
 | L30 | (2026-11-04) The mass-weighted mean (`mwmean`) is the baseline V0, and σ stays 25 m. `ens` runs its 144 mwmean members first (`launch_v2 ens 12 --v0 mwmean`; 8 of them are base runs, so 136 new). The other 576 (peak, c1sig, tophat, c2sig) are deferred: a plain `launch_v2 ens 12` runs them later if needed. The base set keeps all five V0 (V0 sensitivity at default microphysics). Considered and not adopted: a uniform 100 m × 100 m × 15 km box (6.27e13 molec cm⁻³) |
+| L31 | (2026-11-05) TOMAS coagulation runs 1 forward-Euler sub-step per TOMAS call instead of TOMAS's default 10 (`tomas_coag_substeps = 1`, in `run_v2.MICRO_SETTINGS`, so outputs made with 10 are `stale_numerics`). The driver's micro-step already limits each call to a 1% H₂SO₄ change (0.5–3 s), so the inner sub-steps were redundant. 10-day check: within 0.2% of the 10-sub-step runs on every reported quantity and 3.3–3.5× faster. The 40 base runs made with 10 sub-steps (2026-11-04) are kept in `runs_v2_pre_L31/` |
 
 **Not bitwise-comparable to v1 even at default knobs:** the TOMAS pin change alone alters the water
 scheme and the 80-bin coagulation algorithm (TFL → linear sub-bin). Any v1-vs-v2 comparison is a
@@ -138,10 +139,11 @@ default-microphysics sets (L25).
 | constoh | 1 | C1 with OH pinned at 5e5 cm⁻³, V0 = mwmean |
 | hour | — | blocked on O3 |
 
-Runs are 10 d (L26). At the L28 settings a 10-day run took 41 min (C1), 90 min (C1, nucleation
-×100) and 175 min (C4a) on one core, depending mostly on how slowly the case dilutes. All 864 unique runs
-on 12 workers come to roughly a week; the L30 first stage (144 ens members, 144 controls,
-geo, site60N, constoh) roughly 2–3 days, since it has about a quarter of the plume runs. Early stop (L26) would not save time: in all 40 base
+Runs are 10 d (L26). At the L28 + L31 settings a 10-day run took 12 min (C1), 26 min (C1,
+nucleation ×100) and 50 min (C4a) on one core (3 runs sharing the machine; 41, 90 and 175 min
+with 10 coagulation sub-steps), depending mostly on how slowly the case dilutes. All 864 unique
+runs on 12 workers came to roughly a week before L31; the L30 first stage (144 ens members, 144 controls,
+geo, site60N, constoh) has about a quarter of the plume runs: roughly a day at L31 speed. Early stop (L26) would not save time: in all 40 base
 runs made with the v1 step (2026-11-03) wet SA at day 10 was still 4.6–980× background. The 40 base and 49 smoke runs made with the v1 step settings
 (2026-11-03) are kept in `runs_v2_pre_L28/` and are not v2 results.
 
@@ -157,12 +159,14 @@ brackets, against the extrapolated converged value:
 | standing, end, eps 0.05 | 15 / 44 min | +2.3 to +4.5% | ≤ 1.4% | ≤ 0.4% | ≤ 0.6% | 0.0% | −2.6% |
 | standing, mid, eps 0.02 | 28 / 98 min | +0.7 to +1.1% (to 1.4%) | ≤ 0.4% | ≤ 0.2% | ≤ 0.3% | 0.0% | ≤ 0.3% |
 | **standing, mid, eps 0.01 (L28)** | 41 / 175 min | +0.2 to +0.4% (to 0.8%) | ≤ 0.2% | ≤ 0.1% | ≤ 0.3% (to 0.6%) | 0.0% | ≤ 0.3% (to 0.5%) |
+| **+ 1 coag sub-step (L31)** | 12 / 50 min | +0.2 to +0.4% | ≤ 0.1% | ≤ 0.1% | ≤ 0.3% | 0.0% | ≤ 0.3% |
 
 The midpoint handoff removes most of the gas H₂SO₄ error (first- to second-order split) but not the
 N>3 nm error, which comes from nucleation/coagulation within a step and shrinks only with the step.
-The extrapolated values assume first-order convergence in eps (Richardson from eps 0.01 and 0.005;
+The L31 row is measured against the same eps 0.005 reference (10 coagulation sub-steps); it
+is within 0.2% of the L28 row. The extrapolated values assume first-order convergence in eps (Richardson from eps 0.01 and 0.005;
 the estimate from eps 0.02 and 0.01 agrees within half a point). Wall times: eps 0.05 and 0.02
-with 13 runs sharing 14 cores, eps 0.01 with 3 runs. Scripts and data: session scratchpad
+with 13 runs sharing 14 cores, eps 0.01 (with and without L31) with 3 runs. Scripts and data: session scratchpad
 `convergence/` (run_member10.py, analyze10.py).
 
 ## Results so far

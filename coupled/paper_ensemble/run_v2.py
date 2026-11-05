@@ -137,7 +137,8 @@ OH_PIN_MOLEC_CM3 = 5.0e5                              # legacy_v1/make_constant_
 # v2 (L28): micro-step control converged to <= ~1% at days 1/2/7/10 (10-d convergence test,
 # 2026-11-04): standing-H2SO4 metric, midpoint (Strang) handoff, eps 1%, cap 20 s
 MICRO_SETTINGS = dict(micro_eps=0.01, micro_cap_s=20.0, micro_floor_s=1.0e-4,
-                      micro_prod_ref="standing", micro_handoff="mid", micro_nuc_eps=0.0)
+                      micro_prod_ref="standing", micro_handoff="mid", micro_nuc_eps=0.0,
+                      tomas_coag_substeps=1)                       # L31: 1 coag sub-step per TOMAS call
 
 # --- 1 t SO2 into the initial plume volume V0 (L21) -----------------------------------------------
 _AVOG = 6.02214076e23

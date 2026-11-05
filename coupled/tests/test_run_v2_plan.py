@@ -391,6 +391,7 @@ def test_v2_runs_use_the_l28_micro_step_settings():
     sc = rv.build_scenario(rv.cases_for("base")[0])
     assert (sc.micro_eps, sc.micro_cap_s, sc.micro_prod_ref, sc.micro_handoff) == (
         0.01, 20.0, "standing", "mid")
+    assert sc.tomas_coag_substeps == 1                               # L31
     assert json.loads(rv.micro_settings_json(sc)) == rv.MICRO_SETTINGS
     row = rv.manifest_row("base", 0, rv.cases_for("base")[0])
     assert row["micro_handoff"] == "mid" and row["micro_eps"] == 0.01
