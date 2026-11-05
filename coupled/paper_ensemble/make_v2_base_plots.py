@@ -143,6 +143,21 @@ def fig_timeseries(data, out, tag):
     _savefig(fig, out, "timeseries_v2_base")
 
 
+def _background(ax, data, dil):
+    """The SABR-220 background (the t = 0 distribution, also the entrained air) as a reference line."""
+    r = next((v for k, v in data.items() if k[0] == dil), None)
+    if r is not None:
+        ax.loglog(r["dp"], r["dndlogdp"][0], color=CHARCOAL, lw=1.1, ls=(0, (4, 2)),
+                  label="background (SABR-220)", zorder=2)
+
+
+def _fig_legend(fig, ax):
+    """One legend row under the subtitle, so no panel's curves are covered."""
+    h, lab = ax.get_legend_handles_labels()
+    fig.legend(h, lab, loc="upper center", ncols=len(h), fontsize=8.5, bbox_to_anchor=(0.5, 0.925),
+               handlelength=2.6, columnspacing=1.6)
+
+
 def _nearest(r, day):
     return int(np.argmin(np.abs(r["t"] - day)))
 
@@ -152,6 +167,7 @@ def fig_sizedist_day10(data, out, tag):
     for j, cases in enumerate((ACROSS, ALONG)):
         for i, dil in enumerate(cases):
             ax = axs[i, j]
+            _background(ax, data, dil)
             for (d, v0), r in sorted(data.items()):
                 if d != dil:
                     continue
@@ -167,13 +183,14 @@ def fig_sizedist_day10(data, out, tag):
                 ax.set_ylabel("dN/dlogD$_p$ [cm$^{-3}$]", fontsize=9.5)
             if i == 3:
                 ax.set_xlabel("dry diameter [µm]")
-    axs[0, 0].legend(fontsize=8, loc="upper right", title="other V0", title_fontsize=8)
+    _fig_legend(fig, axs[0, 0])
     for j in range(2):
         axs[0, j].annotate(COL_TITLE[j], (0.5, 1.22), xycoords="axes fraction", ha="center",
                            fontsize=12, fontfamily=HEADLINE["family"], color=CHARCOAL)
-    fig.tight_layout(rect=(0, 0, 1, 0.915))
+    fig.tight_layout(rect=(0, 0, 1, 0.895))
     _suptitle(fig, "Day-10 size distribution\nBold: mass-weighted-mean V0; grey: the other V0 "
-              f"variants.{tag}", y=0.995)
+              f"variants; dashed: the SABR-220 background (t = 0, also the entrained air).{tag}",
+              y=0.995)
     _savefig(fig, out, "sizedist_day10_v2_grid")
 
 
@@ -185,6 +202,7 @@ def fig_sizedist_evaldays(data, out, tag):
             r = data.get((dil, rv.DEFAULT_V0))
             if r is None:
                 continue
+            _background(ax, data, dil)
             for d in EVAL_DAYS:
                 ax.loglog(r["dp"], r["dndlogdp"][_nearest(r, d)], color=DAY_SHADE[d], lw=1.7,
                           label=f"day {d}")
@@ -195,13 +213,13 @@ def fig_sizedist_evaldays(data, out, tag):
                 ax.set_ylabel("dN/dlogD$_p$ [cm$^{-3}$]", fontsize=9.5)
             if i == 3:
                 ax.set_xlabel("dry diameter [µm]")
-    axs[0, 0].legend(fontsize=8.5, loc="upper right")
+    _fig_legend(fig, axs[0, 0])
     for j in range(2):
         axs[0, j].annotate(COL_TITLE[j], (0.5, 1.22), xycoords="axes fraction", ha="center",
                            fontsize=12, fontfamily=HEADLINE["family"], color=CHARCOAL)
-    fig.tight_layout(rect=(0, 0, 1, 0.915))
-    _suptitle(fig, "Size distribution on the evaluation days\nAt 06:00 local, mass-weighted-mean V0."
-              f"{tag}", y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.895))
+    _suptitle(fig, "Size distribution on the evaluation days\nAt 06:00 local, mass-weighted-mean V0; "
+              f"dashed: the SABR-220 background (t = 0, also the entrained air).{tag}", y=0.995)
     _savefig(fig, out, "sizedist_evaldays_v2")
 
 
