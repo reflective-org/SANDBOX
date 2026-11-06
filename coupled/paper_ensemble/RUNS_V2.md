@@ -190,6 +190,36 @@ within 0.1%. In the nucleation ×100 member SA and r_eff at days 1–2 scatter b
 120, 60 and 30 s with no trend: a noise floor from the 1% micro-step tolerance (L28), not the
 coupling. Scripts and data: session scratchpad `convergence/` (run_dt.py, analyze_dt.py).
 
+## v2.1 runs and figure set (2026-11-06)
+
+`runs_v2.1/` (git-ignored) holds all 864 runs (ens 720 incl. the 40 base, ens_ctrl 144 incl. the 8
+ctrl), made on H200 GPUs with the batched driver (`gpu_probe/batched_driver.py`, branch
+`gpu/h200-probe`; against 267 CPU runs the worst difference is < 0.02%). They predate L31 and L32:
+**600 s coupling and 10 coagulation sub-steps**. L31 changes results by ≤ 0.2%; the 600 s coupling is
+up to 3.6–3.9% off on N > 100 nm at day 1 in the C1 cases and within 1% from day 2 on (see
+"Coupling-interval convergence"). Every figure says so in its subtitle.
+
+Figure decisions (Ali, 2026-11-06):
+- ensemble statistics use the mass-weighted-mean V0 members only: per dilution case 6 nucleation
+  triplets, 6 coagulation triplets, 9 α pairs (48 / 48 / 72 matched sets)
+- evaluation days 1, 2, 7, 10 in every end-state figure (no t*)
+- case studies: C1 and C2 side by side (mwmean, the other knobs ×1)
+- box quantities; size distributions and bananas also per unit H2SO4 in particles; control-subtracted
+  metrics and radiative forcing are the next batch
+
+Scripts (from `SANDBOX/`; output in `runs_v2.1/plots/<set>/`, PNG + PDF):
+- `python -m coupled.paper_ensemble.make_v2_axis_plots`: `nucleation/`, `coagulation/`,
+  `condensation/`. Slopegraph, amplification ratios, elasticity, size distribution by level (days
+  1/2/7/10, absolute and per mass), time-resolved ratio, C1/C2 bananas (number, SA, per mass), ratio
+  bananas, snapshots (log, linear, per mass), totals
+- `python -m coupled.paper_ensemble.make_v2_dilution_plots`: `dilution/` (tornado, time series with
+  the microphysics range, size-distribution grids per evaluation day (absolute and per mass), SO₂
+  conversion, NPF outcome map, V0 bananas for C1/C2) and `oxidation/` (OH, HO₂, H₂O₂, O₃ by case;
+  sulfur budget for C1/C2)
+- `python -m coupled.paper_ensemble.make_v2_base_plots coupled/paper_ensemble/runs_v2.1/base`: `base/`
+- shared reduction and styling: `v2_paper_lib.py` (cache `runs_v2.1/plots/_reduced_v2.npz`; runs
+  are put on the shared 600 s grid, dropping each case's bisected early edges)
+
 ## Results so far
 
 The gate-G2 runs (2026-10-28; figures in `runs_v2/plots/g2_*.png`) used the **superseded**

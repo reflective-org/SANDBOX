@@ -353,6 +353,9 @@ def main(runs=None):
     tag = "" if len(data) == 40 else f" {len(data)} of 40 runs finished."
     if "pre_L31" in runs:
         tag += " Runs with 10 TOMAS coagulation sub-steps (pre-L31; within 0.2% of L31)."
+    else:
+        from coupled.paper_ensemble.v2_paper_lib import numerics_tag
+        tag += numerics_tag(os.path.dirname(os.path.abspath(runs)))
     fig_timeseries(data, out, tag)
     fig_sizedist_day10(data, out, tag)
     fig_sizedist_evaldays(data, out, tag)
