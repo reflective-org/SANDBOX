@@ -15,6 +15,7 @@ Four documents, four roles:
 
 | File | What it answers |
 |---|---|
+| `PAPER_V2.md` | **v2 at a glance**: the simulation setup and the main decisions, for co-authors |
 | `README.md` (this file) | How do I set up, rerun the simulations, and remake the figures? |
 | `FIGURES.md` | What has been run, and which script makes which figure? (the inventory) |
 | `DECISIONS.md` | Why was each modeling/analysis choice made? (dated rationale log) |
