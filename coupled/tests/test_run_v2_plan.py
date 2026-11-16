@@ -12,9 +12,9 @@ import pytest
 
 from coupled.paper_ensemble import run_v2 as rv
 
-COUNTS = {"base": 40, "ens": 720, "ctrl": 8, "ens_ctrl": 144, "constoh": 1,
+COUNTS = {"base": 40, "ens": 720, "ctrl": 8, "ens_ctrl": 144, "constoh": 2, "constoh_ctrl": 2,
           "geo": 8, "geo_ctrl": 8, "site60N": 8, "site60N_ctrl": 8}
-SET_SITE = {"base": "30N", "ens": "30N", "ctrl": "30N", "ens_ctrl": "30N", "constoh": "30N",
+SET_SITE = {"base": "30N", "ens": "30N", "ctrl": "30N", "ens_ctrl": "30N", "constoh": "30N", "constoh_ctrl": "30N",
             "geo": "geo", "geo_ctrl": "geo", "site60N": "60N", "site60N_ctrl": "60N"}
 MANIFEST_COLS = {
     "set", "index", "case_id", "kind", "output_dir", "paired_case_id", "paired_control_id",
@@ -165,6 +165,23 @@ def test_spike_is_the_same_molecules_at_60N():
     assert sc.concentrations["SO2"] * 1e-12 * M == pytest.approx(rv.SO2_SPIKE_MOLEC_CM3["mwmean"])
 
 
+def test_constoh_ctrl_twins_are_pinned_no_injection_runs():
+    need_ic("constoh_ctrl")
+    from config import air_number_density
+    M = air_number_density(55.0, 210.0)
+    plume, ctrl = rv.cases_for("constoh"), rv.cases_for("constoh_ctrl")
+    assert [c.dil for c in plume] == [c.dil for c in ctrl] == ["C1", "C2"]
+    for p, c in zip(plume, ctrl):
+        assert c.case_id == p.base_id + "__ctrl__constOH" and c.oh_pinned and p.oh_pinned
+        assert rv.paired_spec(c) == p
+        sc = rv.build_scenario(c)
+        assert sc.concentrations["OH"] * 1e-12 * M == pytest.approx(5.0e5)
+        assert sc.concentrations["SO2"] == pytest.approx(c.site.bg_so2_ppt)
+    assert not any(c.oh_pinned for c in rv.cases_for("ctrl"))
+    with pytest.raises(ValueError):
+        rv.CaseSpec("C1", oh_pin=True)
+
+
 def test_constoh_pins_oh_initial_value():
     need_ic("constoh")
     from config import air_number_density
@@ -185,7 +202,7 @@ def test_plan_writes_manifest(name, capsys):
     assert len({r["case_id"] for r in rows}) == COUNTS[name]
     assert all(len(r["tomas_jax_sha"]) == 40 for r in rows)
     assert all(r["molar_so4_transfer"] == "True" for r in rows)
-    expected = {"C1"} if name == "constoh" else set(rv.DILUTION_CASES)
+    expected = set(rv.CONSTOH_CASES) if name.startswith("constoh") else set(rv.DILUTION_CASES)
     assert {r["dilution_regime"] for r in rows} == expected
     assert all(r["sigma_z0_m"] and r["kz_schedule"] for r in rows)
     burst = [r for r in rows if r["dilution_regime"] in ("C3", "C3a")]
@@ -199,7 +216,7 @@ def test_plan_writes_manifest(name, capsys):
     assert {r["background_dist"] for r in rows} == {site.background_dist}
     assert {float(r["dilution_background_SO2_ppt"]) for r in rows} == {site.bg_so2_ppt}
     if name.endswith("ctrl"):
-        assert all(r["paired_case_id"] == r["case_id"][:-len("__ctrl")] for r in rows)
+        assert all(r["paired_case_id"] == r["case_id"].replace("__ctrl", "", 1) for r in rows)
         assert all("__V0mwmean__" in r["paired_case_id"] for r in rows)
     # V0 columns consistent: variant <-> V0_cm3 <-> SO2_init (1 t / V0, or the background SO2)
     for r in rows:

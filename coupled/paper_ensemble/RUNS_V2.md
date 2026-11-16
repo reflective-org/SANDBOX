@@ -68,6 +68,8 @@ pointers live in the plan and the commits; this page is the one to read.
 | L30 | (2026-11-04) The mass-weighted mean (`mwmean`) is the baseline V0, and σ stays 25 m. `ens` runs its 144 mwmean members first (`launch_v2 ens 12 --v0 mwmean`; 8 of them are base runs, so 136 new). The other 576 (peak, c1sig, tophat, c2sig) are deferred: a plain `launch_v2 ens 12` runs them later if needed. The base set keeps all five V0 (V0 sensitivity at default microphysics). Considered and not adopted: a uniform 100 m × 100 m × 15 km box (6.27e13 molec cm⁻³) |
 | L31 | (2026-11-05) TOMAS coagulation runs 1 forward-Euler sub-step per TOMAS call instead of TOMAS's default 10 (`tomas_coag_substeps = 1`, in `run_v2.MICRO_SETTINGS`, so outputs made with 10 are `stale_numerics`). The driver's micro-step already limits each call to a 1% H₂SO₄ change (0.5–3 s), so the inner sub-steps were redundant. 10-day check: within 0.2% of the 10-sub-step runs on every reported quantity and 3.3–3.5× faster. The 40 base runs made with 10 sub-steps (2026-11-04) are kept in `runs_v2_pre_L31/` |
 | L32 | (2026-11-05) Operator-split coupling interval 60 s instead of 600 s (`dt_couple = 60`, in `run_v2.MICRO_SETTINGS`, so outputs made at 600 s are `stale_numerics`); output is still saved every 600 s (`run_v2.OUTPUT_DT_S`, plus the first 600 s and the last time; the kept states are bitwise the same as saving every interval). At 600 s, N>100 nm at day 1 was 3.6–3.9% off in the C1 cases; at 60 s the worst error is about 0.5% against the extrapolated limit. Days 2–10 are within 1% at any interval. Cost 1.6–2.7× the 600 s wall time. See "Coupling-interval convergence" |
+| L33 | (2026-11-06) Figures that compare plumes across backgrounds or dilution speeds normalise to the plume: (run − no-injection control) distribution divided by (run − control) particulate H₂SO₄ mass (H₂SO₄, as in the other per-mass figures, so all are comparable). First use: `4paper/f13_background_bananas` (SA per g plume H₂SO₄, m² g⁻¹). Why: the AER-2D background holds 3.5e-6 µg S cm⁻³ of particulate S, ≈ 35× the C1 plume sulfate at day 10, so dividing by all box sulfate would mostly normalise the background. Negative cells from the subtraction are drawn at the lowest colour. For the SABR-220 backgrounds they are round-off (< 1e-4 of Σ\|ΔSA\|); for AER-2D fast (C1) they are 0.9% of Σ\|ΔSA\| and real: plume H₂SO₄ condensing on the large background particles moves them out of their 0.15–0.25 µm bins (C2: 0.04%) |
+| L34 | (2026-11-06) Constant-OH runs (OH pinned at 5e5 cm⁻³) for C1 **and C2** (fast / slow, f16), each with a no-injection twin that has OH pinned too (`constoh_ctrl`, id suffix `__ctrl__constOH`), so the constant-OH plume is normalised against a control with the same chemistry (L33). Run locally at L31/L32 numerics into `runs_v2/constoh*`. The interactive row of f16 uses the runs_v2.1 C1/C2 runs and controls |
 
 **Not bitwise-comparable to v1 even at default knobs:** the TOMAS pin change alone alters the water
 scheme and the 80-bin coagulation algorithm (TFL → linear sub-bin). Any v1-vs-v2 comparison is a
@@ -137,7 +139,8 @@ default-microphysics sets (L25).
 | oat | — | retired (L22): a subset of ens |
 | geo | 8 | aer_geo background (N 120 cm⁻³, Dp 300 nm, σg 1.7), 100 ppt SO₂, ss100IC, V0 = mwmean |
 | site60N | 8 | 60N/15 km/120 hPa, 60N ss20IC, V0 = mwmean |
-| constoh | 1 | C1 with OH pinned at 5e5 cm⁻³, V0 = mwmean |
+| constoh | 2 | C1 and C2 with OH pinned at 5e5 cm⁻³, V0 = mwmean (C2 added for f16, L34) |
+| constoh_ctrl | 2 | no-injection twins of constoh, OH pinned too (L34) |
 | hour | — | blocked on O3 |
 
 Runs are 10 d (L26). At the L28 + L31 settings with 600 s coupling a 10-day run took 12 min (C1), 26 min (C1,
@@ -217,6 +220,7 @@ Scripts (from `SANDBOX/`; output in `runs_v2.1/plots/<set>/`, PNG + PDF):
   conversion, NPF outcome map, V0 bananas for C1/C2) and `oxidation/` (OH, HO₂, H₂O₂, O₃ by case;
   sulfur budget for C1/C2)
 - `python -m coupled.paper_ensemble.make_v2_base_plots coupled/paper_ensemble/runs_v2.1/base`: `base/`
+- `python -m coupled.paper_ensemble.make_4paper_plots`: `4paper/`, the paper figures in Marianna's layout (family colours Low/Med/High Kz, Burst; solid fast, dashed slow): dilution time series, OH (f08), sulfur budget (f09, fast/slow rows), totals (f17: total number as in v1 at Ali's request, 2026-11-06, despite L29), size snapshots f15/f18/fS05 at 06:00 local (= N d after release, instantaneous), plus 12:00 (N − 0.75 d), the day-N 24-h mean (ratio of time means for per-mass) and 12:00 with 06:00 faded (2026-11-13), background bananas (f13, fast/slow columns, per plume H₂SO₄, L33; the 60N and AER-2D rows wait for the geo/site60N runs and their controls)
 - shared reduction and styling: `v2_paper_lib.py` (cache `runs_v2.1/plots/_reduced_v2.npz`; runs
   are put on the shared 600 s grid, dropping each case's bisected early edges)
 

@@ -56,7 +56,9 @@ Named run sets (``SETS``), selected on the CLI:
                     any ens member (any V0) to its twin
   oat               RETIRED (L22): the one-at-a-time members are a subset of ens; asking for it
                     raises and points to ens
-  constoh       1   30N: C1 with OH pinned at 5e5 molec cm^-3 (as legacy_v1/make_constant_oh_banana)
+  constoh       2   30N: C1 and C2 with OH pinned at 5e5 molec cm^-3 (as
+                    legacy_v1/make_constant_oh_banana; C2 added 2026-11-06 for the fast / slow f16)
+  constoh_ctrl  2   no-injection twins of constoh, OH pinned too (``__ctrl__constOH``; L34)
   geo           8   the eight dilution cases on the geo site (aer_geo)
   geo_ctrl      8   no-injection twins of the geo set (O5 still open: defined, not yet approved)
   site60N       8   the eight dilution cases at 60N/15 km (O4: same sigma/Kz/S as 30N)
@@ -226,10 +228,18 @@ class CaseSpec:
     coag_kernel_scale: float = 1.0
     site: Site = SITE_30N
     v0: str = DEFAULT_V0                      # V0 variant (L21); a ctrl twin keeps DEFAULT_V0
+    oh_pin: bool = False                      # ctrl twin of a constoh case: OH pinned too (L34)
 
     def __post_init__(self):
         if self.v0 not in V0_CM3:
             raise ValueError(f"unknown V0 variant {self.v0!r}; known: {V0_VARIANTS}")
+        if self.oh_pin and self.kind != "ctrl":
+            raise ValueError("oh_pin is for ctrl twins; a pinned plume case is kind='constoh'")
+
+    @property
+    def oh_pinned(self):
+        """OH held at OH_PIN_MOLEC_CM3 (a constoh case or its pinned ctrl twin)."""
+        return self.kind == "constoh" or self.oh_pin
 
     @property
     def base_id(self):
@@ -241,7 +251,8 @@ class CaseSpec:
 
     @property
     def case_id(self):
-        return self.base_id + {"plume": "", "ctrl": "__ctrl", "constoh": "__constOH"}[self.kind]
+        return (self.base_id + {"plume": "", "ctrl": "__ctrl", "constoh": "__constOH"}[self.kind]
+                + ("__constOH" if self.oh_pin else ""))
 
     @property
     def microphysics(self):
@@ -288,8 +299,16 @@ def _ens_ctrl(set_name):
     return [CaseSpec(d, kind="ctrl", **m) for d in DILUTION_CASES for m in MICROPHYSICS_COMBOS]
 
 
+CONSTOH_CASES = ("C1", "C2")                 # fast / slow Med Kz (f16); C1 first keeps its index
+
+
 def _constoh(set_name):
-    return [CaseSpec("C1", kind="constoh", v0=v) for v in v0_variants_for(set_name)]
+    return [CaseSpec(d, kind="constoh", v0=v) for d in CONSTOH_CASES
+            for v in v0_variants_for(set_name)]
+
+
+def _constoh_ctrl(set_name):
+    return [CaseSpec(d, kind="ctrl", oh_pin=True) for d in CONSTOH_CASES]
 
 
 #: set name -> function(set_name) returning its ordered list of CaseSpec (or raising
@@ -301,6 +320,7 @@ SETS = {
     "ctrl": _ctrl,
     "ens_ctrl": _ens_ctrl,
     "constoh": _constoh,
+    "constoh_ctrl": _constoh_ctrl,
     "geo": functools.partial(_base, site=SITES["geo"]),
     "geo_ctrl": functools.partial(_ctrl, site=SITES["geo"]),
     "site60N": functools.partial(_base, site=SITES["60N"]),
@@ -389,7 +409,7 @@ def build_scenario(spec, days=MAX_DAYS):
         conc["SO2"] = site.bg_so2_ppt                         # no injection: background SO2
     else:
         conc["SO2"] = SO2_SPIKE_MOLEC_CM3[spec.v0] / M * 1e12  # 1 t / V0 (same molecules/V0)
-    if spec.kind == "constoh":
+    if spec.oh_pinned:
         conc["OH"] = OH_PIN_MOLEC_CM3 / M * 1e12
     return CoupledScenario(
         T=site.T, P=site.P, WTR=site.WTR, latitude=site.latitude, longitude=_LON, day_of_year=_DOY,
@@ -410,8 +430,10 @@ def build_scenario(spec, days=MAX_DAYS):
 
 def paired_spec(spec):
     """The plume case a ctrl twin is paired to for its manifest row and (EARLY_STOP only) its
-    length: same site, dilution case and microphysics, at DEFAULT_V0."""
-    return CaseSpec(spec.dil, site=spec.site, v0=DEFAULT_V0, **spec.microphysics)
+    length: same site, dilution case and microphysics, at DEFAULT_V0 (the constoh case for a
+    pinned twin)."""
+    return CaseSpec(spec.dil, kind="constoh" if spec.oh_pin else "plume", site=spec.site,
+                    v0=DEFAULT_V0, **spec.microphysics)
 
 
 def paired_base_npz(spec):
@@ -533,7 +555,7 @@ def manifest_row(set_name, i, spec):
         SO2_init_molec_cm3=(SO2_SPIKE_MOLEC_CM3[spec.v0] if injected
                             else spec.site.bg_so2_ppt * 1e-12 * M),
         SO2_injected_tonne=(1.0 if injected else 0.0),
-        oh_pinned_molec_cm3=(OH_PIN_MOLEC_CM3 if spec.kind == "constoh" else ""),
+        oh_pinned_molec_cm3=(OH_PIN_MOLEC_CM3 if spec.oh_pinned else ""),
         days=days, days_source=days_src, max_days=MAX_DAYS, early_stop=(EARLY_STOP and spec.kind != "ctrl"),
         DT=sc.DT, photolysis=sc.photolysis,
         aerosol_to_j=sc.switches.aerosol_to_j, heating_to_t=sc.switches.heating_to_t, M_air=M,
@@ -601,7 +623,7 @@ def run_one(set_name, spec):
     os.makedirs(out, exist_ok=True)
     days, _src = resolved_days(spec)
     sc = build_scenario(spec, days)
-    if spec.kind == "constoh":
+    if spec.oh_pinned:
         _install_oh_pin()
     stop = make_stop(sc) if (EARLY_STOP and spec.kind != "ctrl") else None
     t0 = time.time()
@@ -631,7 +653,7 @@ def run_one(set_name, spec):
              ic_file=os.path.relpath(ic_path(spec.site), _SANDBOX), ic_sha256=ic_sha256(spec.site),
              micro_settings=micro_settings_json(sc))
     os.replace(tmp, final)
-    if spec.kind == "constoh":
+    if spec.oh_pinned:
         oh = x[:, IDX["OH"]]
         print(f"OH pinned check: min={oh.min():.6g} max={oh.max():.6g} "
               f"(target {OH_PIN_MOLEC_CM3:.6g})", flush=True)
