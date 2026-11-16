@@ -169,12 +169,67 @@ def fig_sulfur_inbox():
         print(f"  {fname}")
 
 
+DIL_COLORS = {"D2 med dilution": "#1f6fb4", "D1 low dilution": "#d03b3b"}
+
+
+def fig_ozone():
+    """In-plume O3 under D2 med vs D1 low dilution: absolute mixing ratio, anomaly vs the
+    dilution background (= the spun-up IC O3, which V(t) relaxes the box toward), and the
+    dilution factor V/V0 that drives the relaxation."""
+    fig, axs = plt.subplots(3, 1, figsize=(10.0, 8.6), sharex=True,
+                            gridspec_kw={"height_ratios": [1.0, 1.3, 0.9]})
+    for cid, lab in CASES:
+        z = np.load(os.path.join(_RUNS, cid, "state.npz"))
+        t = z["t"] / 86400.0
+        o3 = z["x"][:, 10] / float(z["M"]) * 1e9                 # ppbv
+        o3_bg = o3[0]
+        col = DIL_COLORS[lab]
+        axs[0].plot(t, o3, lw=1.6, color=col, label=lab)
+        axs[1].plot(t, o3 - o3_bg, lw=1.6, color=col, label=lab)
+        rows = []
+        for kind, i in (("peak", int(np.argmax(o3))), ("min", int(np.argmin(o3)))):
+            d = o3[i] - o3_bg
+            axs[1].plot(t[i], d, "o", ms=5, color=col)
+            rows.append(f"{kind} {d:+.1f} ppb ({(o3[i] / o3_bg - 1) * 100:+.2f}%) "
+                        f"@ day {t[i]:.1f}")
+        axs[1].text(0.985, 0.95 - 0.16 * [c for c, _ in CASES].index(cid), f"{lab}:  "
+                    + ";  ".join(rows), transform=axs[1].transAxes, ha="right", va="top",
+                    fontsize=8.5, color=col)
+        i_min = int(np.argmin(o3))
+        axs[2].plot(t, z["V_ratio"], lw=1.8, color=col, label=lab)
+        for ax in axs:
+            ax.axvline(t[-1], color=col, lw=0.8, ls="--", alpha=0.7)
+        print(f"  {lab}: O3 min {o3[i_min]:.1f} ppb (Δ {o3[i_min] - o3_bg:.2f}) at day "
+              f"{t[i_min]:.1f}; end {o3[-1]:.1f} ppb at day {t[-1]:.1f}")
+    axs[0].axhline(o3_bg, color="#898781", lw=0.9, ls=":", label="background (spun-up IC)")
+    axs[0].set_ylabel("O$_3$ [ppbv]")
+    axs[0].legend(fontsize=8.5, loc="upper right", frameon=False)
+    axs[1].axhline(0.0, color="#898781", lw=0.9, ls=":")
+    axs[1].set_ylabel("O$_3$ − background [ppbv]")
+    axs[1].set_ylim(-7.5, 11.5)
+    axs[2].set_yscale("log")
+    axs[2].set_ylabel("dilution V/V$_0$")
+    axs[2].set_xlabel("days since release")
+    axs[2].set_xlim(0, 37)
+    for ax in axs:
+        ax.grid(True, alpha=0.3, lw=0.5, color="#c9c8c1")
+    fig.suptitle("In-plume ozone under D2 med vs D1 low dilution — 30°N / 20 km / 210 K, "
+                 "SABR-220, α ×1, nuc ×1, coag ×1,\n06:00 release, ICs from the 60-day "
+                 "control (dashed: run end, wet SA back within 10% of background)",
+                 y=0.995, fontsize=11)
+    fig.tight_layout()
+    fig.savefig(os.path.join(_OUT, "ozone_dilution_60day.png"), bbox_inches="tight")
+    plt.close(fig)
+    print("  ozone_dilution_60day.png")
+
+
 def main():
     os.makedirs(_OUT, exist_ok=True)
     fig_banana()
     fig_banana(sa=True)
     fig_sulfur()
     fig_sulfur_inbox()
+    fig_ozone()
 
 
 if __name__ == "__main__":
