@@ -158,3 +158,30 @@ def test_ion_pair_rate_scales_nucleation():
                                st.rh, st.alpha, 10.0)
         out[fion] = float(jnp.sum(Nk2))
     assert out[30.0] > out[0.0]
+
+
+def test_particle_sulfate_mw_switch():
+    assert tb.particle_sulfate_mw(False) == tb.MW_H2SO4 == 98.0
+    assert tb.particle_sulfate_mw(True) == tb.MW_SO4 == 96.0
+
+
+@pytest.mark.parametrize("molar", [False, True])
+def test_molar_so4_transfer_threads_to_tomas(molar):
+    # L13: with molar_so4_transfer the particle slot gains 96/98 kg SO4 per kg gas H2SO4 lost (moles of S
+    # conserved); the default is TOMAS's kg-for-kg transfer. Coagulation conserves mass, so the identity
+    # holds across nucleation + condensation + coagulation together.
+    import jax.numpy as jnp
+    from coupled.units import conc_to_mass
+    sc = _scenario()
+    sc.switches.nucleation = True
+    sc.switches.condensation = True
+    sc.switches.coagulation = True
+    st = tb.initial_tomas_state(sc)
+    step = tb.make_microphysics_step(sc.switches, nuc_org_mass_frac=0.0, molar_so4_transfer=molar)
+    Gc = st.Gc.at[tb.SRTSO4].add(conc_to_mass(1.0e8, tb.BOXVOL_CM3, tb.MW_H2SO4))
+    _Nk2, Mk2, Gc2 = step(st.Nk, st.Mk, Gc, st.xk, st.temp, st.pres, st.boxvol, st.rh, st.alpha, 10.0)
+    gas_lost = float(Gc[tb.SRTSO4] - Gc2[tb.SRTSO4])
+    so4_gained = float(jnp.sum(Mk2[:, tb.SRTSO4]) - jnp.sum(st.Mk[:, tb.SRTSO4]))
+    assert gas_lost > 0.0
+    ratio = (tb.MW_SO4 / tb.MW_H2SO4) if molar else 1.0
+    assert so4_gained == pytest.approx(gas_lost * ratio, rel=1e-6)

@@ -41,10 +41,16 @@ def run_coupled_numpy(scenario):
     intervals = cd._outer_intervals(cfg, scenario.days, scenario.dt_couple)
 
     tomas_step = make_microphysics_step(scenario.switches,
-                                        ion_pair_rate=float(scenario.ion_pair_rate))
+                                        ion_pair_rate=float(scenario.ion_pair_rate),
+                                        coag_kernel_scale=float(scenario.coag_kernel_scale),
+                                        water_every_process=bool(scenario.water_every_process),
+                                        nuc_org_mass_frac=float(scenario.nuc_org_mass_frac),
+                                        molar_so4_transfer=bool(scenario.molar_so4_transfer),
+                                        n_coag_substeps=int(scenario.tomas_coag_substeps))
     tomas_active = tomas_step is not None
     tstate = initial_tomas_state(scenario) if tomas_active else None
-    het = het_inputs(tstate) if tomas_active else None
+    molar_so4 = bool(scenario.molar_so4_transfer)        # mirror of the JAX driver
+    het = het_inputs(tstate, molar_so4=molar_so4) if tomas_active else None
     h2so4_idx = IDX["H2SO4"]
 
     nuc_scale = float(scenario.nucleation_rate_scale)    # Phase 7 knob (mirror)
@@ -52,6 +58,10 @@ def run_coupled_numpy(scenario):
     eps = float(scenario.micro_eps)
     floor = float(scenario.micro_floor_s)
     cap = float(scenario.micro_cap_s)
+    nuc_eps = float(scenario.micro_nuc_eps)
+    n_ref = float(scenario.micro_nuc_nref_cm3)
+    prod_ref = str(scenario.micro_prod_ref)
+    handoff = str(scenario.micro_handoff)
     dt_micro = floor
     dilution_active = bool(scenario.switches.dilution)   # Phase 6 (mirror of the JAX driver)
     kdil = float(scenario.dilution_rate)
@@ -112,11 +122,12 @@ def run_coupled_numpy(scenario):
             env_grid = np.asarray(sol.sol(ts_grid))[h2so4_idx]
             tstate, removal_kg, dt_micro, _n = cd.micro_consume(
                 lambda tt: float(np.interp(tt, ts_grid, env_grid)), t0, t1, tstate, tomas_step,
-                nuc_scale, eps, floor, cap, dt_micro)
+                nuc_scale, eps, floor, cap, dt_micro, nuc_eps=nuc_eps, n_ref=n_ref,
+                prod_ref=prod_ref, handoff=handoff)
             yc = yc.copy()
             env_end_kg = conc_to_mass(float(env_grid[-1]), BOXVOL_CM3, MW_H2SO4)   # envelope(t1)
             yc[h2so4_idx] = mass_to_conc(max(env_end_kg - removal_kg, 0.0), BOXVOL_CM3, MW_H2SO4)
-            het = het_inputs(tstate)
+            het = het_inputs(tstate, molar_so4=molar_so4)
 
         if heating_active:   # mirror the JAX driver's radiative-heating -> box T update
             from . import heating as _heating
@@ -130,7 +141,7 @@ def run_coupled_numpy(scenario):
             yc = dilute_gas(yc, gas_bg, kdil, float(t1 - t0))
             if tomas_active:
                 tstate = dilute_aerosol(tstate, tstate_bg, kdil, float(t1 - t0))
-                het = het_inputs(tstate)
+                het = het_inputs(tstate, molar_so4=molar_so4)
 
         t_list.append(t1)
         x_list.append(yc.copy())

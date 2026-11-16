@@ -189,7 +189,8 @@ def run_case(name, overrides):
     os.makedirs(out, exist_ok=True)
     d1._OUT = out                                     # redirect the shared plotters here
     d1._write_inputs_md(sc, __import__("coupled.aerosol_props", fromlist=["het_inputs"]).het_inputs(
-        __import__("coupled.tomas_bridge", fromlist=["initial_tomas_state"]).initial_tomas_state(sc)))
+        __import__("coupled.tomas_bridge", fromlist=["initial_tomas_state"]).initial_tomas_state(sc),
+        molar_so4=sc.molar_so4_transfer))
     print(f"[{name}] running ({sc.tomas_nbins}-bin, {sc.days}d, regime {sc.dilution_regime}) -> {out}/",
           flush=True)
     t, x, aero, st, sd, jrec = run_coupled(sc, return_aerosol=True, return_state=True,

@@ -86,3 +86,16 @@ def test_condensing_sulfate_raises_surface_area():
     # add sulfate mass across bins (as condensation would) -> larger particles -> more area
     grown = st._replace(Mk=st.Mk.at[:, tb.SRTSO4].add(st.Mk[:, tb.SRTSO4] * 0.5))
     assert ap.surface_area_um2_cm3(grown) > sa0
+
+
+def test_weight_pct_molar_so4_reads_slot_as_so4():
+    # molar_so4=False is the v1 reader (bitwise default); True converts the SO4 slot x98/96 to H2SO4 mass.
+    st = _state()
+    assert ap.h2so4_weight_pct(st, molar_so4=False) == ap.h2so4_weight_pct(st)
+    assert ap.het_inputs(st, molar_so4=False) == ap.het_inputs(st)
+    _Dpk, Mk_wet = ap._wet_diameters_m(st)
+    m_acid = float(jnp.sum(st.Mk[:, tb.SRTSO4])) * tb.MW_H2SO4 / tb.MW_SO4
+    m_h2o = float(jnp.sum(Mk_wet[:, tb.SRTH2O]))
+    expect = 100.0 * m_acid / (m_acid + m_h2o)
+    assert abs(ap.h2so4_weight_pct(st, molar_so4=True) - expect) < 1e-9
+    assert ap.het_inputs(st, molar_so4=True)["h2so4wp"] == ap.h2so4_weight_pct(st, molar_so4=True)

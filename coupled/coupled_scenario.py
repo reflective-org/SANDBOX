@@ -28,6 +28,16 @@ from dataclasses import asdict, dataclass, field
 from coupled.backgrounds import (BACKGROUND_MODES, MODE_BASES, TABULATED_BACKGROUND,
                                  normalize_modes)
 
+#: Sheared-Gaussian dilution case names (paper runs v2). Mirrors ``coupled.dilution.GAUSSIAN_CASES``
+#: without importing it (that pulls in tomas_jax; this module must stay cheap) -- a test keeps the
+#: two in sync.
+GAUSSIAN_DILUTION_CASES = ("C1", "C2", "C3", "C3a", "C4", "C4a", "C5", "C5a")
+
+#: LEGACY Schumann dilution regimes (v1; removed from the model and the paper by PI decision L20).
+#: Accepted only with ``legacy_dilution=True``; mirrors ``coupled.dilution_legacy_schumann.
+#: DILUTION_REGIMES`` (a test keeps the two in sync).
+LEGACY_SCHUMANN_REGIMES = ("D1", "D2", "D3", "D5", "burst")
+
 #: Photolysis drivers understood by the model (validated -> no silent mis-gate of the sulfur chain).
 PHOTOLYSIS_MODES = ("reference", "sza", "tuvx")
 
@@ -103,13 +113,30 @@ class CoupledScenario:
     dt_couple: float = 600.0
 
     # --- adaptive inner (micro) time step for the gas<->TOMAS handoff (two-level integration) ---
-    # Each micro-step is chosen so the fractional change in gaseous H2SO4 and in aerosol number N stays
-    # below ``micro_eps``, bounded to [``micro_floor_s``, ``micro_cap_s``]. It auto-shrinks where
-    # nucleation is fast (burst / high nucleation_rate_scale) and relaxes when slow -- no per-scenario
-    # tuning. Hitting the floor while still over eps raises (never silently under-resolve).
+    # Each micro-step is chosen so the gas H2SO4 PRODUCED over the step stays below ``micro_eps`` of
+    # the standing H2SO4 (production/standing <= micro_eps; the operator-split coupling error), bounded
+    # to [``micro_floor_s``, ``micro_cap_s``]: halve when over eps, double when under eps/2. Particle
+    # number N is NOT controlled by default (see coupled.driver.micro_consume for why). Reaching the
+    # floor while still over eps ACCEPTS the (finite) step with a printed note; it raises only if
+    # TOMAS goes non-finite at the floor.
     micro_eps: float = 0.1
     micro_floor_s: float = 1.0e-4
     micro_cap_s: float = 20.0
+    # Opt-in nucleation-aware control (default OFF = bitwise the production-only controller above):
+    # with ``micro_nuc_eps`` > 0 a micro-step is also refined until the fractional INCREASE of total
+    # particle number per accepted step, dN / max(N, micro_nuc_nref_cm3), is <= micro_nuc_eps. The
+    # reference floor (#/cm^3, ambient) keeps dN/N from refining to an infeasible step count while N
+    # is tiny (clean box before the burst): 1e3 cm^-3 is ~2 orders above the stratospheric background
+    # (~1-30 cm^-3), so the control engages only once nucleation adds a population that matters.
+    micro_nuc_eps: float = 0.0
+    micro_nuc_nref_cm3: float = 1.0e3
+    # Production-fraction denominator: "envelope" (default, v1: the sink-free envelope, which lets
+    # the step reach micro_cap_s regardless of the condensation sink) or "standing" (the gas H2SO4
+    # actually standing, so micro_eps bounds the uptake fraction ~CS*dt). See micro_consume.
+    micro_prod_ref: str = "envelope"
+    # When a step's H2SO4 production reaches TOMAS: "end" (default, v1: all up front, first-order
+    # split) or "mid" (envelope at the step midpoint: symmetric Strang split, second order).
+    micro_handoff: str = "end"
 
     # --- photolysis ---
     photolysis: str = "tuvx"
@@ -118,9 +145,17 @@ class CoupledScenario:
     # First-order relaxation rate [1/s] toward the background when switches.dilution is on and
     # dilution_regime is "" (constant rate; AD-6.2). Ignored when a regime is set.
     dilution_rate: float = 1.157e-6
-    # Time-varying dilution regime "" (constant) | D1 (Low Kz) | D2 | D3 | D5, from the plume
-    # volume-expansion V(t)/V0 (Schumann scaling; coupled/dilution.DILUTION_REGIMES).
+    # Time-varying dilution regime "" (constant) | a sheared-Gaussian case C1..C5a, from the plume
+    # volume expansion V(t)/V0 (coupled/dilution.GAUSSIAN_CASES; paper runs v2). The v1 Schumann
+    # regimes D1 | D2 | D3 | D5 | burst are LEGACY (L20) and accepted only with legacy_dilution=True.
     dilution_regime: str = ""
+    # Opt in to the legacy Schumann regimes (coupled/dilution_legacy_schumann.py; kept for the studio).
+    # False (default): a Schumann dilution_regime is rejected.
+    legacy_dilution: bool = False
+    # Max ln(V(t1)/V(t0)) per outer interval: intervals where the plume expands faster are bisected
+    # (and a Kz burst's start/end become edges) so the operator-split dilution step stays small.
+    # 0 (default) = off, i.e. plain dt_couple intervals as in the v1 paper runs. v2 uses 0.1.
+    dilution_max_dlnv: float = 0.0
     # Gas species zeroed in the dilution BACKGROUND (entrained air); all others keep their initial
     # value. Empty () => background is the full initial state (AD-6.3). Names must be valid species.
     dilution_zero_species: tuple = ()
@@ -158,6 +193,19 @@ class CoupledScenario:
     nucleation_rate_scale: float = 1.0   # -> TOMAS make_step nucleation fn_scale
     condensation_alpha: float = 1.0      # -> TomasState alpha (Fuchs accommodation coefficient), (0,1]
     coag_kernel_scale: float = 1.0       # -> TOMAS make_step kernel multiplier (AD-7.2)
+    # --- TOMAS process options (paper runs v2; defaults reproduce the v1 runs) ---
+    water_every_process: bool = False    # re-equilibrate aerosol water after every process (box.f order)
+    nuc_org_mass_frac: float = 0.1       # share of nucleated cluster mass put in the organic slot; 0 = all SO4
+    # Conserve MOLES of sulfur at every gas->particle sulfate transfer (PI decision L13). TOMAS's particle
+    # slot Mk[:,SRTSO4] holds SO4 mass (MW 96) while the gas Gc[SRTSO4] holds H2SO4 (MW 98): True adds
+    # 96/98 kg SO4 per kg H2SO4 condensed/nucleated (TOMAS make_step molar_so4_transfer) AND makes the
+    # coupled readers of that slot (particulate_S, h2so4wp) use MW 96. False = the kg-for-kg v1 behaviour
+    # (slot read as H2SO4-equivalent mass, AD-3.8), bitwise.
+    molar_so4_transfer: bool = False
+    # Forward-Euler coagulation sub-steps INSIDE each TOMAS call (tomas-jax make_step n_coag_substeps;
+    # default 10 = TOMAS's own default, bitwise the v1 runs). The driver's adaptive micro-step already
+    # resolves the coupling, so 1 is enough there and ~3x cheaper per run (RUNS_V2.md L31).
+    tomas_coag_substeps: int = 10
 
     # --- aerosol -> photolysis (Phase 4) ---
     # Where the box aerosol sits in the TUV-x RT column when switches.aerosol_to_j is on. By DEFAULT
@@ -197,6 +245,19 @@ class CoupledScenario:
         if self.micro_cap_s < self.micro_floor_s:
             raise ValueError(f"micro_cap_s ({self.micro_cap_s}) must be >= micro_floor_s "
                              f"({self.micro_floor_s})")
+        if not self.micro_nuc_eps >= 0.0:            # also rejects NaN
+            raise ValueError(f"micro_nuc_eps must be >= 0 (0 = off), got {self.micro_nuc_eps}")
+        if self.micro_prod_ref not in ("envelope", "standing"):
+            raise ValueError(f"micro_prod_ref must be 'envelope' or 'standing', got "
+                             f"{self.micro_prod_ref!r}")
+        if self.micro_handoff not in ("end", "mid"):
+            raise ValueError(f"micro_handoff must be 'end' or 'mid', got {self.micro_handoff!r}")
+        if not self.micro_nuc_nref_cm3 > 0.0:
+            raise ValueError(f"micro_nuc_nref_cm3 must be > 0 (denominator floor of dN/N), got "
+                             f"{self.micro_nuc_nref_cm3}")
+        if isinstance(self.tomas_coag_substeps, bool) or not isinstance(self.tomas_coag_substeps, int) \
+                or self.tomas_coag_substeps < 1:
+            raise ValueError(f"tomas_coag_substeps must be an int >= 1, got {self.tomas_coag_substeps!r}")
         if self.days < 1:
             raise ValueError(f"days must be >= 1, got {self.days}")
         if self.aerosol_thickness_km <= 0.0:
@@ -209,13 +270,24 @@ class CoupledScenario:
         if self.dilution_rate < 0.0:
             raise ValueError(f"dilution_rate must be >= 0, got {self.dilution_rate}")
         self.dilution_zero_species = tuple(self.dilution_zero_species)   # YAML list -> tuple
-        _VALID_REGIMES = ("", "D1", "D2", "D3", "D5", "burst")
+        if self.dilution_regime in LEGACY_SCHUMANN_REGIMES and not self.legacy_dilution:
+            raise ValueError(
+                f"dilution_regime {self.dilution_regime!r} is a legacy Schumann regime, removed from "
+                f"the coupled model (PI decision L20); use a sheared-Gaussian case "
+                f"{GAUSSIAN_DILUTION_CASES}, or set legacy_dilution=True to run it through "
+                f"coupled/dilution_legacy_schumann.py")
+        _VALID_REGIMES = ("", *GAUSSIAN_DILUTION_CASES,
+                          *(LEGACY_SCHUMANN_REGIMES if self.legacy_dilution else ()))
         if self.dilution_regime not in _VALID_REGIMES:
             raise ValueError(f"dilution_regime must be one of {_VALID_REGIMES}, got {self.dilution_regime!r}")
+        if self.dilution_max_dlnv < 0.0:
+            raise ValueError(f"dilution_max_dlnv must be >= 0, got {self.dilution_max_dlnv}")
         if self.nucleation_rate_scale < 0.0:
             raise ValueError(f"nucleation_rate_scale must be >= 0, got {self.nucleation_rate_scale}")
         if not (0.0 < self.condensation_alpha <= 1.0):
             raise ValueError(f"condensation_alpha must be in (0, 1], got {self.condensation_alpha}")
+        if not (0.0 <= self.nuc_org_mass_frac <= 1.0):
+            raise ValueError(f"nuc_org_mass_frac must be in [0, 1], got {self.nuc_org_mass_frac}")
         if self.coag_kernel_scale < 0.0:   # now wired (AD-7.2): free multiplier on the coag kernel
             raise ValueError(f"coag_kernel_scale must be >= 0, got {self.coag_kernel_scale}")
         if isinstance(self.background_dist, str):

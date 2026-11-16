@@ -13,8 +13,9 @@ docs/time-integration-plan.md):
   drives the gas sulfur gate.
 * INNER (micro) step -- ADAPTIVE, fine early: within each outer step the gas ODE is solved ONCE with a
   DENSE output (H2SO4 accumulates, no aerosol sink), then TOMAS consumes that H2SO4 envelope in
-  adaptive micro-steps (``_tomas_micro``). Each micro-step is sized so the fractional change in gaseous
-  H2SO4 and aerosol number stays <= ``micro_eps``, bounded to [``micro_floor_s``, ``micro_cap_s``]. This
+  adaptive micro-steps (``micro_consume``). Each micro-step is sized so the H2SO4 produced over it stays
+  <= ``micro_eps`` of the standing H2SO4 (opt-in: also the fractional particle-number increase <=
+  ``micro_nuc_eps``), bounded to [``micro_floor_s``, ``micro_cap_s``]. This
   is approach B: nucleation only ever sees one micro-step's worth of H2SO4 (so it self-limits instead of
   running away on a coarse step), while the expensive TUV-x solve stays on the coarse outer cadence.
 
@@ -47,10 +48,12 @@ import numpy as np
 # model_bridge puts gas_phase_chemistry on sys.path (interim; see DEFERRED) -- import it first.
 from .model_bridge import initial_state, to_model_config
 from .tomas_bridge import (initial_tomas_state, make_microphysics_step, SRTSO4,
-                           BOXVOL_CM3, MW_H2SO4)
+                           BOXVOL_CM3, MW_H2SO4, particle_sulfate_mw)
 from .aerosol_props import het_inputs
 from . import heating as _heating
-from .dilution import dilute_gas, dilute_aerosol, kdil_from_regime as dl_kdil_from_regime
+from . import dilution as _dilution
+from . import dilution_legacy_schumann as _dilution_legacy
+from .dilution import dilute_gas, dilute_aerosol, GAUSSIAN_CASES as DL_GAUSSIAN_CASES
 from .units import conc_to_mass, mass_to_conc
 
 from config import IDX, air_number_density                   # noqa: E402  (gas model)
@@ -71,15 +74,41 @@ def _cosz(cfg, t_seconds: float) -> float:
     return cos_solar_zenith(cfg.latitude, cfg.longitude, doy, total_hours % 24.0)
 
 
-def _outer_intervals(cfg, days: int, dt_couple: float) -> list[tuple[float, float]]:
+#: Floor on a dilution-refined outer interval [s]; stops the bisection at a V(t) kink (burst onset).
+_MIN_REFINED_DT = 0.5
+
+
+def _refine_for_dilution(E, vratio, max_dlnv):
+    """Bisect each interval of edge list ``E`` until ln(V(t1)/V(t0)) <= ``max_dlnv`` (or the interval
+    reaches _MIN_REFINED_DT), so the operator-split dilution applied at the end of an interval never
+    removes more than a fraction ~max_dlnv of the plume excess that chemistry/microphysics saw."""
+    out = [E[0]]
+    for t0, t1 in zip(E[:-1], E[1:]):
+        stack = [(t0, t1)]
+        while stack:
+            a, b = stack.pop()
+            if (b - a) > _MIN_REFINED_DT and np.log(float(vratio(b)) / float(vratio(a))) > max_dlnv:
+                m = 0.5 * (a + b)
+                stack.extend([(m, b), (a, m)])   # LIFO: process (a, m) first -> edges stay sorted
+            else:
+                out.append(float(b))
+    return out
+
+
+def _outer_intervals(cfg, days: int, dt_couple: float, vratio=None, max_dlnv: float = 0.0,
+                     extra_edges=()) -> list[tuple[float, float]]:
     """(t0, t1) intervals of length <= dt_couple, SNAPPED so none straddles sunrise/sunset.
 
     Uniform dt_couple edges plus the day/night terminator crossings (found by a coarse cos(SZA) scan
     then bisection). Because terminators only subdivide uniform intervals, every interval is <=
-    dt_couple AND lies entirely in day or entirely in night.
+    dt_couple AND lies entirely in day or entirely in night. Optionally (``max_dlnv`` > 0 with a
+    ``vratio(t)`` = V(t)/V0) intervals where the plume expands fast are further bisected, and
+    ``extra_edges`` (e.g. a Kz burst's start/end) are added; both only subdivide, so the day/night
+    guarantee holds.
     """
     total = float(days) * 86400.0
     edges = set(np.arange(0.0, total, dt_couple).tolist()) | {0.0, total}
+    edges |= {float(e) for e in extra_edges if 0.0 < e < total}
     scan = np.arange(0.0, total + 1.0, min(dt_couple, 300.0))
     cz = np.array([_cosz(cfg, t) for t in scan])
     for i in range(len(scan) - 1):
@@ -92,6 +121,8 @@ def _outer_intervals(cfg, days: int, dt_couple: float) -> list[tuple[float, floa
     # plain floats throughout: terminator edges come out of the bisection as np.float64, and the
     # weak/strong scalar-dtype flip on (t0, t1) would retrace the jitted gas solve at each transition.
     E = sorted(float(e) for e in edges if 0.0 <= e <= total)
+    if vratio is not None and max_dlnv > 0.0:
+        E = _refine_for_dilution(E, vratio, max_dlnv)
     return list(zip(E[:-1], E[1:]))
 
 
@@ -109,7 +140,8 @@ def _frozen_j_and_heating(cfg, t_mid: float, aerosol_props=None):
 
 # Gas-ODE stall handling: Diffrax Kvaerno5 with the standard first_step=1e-10 can enter a
 # reject/shrink loop of the PID controller on rare benign states (isolated to EXACTLY dt0=1e-10;
-# dt0 >= 1e-8 solves the same state in ~30 steps -- see paper_ensemble/debug_day12_isolation.py).
+# dt0 >= 1e-8 solves the same state in ~30 steps -- see
+# paper_ensemble/legacy_v1/debug_day12_isolation.py).
 # The remedy is a pure-Diffrax RETRY with a larger initial step; no SciPy fallback.
 _RETRY_FIRST_STEP = 1.0e-2
 
@@ -121,7 +153,7 @@ _H2SO4_NEGLIGIBLE = 1.0e5
 
 
 def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, floor, cap, dt_start,
-                  on_accept=None):
+                  on_accept=None, nuc_eps=0.0, n_ref=1.0e3, prod_ref="envelope", handoff="end"):
     """Adaptive TOMAS micro-loop over [t0, t1] consuming the gas H2SO4 envelope (approach B).
 
     ``env_h2so4_conc(t) -> gaseous H2SO4 [molec/cm^3]`` is the gas solution WITHOUT any aerosol sink
@@ -141,6 +173,38 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
     the step is accepted and a one-line under-resolution notice is printed (the coupling is slightly
     under-resolved but the microphysics itself is valid).
 
+    OPT-IN nucleation-aware control (``nuc_eps`` > 0; scenario ``micro_nuc_eps``): the step is ALSO
+    halved until the fractional increase of total particle number over the accepted step,
+    ``frac_nuc = max(N_end - N_start, 0) / max(N_start, n_ref)`` (N = sum(Nk)/boxvol, #/cm^3), is
+    <= ``nuc_eps``. Coagulation-driven decreases are not controlled (TOMAS resolves those internally).
+    The ``n_ref`` floor (scenario ``micro_nuc_nref_cm3``, default 1e3 cm^-3) is what makes this
+    feasible: with a bare dN/N the first nucleated particles in a near-empty box give dN/N >> 1 at
+    any dt, refining every step to the floor. Against max(N, n_ref) the control is an ABSOLUTE
+    bound (dN <= nuc_eps*n_ref per step) while N < n_ref and a RELATIVE one once the nucleated
+    population is large enough to matter for coagulation/condensation. At the floor an over-limit
+    step is accepted with at most ONE printed note per call (outer interval). The step relaxes
+    (doubles) only when BOTH metrics are under half their limits. With ``nuc_eps`` == 0 and no
+    ``on_accept`` hook the loop is exactly the production-only controller (no extra work or host syncs).
+
+    ``on_accept(t, dt, frac_prod, frac_nuc)`` is an optional per-accepted-step diagnostics hook
+    (``t`` = step start [s]). Passing it turns on the N bookkeeping (``frac_nuc`` is reported even
+    when ``nuc_eps`` == 0) but never changes the stepping. N rides in the SAME single device->host
+    transfer as the finite flag and leftover H2SO4; the starting N costs one transfer per call.
+
+    ``prod_ref`` (scenario ``micro_prod_ref``) sets the production-fraction denominator:
+    ``"envelope"`` (default) divides by the sink-free envelope at step end, which keeps growing
+    through each outer interval, so the metric decays like dt / (time since t0) and the step reaches
+    ``cap`` within minutes regardless of the condensation sink; ``"standing"`` divides by the gas
+    H2SO4 actually standing (envelope minus what TOMAS already removed), so ``eps`` bounds the
+    uptake fraction ~CS*dt that sets the split error (convergence test 2026-11-03, RUNS_V2 L28).
+
+    ``handoff`` (scenario ``micro_handoff``) is WHEN the step's production reaches TOMAS:
+    ``"end"`` (default) hands TOMAS the envelope at step END (all of the step's production up front:
+    a first-order split, error ~ CS*dt/2 on gas H2SO4); ``"mid"`` hands it the envelope at the step
+    MIDPOINT (half the production before the microphysics, the rest after: the symmetric Strang
+    split, second order). The second half is not lost: the next step (or the interval end, where the
+    driver sets gas = envelope(t1) - removal) picks it up.
+
     Shared verbatim by the JAX driver (``sol.evaluate``) and the NumPy mirror (SciPy ``sol.sol``) so the
     two-level stepping is identical across backends. Returns ``(tstate, removal_kg, next_dt, n_micro)``.
     """
@@ -150,14 +214,31 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
     env_prev = env_h2so4_conc(t0)                                    # H2SO4 envelope [molec/cm^3] at t
     dt = min(max(dt_start, floor), cap, t1 - t0)
     n_micro = 0
+    nuc_ctl = nuc_eps > 0.0
+    if prod_ref not in ("envelope", "standing") or handoff not in ("end", "mid"):
+        raise ValueError(f"prod_ref must be 'envelope'|'standing' and handoff 'end'|'mid', got "
+                         f"{prod_ref!r}, {handoff!r}")
+    standing = prod_ref == "standing"
+    mid = handoff == "mid"
+    track_n = nuc_ctl or on_accept is not None        # N bookkeeping only when someone needs it
+    boxvol = float(tstate.boxvol) if track_n else None         # host sync only when tracking N
+    n_prev = float(jnp.sum(Nk)) / boxvol if track_n else 0.0   # total number [#/cm^3] at t
+    frac_nuc = 0.0
+    nuc_noted = False
     while t < t1 - 1e-9:
         dt = min(dt, t1 - t)
         t_end = t + dt
         env_end = env_h2so4_conc(t_end)                             # envelope at step end
         produced = max(env_end - env_prev, 0.0)                     # gas H2SO4 made this step [/cm^3]
-        frac_prod = produced / max(env_end, _H2SO4_NEGLIGIBLE)      # coupling error metric
-        # standing H2SO4 available to TOMAS = envelope at step end minus what TOMAS already removed
-        avail_kg = max(conc_to_mass(env_end, BOXVOL_CM3, MW_H2SO4) - removal_kg, 0.0)
+        if standing:                                                # coupling error metric
+            frac_prod = produced / max(env_end - mass_to_conc(removal_kg, BOXVOL_CM3, MW_H2SO4),
+                                       _H2SO4_NEGLIGIBLE)
+        else:
+            frac_prod = produced / max(env_end, _H2SO4_NEGLIGIBLE)
+        # standing H2SO4 available to TOMAS = envelope at the handoff time minus what TOMAS already
+        # removed (handoff time: step end, or the midpoint for the symmetric split)
+        env_hand = env_h2so4_conc(t + 0.5 * dt) if mid else env_end
+        avail_kg = max(conc_to_mass(env_hand, BOXVOL_CM3, MW_H2SO4) - removal_kg, 0.0)
         Gc_in = Gc.at[SRTSO4].set(avail_kg)
         Nk2, Mk2, Gc2 = tomas_step(Nk, Mk, Gc_in, tstate.xk, tstate.temp, tstate.pres,
                                    tstate.boxvol, tstate.rh, tstate.alpha, float(dt),
@@ -167,7 +248,11 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
         # the TOMAS step itself), so batching + the host-interpolated envelope is the whole speedup.
         _finite_flag = (jnp.all(jnp.isfinite(Nk2)) & jnp.all(jnp.isfinite(Mk2))
                         & jnp.all(jnp.isfinite(Gc2))).astype(jnp.float64)
-        _flag, _gc_so4 = (float(v) for v in np.asarray(jnp.stack([_finite_flag, Gc2[SRTSO4]])))
+        if track_n:   # the new particle number rides in the same single transfer
+            _flag, _gc_so4, _nsum = (float(v) for v in np.asarray(
+                jnp.stack([_finite_flag, Gc2[SRTSO4], jnp.sum(Nk2)])))
+        else:
+            _flag, _gc_so4 = (float(v) for v in np.asarray(jnp.stack([_finite_flag, Gc2[SRTSO4]])))
         finite = _flag > 0.5
         at_floor = dt <= floor * (1.0 + 1e-9)
         if not finite:
@@ -183,6 +268,19 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
         if frac_prod > eps and not at_floor:                        # refine to resolve the coupling
             dt = max(dt * 0.5, floor)
             continue
+        if track_n:
+            n_new = _nsum / boxvol
+            frac_nuc = max(n_new - n_prev, 0.0) / max(n_prev, n_ref)   # nucleation metric
+        if nuc_ctl and frac_nuc > nuc_eps:
+            if not at_floor:                                        # refine to resolve the burst
+                dt = max(dt * 0.5, floor)
+                continue
+            if not nuc_noted:                                       # one note per outer interval
+                nuc_noted = True
+                print(f"[coupled] NOTE: micro-step at floor ({floor:g} s) on [{t0:.4g},{t1:.4g}] "
+                      f"t={t:.4g}s has number increase dN/max(N,N_ref) = {frac_nuc:.3f} > "
+                      f"micro_nuc_eps={nuc_eps}; accepting (further floor steps over the limit in "
+                      f"this interval are not reported). Lower micro_floor_s to resolve.")
         if frac_prod > eps and at_floor:                            # finite but coupling under-resolved
             print(f"[coupled] NOTE: micro-step at floor ({floor:g} s) on [{t0:.4g},{t1:.4g}] t={t:.4g}s "
                   f"has production fraction {frac_prod:.3f} > micro_eps={eps} (H2SO4 rising fast); "
@@ -190,13 +288,15 @@ def micro_consume(env_h2so4_conc, t0, t1, tstate, tomas_step, nuc_scale, eps, fl
                   f"here. Lower micro_floor_s for a tighter split.")
         Nk, Mk, Gc = Nk2, Mk2, Gc2                                    # accept
         removal_kg += max(avail_kg - _gc_so4, 0.0)                     # leftover H2SO4 pulled above
-        if on_accept is not None:                                     # diagnostics hook (t, dt, frac)
-            on_accept(t, dt, frac_prod)
+        if on_accept is not None:                                     # diagnostics hook
+            on_accept(t, dt, frac_prod, frac_nuc)
+        if track_n:
+            n_prev = n_new
         t = t_end
         env_prev = env_end
         n_micro += 1
-        if frac_prod < 0.5 * eps:                                     # relax when comfortably under eps
-            dt = min(dt * 2.0, cap)
+        if frac_prod < 0.5 * eps and (not nuc_ctl or frac_nuc < 0.5 * nuc_eps):
+            dt = min(dt * 2.0, cap)                                   # relax: both comfortably under
     return tstate._replace(Nk=Nk, Mk=Mk, Gc=Gc), removal_kg, max(dt, floor), n_micro
 
 
@@ -266,12 +366,26 @@ def _adapt_stop_condition(stop_condition):
 
 
 def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_dist=False,
-                return_photolysis=False, stop_condition=None):
+                return_photolysis=False, stop_condition=None, micro_diagnostics=None):
     """Integrate a CoupledScenario with operator splitting.
 
     Returns ``(t [s], states [n_t, n_species])``. With ``return_aerosol=True`` also returns a dict of
     per-output-time aerosol diagnostics (``SA`` [um^2/cm^3], ``radius_cm``, ``h2so4wp`` [wt%],
     ``particulate_S`` [molec/cm^3 as H2SO4-equiv]); the arrays are all-NaN when TOMAS is inactive.
+    The same dict carries two sulfur-budget entries that are valid with or without TOMAS:
+
+    * ``so2_chem_loss_cum`` [molec/cm^3 on the V0 basis] -- the exact cumulative CHEMICAL SO2 loss
+      (RUNS_V2 L27): sum over outer intervals of ``(SO2 before gas solve - SO2 after gas solve) *
+      V(t0)/V0``, i.e. plume-integrated molecules consumed / V0. Only the gas solve changes SO2
+      within an interval (TOMAS's SO2 chemistry is off and it hands back only H2SO4; heating keeps
+      number densities), and the box volume during that solve is V(t0) -- the volume after the
+      PREVIOUS interval's end-of-interval dilution -- so weighting by V(t0) makes the bookkeeping
+      exact. Net loss: negative if chemistry produced SO2. 0 at t = 0.
+    * ``V_ratio_applied`` -- V/V0 implied by the dilution the driver actually applied,
+      ``exp(sum kdil*dt)`` over completed intervals (1 throughout with dilution off). For a regime
+      this equals ``dilution.volume_ratio`` to round-off. With relaxation-to-background dilution the
+      exact budget is ``(SO2(t) - SO2_bg) * V_ratio_applied(t) + so2_chem_loss_cum(t) =
+      SO2(0) - SO2_bg`` (V(0) = V0); see ``coupled/tests/test_so2_chem_counter.py``.
     With ``return_state=True`` also appends the final ``TomasState`` (or ``None`` if TOMAS inactive),
     e.g. for plotting the evolved size distribution. With ``return_photolysis=True`` also appends a
     dict of the FROZEN per-interval photolysis coefficients actually used by the gas solve:
@@ -292,6 +406,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     ``radius_cm``       **wet** effective radius [cm]; NaN when TOMAS is inactive
     ``h2so4wp``         aerosol H2SO4 weight percent; NaN when TOMAS is inactive
     ``particulate_S``   aerosol sulfur [molec/cm^3, H2SO4-equivalent]; NaN when TOMAS is inactive
+                        (slot read with MW 96 under ``molar_so4_transfer``, else MW 98)
     ``N_total``         total particle number [#/cm^3 at ambient T,P]; NaN when TOMAS is inactive
     ``gas``             ``{species_name: concentration [molec/cm^3]}``, all 34 gas species
     ==================  =========================================================================
@@ -299,6 +414,11 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     The NaNs are deliberate: a criterion such as ``diag["SA"] < x`` must not read "TOMAS is off" as
     "the plume has relaxed". The legacy two-argument shape ``f(t1_seconds, wet_SA)`` still works and
     is dispatched explicitly by arity -- see ``_adapt_stop_condition``.
+
+    ``micro_diagnostics`` is an optional ``f(t, dt, frac_prod, frac_nuc)`` called once per ACCEPTED
+    TOMAS micro-step (``t`` = step start [s], ``dt`` [s], ``frac_prod`` = H2SO4 production fraction,
+    ``frac_nuc`` = dN / max(N, micro_nuc_nref_cm3)); see ``micro_consume``. It never changes the
+    stepping and costs nothing when None (the default). Not called when TOMAS is inactive.
     """
     _stop = _adapt_stop_condition(stop_condition)   # fail fast on a mis-shaped callback
     cfg = to_model_config(scenario)
@@ -308,11 +428,17 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
 
     tomas_step = make_microphysics_step(scenario.switches,
                                         ion_pair_rate=float(scenario.ion_pair_rate),
-                                        coag_kernel_scale=float(scenario.coag_kernel_scale))
+                                        coag_kernel_scale=float(scenario.coag_kernel_scale),
+                                        water_every_process=bool(scenario.water_every_process),
+                                        nuc_org_mass_frac=float(scenario.nuc_org_mass_frac),
+                                        molar_so4_transfer=bool(scenario.molar_so4_transfer),
+                                        n_coag_substeps=int(scenario.tomas_coag_substeps))
     tomas_active = tomas_step is not None
     tstate = initial_tomas_state(scenario) if tomas_active else None
-    het = het_inputs(tstate) if tomas_active else None
+    molar_so4 = bool(scenario.molar_so4_transfer)   # Mk[:,SRTSO4] is SO4 (96) vs H2SO4-equiv (98) mass
+    het = het_inputs(tstate, molar_so4=molar_so4) if tomas_active else None
     h2so4_idx = IDX["H2SO4"]
+    so2_idx = IDX["SO2"]
 
     # Two-level integration: the gas ODE is solved ONCE per outer step. With TOMAS active we need a
     # DENSE solution so the adaptive micro-loop can query the gas H2SO4 envelope at sub-interval times
@@ -337,6 +463,10 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     # entrained air). Rate is constant (dilution_rate) or time-varying from a regime's V(t) expansion.
     dilution_active = bool(scenario.switches.dilution)
     regime = scenario.dilution_regime
+    # Legacy Schumann regimes (L20; only reachable with legacy_dilution=True, which CoupledScenario
+    # enforces) take V(t) and k_dil from the legacy module; everything else from coupled.dilution.
+    _legacy = scenario.legacy_dilution and _dilution_legacy.is_schumann_regime(regime)
+    dl_mod = _dilution_legacy if _legacy else _dilution
     gas_bg = np.asarray(y0, dtype=float).copy()
     for name in scenario.dilution_zero_species:
         if name not in IDX:
@@ -350,7 +480,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     tstate_bg = tstate                  # background aerosol = initial TomasState (immutable)
 
     def _kdil(t0, t1):
-        return dl_kdil_from_regime(regime, t0, t1) if regime else float(scenario.dilution_rate)
+        return dl_mod.kdil_from_regime(regime, t0, t1) if regime else float(scenario.dilution_rate)
 
     # Phase 4: aerosol -> photolysis. Active only with TOMAS on, tuvx photolysis, and the switch.
     aerosol_to_j = bool(scenario.switches.aerosol_to_j) and tomas_active and cfg.photolysis == "tuvx"
@@ -372,10 +502,13 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
             return None
         return aerosol_optical_props(tstate, _wl_nm, _height_edges, _band_km, mie=mie_table)
 
+    _mw_particle_so4 = particle_sulfate_mw(molar_so4)   # 96 (molar_so4_transfer) else 98 (v1, bitwise)
+
     def _particulate_S(state):
-        # aerosol sulfate mass (H2SO4-equiv kg, AD-3.8) -> molec/cm^3 of sulfur
+        # aerosol sulfate slot mass (SO4 kg under molar_so4_transfer, else H2SO4-equiv kg, AD-3.8)
+        # -> molec/cm^3 of sulfur (= moles S; reported as H2SO4-equivalent molecules)
         m_so4_kg = float(jnp.sum(state.Mk[:, SRTSO4]))
-        return mass_to_conc(m_so4_kg, BOXVOL_CM3, MW_H2SO4)
+        return mass_to_conc(m_so4_kg, BOXVOL_CM3, _mw_particle_so4)
 
     def _aero_record():
         aero = (np.nan, np.nan, np.nan, np.nan) if not tomas_active else \
@@ -417,10 +550,19 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     eps = float(scenario.micro_eps)
     floor = float(scenario.micro_floor_s)
     cap = float(scenario.micro_cap_s)
+    nuc_eps = float(scenario.micro_nuc_eps)          # 0 = off (production-only controller)
+    n_ref = float(scenario.micro_nuc_nref_cm3)
+    prod_ref = str(scenario.micro_prod_ref)
+    handoff = str(scenario.micro_handoff)
     dt_micro = floor                # start fine (t=0 burst); carried/relaxed across outer intervals
     micro_total = 0
     t_list, x_list = [0.0], [np.asarray(y0)]
     aero_list = [_aero_record()]
+    # exact SO2 oxidation counter (L27): V/V0 of the box as the dilution operator has actually grown
+    # it (exp(sum kdil*dt)), and the V(t0)/V0-weighted chemical SO2 loss of every gas solve
+    vr_applied = 1.0
+    so2_loss_cum = 0.0
+    budget_list = [(so2_loss_cum, vr_applied)]
     nk_list, dp_list = ([_sizedist_record()[0]], [_sizedist_record()[1]]) if (
         return_size_dist and tomas_active) else (None, None)
     env_pts = _envelope_pts(scenario.dt_couple)     # per-run constant -> one jit compile
@@ -434,7 +576,16 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     _use_retry = False        # STICKY-RETRY: inside a stall region, skip the doomed probe
     _ivl = 0
     _REPROBE = 48             # re-probe the standard dt0 every N intervals to exit the region
-    for t0, t1 in _outer_intervals(cfg, scenario.days, scenario.dt_couple):
+    # Dilution-aware interval refinement (opt-in, dilution_max_dlnv > 0): bisect intervals where V(t)
+    # grows fast and put edges on a Kz burst's start/end, so the end-of-interval dilution step stays small.
+    _refine = dilution_active and bool(regime) and scenario.dilution_max_dlnv > 0.0
+    _gc = DL_GAUSSIAN_CASES.get(regime) if _refine else None
+    _burst_edges = ((_gc.t_burst_start, _gc.t_burst_start + _gc.tau_burst)
+                    if _gc is not None and _gc.tau_burst is not None else ())
+    _intervals = _outer_intervals(cfg, scenario.days, scenario.dt_couple,
+                                  vratio=(lambda t: dl_mod.volume_ratio(t, regime)) if _refine else None,
+                                  max_dlnv=float(scenario.dilution_max_dlnv), extra_edges=_burst_edges)
+    for t0, t1 in _intervals:
         _ivl += 1
         t_mid = 0.5 * (t0 + t1)
         # plain float: photolysis_scale returns 0.0 (float) at night but np.float64 by day, and the
@@ -452,6 +603,7 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         if tomas_active:   # freeze this interval's aerosol het inputs (end-of-previous-interval state)
             args = {**args, "SA": het["SA"], "particle_radius": het["radius_cm"],
                     "h2so4wp": het["h2so4wp"]}
+        so2_before = float(yc[so2_idx])   # this interval's gas solve is the only SO2 change before dilution
         if tomas_active:
             # ONE gas solve over the outer interval (H2SO4 accumulates, no aerosol sink), SAVED on a
             # fine grid; TOMAS then consumes that H2SO4 envelope in adaptive micro-steps (fine early),
@@ -486,13 +638,14 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
             env_grid = np.asarray(sol.ys[:, h2so4_idx]); yc_end = sol.ys[-1]
             tstate, removal_kg, dt_micro, n_micro = micro_consume(
                 lambda tt: float(np.interp(tt, ts_grid, env_grid)), t0, t1, tstate, tomas_step,
-                nuc_scale, eps, floor, cap, dt_micro)
+                nuc_scale, eps, floor, cap, dt_micro, on_accept=micro_diagnostics,
+                nuc_eps=nuc_eps, n_ref=n_ref, prod_ref=prod_ref, handoff=handoff)
             micro_total += n_micro
             yc = yc_end
             env_end_kg = conc_to_mass(float(env_grid[-1]), BOXVOL_CM3, MW_H2SO4)   # envelope(t1)
             yc = yc.at[h2so4_idx].set(
                 mass_to_conc(max(env_end_kg - removal_kg, 0.0), BOXVOL_CM3, MW_H2SO4))
-            het = het_inputs(tstate)                          # for the next interval
+            het = het_inputs(tstate, molar_so4=molar_so4)     # for the next interval
         else:
             _try_std = (not _use_retry) or (_ivl % _REPROBE == 0)
             _done = False
@@ -515,6 +668,10 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
                               f"(stall #{len(_gas_retries)})", flush=True)
                 yc = step_retry(yc, t0, t1, args)
 
+        # chemistry ran at the box volume V(t0) (dilution only acts at the END of the interval), so the
+        # plume-integrated molecules it consumed, per V0, are dC * V(t0)/V0 (TOMAS only rewrote H2SO4)
+        so2_loss_cum += (so2_before - float(yc[so2_idx])) * vr_applied
+
         if heating_active:
             # radiative heating -> box T (forward-Euler over the interval). The updated T feeds the
             # NEXT interval's chemistry (rate constants) and M (ideal gas at fixed P; species number
@@ -531,14 +688,16 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
         if dilution_active:   # relax gas + aerosol toward the background (operator-split, last)
             kdil = _kdil(t0, t1)
             yc = dilute_gas(yc, gas_bg, kdil, float(t1 - t0))
+            vr_applied *= float(np.exp(kdil * float(t1 - t0)))   # same factor dilute_gas decays by
             if tomas_active:
                 tstate = dilute_aerosol(tstate, tstate_bg, kdil, float(t1 - t0))
-                het = het_inputs(tstate)   # het inputs reflect the diluted aerosol next interval
+                het = het_inputs(tstate, molar_so4=molar_so4)   # het inputs reflect the diluted aerosol
 
         t_list.append(t1)
         x_list.append(np.asarray(yc))
         _aero = _aero_record()
         aero_list.append(_aero)
+        budget_list.append((so2_loss_cum, vr_applied))
         if nk_list is not None:
             nk, dp = _sizedist_record()
             nk_list.append(nk)
@@ -554,8 +713,10 @@ def run_coupled(scenario, return_aerosol=False, return_state=False, return_size_
     out = [t, x]
     if return_aerosol:
         a = np.asarray(aero_list)
+        b = np.asarray(budget_list)
         out.append({"SA": a[:, 0], "radius_cm": a[:, 1], "h2so4wp": a[:, 2],
-                    "particulate_S": a[:, 3], "T": a[:, 4]})
+                    "particulate_S": a[:, 3], "T": a[:, 4],
+                    "so2_chem_loss_cum": b[:, 0], "V_ratio_applied": b[:, 1]})
     if return_state:
         out.append(tstate)
     if return_size_dist:

@@ -13,6 +13,7 @@ Tier markers are declared in the root ``pyproject.toml`` so ``--strict-markers``
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -44,3 +45,64 @@ def paper_ensemble_runs(repo_root: Path) -> Path:
             f"docs/studio/adr/ADR-009-golden-file-strategy.md"
         )
     return runs
+
+
+def _git(path: Path, *args: str) -> None:
+    """Run git in ``path`` with an identity, so commits work on a machine with no global config."""
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "commit.gpgsign=false",
+            *args,
+        ],
+        cwd=str(path),
+        check=True,
+        capture_output=True,
+    )
+
+
+def _make_repo(path: Path, filename: str = "file.txt") -> Path:
+    """A real git repo with one commit."""
+    path.mkdir(parents=True, exist_ok=True)
+    _git(path, "init", "--quiet")
+    (path / filename).write_text("content\n", encoding="utf-8")
+    _git(path, "add", filename)
+    _git(path, "commit", "--quiet", "-m", "initial")
+    return path
+
+
+@pytest.fixture
+def fake_sandbox(tmp_path: Path) -> Path:
+    """A SANDBOX-shaped tree: a root repo with the three model submodules REGISTERED as such.
+
+    Shared because both the provenance tests and the runner tests need a pinnable checkout, and CI
+    checks out no submodules -- so pointing at a synthetic one is what lets those tests run
+    everywhere rather than skipping in CI.
+
+    Registered rather than merely nested: a nested repo the parent does not know about shows up in
+    ``git status --porcelain`` as untracked, so the parent reads dirty.
+    ``protocol.file.allow=always`` is required for local-path submodules (CVE-2022-39253); safe
+    here, since the "remote" is a directory the test just created.
+    """
+    from studio.modelio.provenance import MODEL_SUBMODULES
+
+    root = _make_repo(tmp_path / "SANDBOX")
+    for name in MODEL_SUBMODULES:
+        origin = _make_repo(tmp_path / "origins" / name)
+        _git(
+            root,
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "--quiet",
+            str(origin),
+            name,
+        )
+    _git(root, "commit", "--quiet", "-m", "add submodules")
+    return root

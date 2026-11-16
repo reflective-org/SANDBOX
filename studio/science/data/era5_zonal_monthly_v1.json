@@ -1,0 +1,31 @@
+{
+  "dataset_id": "era5_zonal_monthly_v1",
+  "source": "ERA5 monthly averaged reanalysis on pressure levels (Copernicus CDS)",
+  "doi": "10.24381/cds.6860a573",
+  "licence": "Contains modified Copernicus Climate Change Service information (1991-2020). Derived product; raw ERA5 fields are not redistributed.",
+  "convention": "zonal mean, then 1991-2020 mean, per calendar month (SCIENCE-1, issue #53)",
+  "years": [
+    1991,
+    2020
+  ],
+  "grid_deg": 2.5,
+  "levels_hpa": [
+    5,
+    7,
+    10,
+    20,
+    30,
+    50,
+    70,
+    100,
+    125,
+    150,
+    175,
+    200,
+    225,
+    250,
+    300
+  ],
+  "created": "2026-08-19",
+  "sha256": "617617884a1a7bab5700e0561b90bf35eebdf0fb12703049ebcae66d143fc078"
+}

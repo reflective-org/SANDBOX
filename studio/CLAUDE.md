@@ -36,13 +36,13 @@ looks right, presented with the same confidence as a computed result, is worse t
 - **No shortcuts around the main code path.** Do not special-case tests, do not bypass validation, do
   not stub the model to make a UI demo work. If a demo needs fake data it is clearly labelled
   synthetic and lives in a fixture.
-- **Type hints everywhere.** `mypy --strict` on `studio/schema` and `studio/science`.
+- **Type hints everywhere.** `mypy --strict` on `studio/schema`, `studio/science` and `studio/resolve`.
 - **Known bugs are issues, not TODO comments.** If a TODO is unavoidable it references an issue number.
 
 ## Package boundaries — enforced by tests
 
-- `studio/schema` and `studio/science` import nothing from the API, the database, the web layer, or
-  `coupled`. They must be usable from a bare Python session. Importing `coupled` pulls in JAX.
+- `studio/schema`, `studio/science` and `studio/resolve` import nothing from the API, the database,
+  the web layer, or `coupled`. They must be usable from a bare Python session. Importing `coupled` pulls in JAX.
 - **`studio/modelio` is the only package permitted to import `coupled`.**
 - Enforced by `studio/tests/unit/test_import_boundaries.py`, both at runtime and statically.
 
@@ -53,8 +53,19 @@ uv venv --python 3.12 .venv                                  # project-local, gi
 uv pip install -r studio/requirements.lock                   # the pinned, committed environment
 uv pip install -e . --no-deps                                # `coupled` + `studio` importable
 cp studio/.env.example .env                                  # then edit; .env is never committed
+
+npm --prefix studio/web ci                                   # the wizard's pinned dependencies
+npm --prefix studio/web run build                            # -> studio/api/static/app (gitignored)
+npm --prefix studio/web run dev                              # Vite on 5173, proxying /api to 8765
 ```
 
+`uvicorn studio.api.app:app` serves the built wizard at `/`. Unbuilt, `/` returns 503 naming the
+build command rather than falling back to the superseded page at `/legacy` — that page exposes 10 of
+the schema's 42 fields, so serving it as if it were the app would be a silent downgrade.
+
+- **The wizard's form is generated** from `/api/schema` plus `studio/schema/layout.py`. Adding a
+  schema field must not require editing form code (spec §8); `test_layout.py` fails if a field has no
+  stage, and `test_web_contract.py` fails if the schema stops emitting a shape the generator handles.
 - All Python work inside the project-local venv. **Never install into the system interpreter, never
   `sudo`, never modify anything outside the repo and its declared data directories.** Note the model's
   dependencies happen to live in a pyenv global environment on this machine; Studio does not adopt
@@ -73,10 +84,17 @@ cp studio/.env.example .env                                  # then edit; .env i
 ```bash
 pytest studio/tests -m tier_a      # fast; what CI runs
 pytest studio/tests -m tier_b      # full-case golden reproduction; nightly/manual
-mypy --strict studio/schema studio/science
+mypy --strict studio/schema studio/science studio/resolve
 ruff check studio/ && black --check studio/
 ```
 
+- **Read the linters' output, not their exit status.** `ruff check` on this machine has exited **0**
+  while printing `Found N errors`, so `ruff check studio/ && black --check studio/ && echo ok` reads
+  as clean and CI — whose step fails properly — does not. This has broken CI twice. Run
+  `.venv/bin/ruff check studio/ 2>&1 | tail -2` and look for `All checks passed!`.
+- **Run the whole-project `mypy`, not only `--strict` on the pure packages.** CI runs both, and the
+  bare `mypy` pass is the one that sees `studio/modelio` importing the model — which CI cannot
+  resolve, because it checks out no submodules.
 - **Every numerical comparison declares a tolerance and a one-line rationale.** "It matches" is not a
   test.
 - Golden fixtures key on the raw `state.npz`, never on `RunSummary` (lossy) and never on the existing
@@ -100,17 +118,41 @@ just documented in [`CAVEATS.md`](../docs/studio/CAVEATS.md):
 
 ## Git workflow
 
-- Trunk-based, short-lived branches: `feat/<issue>-<slug>`, `fix/…`, `docs/…`, `chore/…`.
-- Every branch corresponds to an issue. Labels: `phase-0`…`phase-n`, `science`, `blocking`,
-  `architecture`, `frontend`, `backend`, `data`, `testing`, `docs`; a milestone per phase.
+**`studio/dev` is the integration branch. Studio PRs target it, never `main`.** Branch off
+`studio/dev`, and pass the base explicitly — `gh pr create --base studio/dev` — because `gh`
+defaults to the repository's default branch, which is `main`.
+
+```
+main ────●────────────●──────────●   viz + model work, plus batched Studio merges
+          \              \        /
+studio/dev ●──●──●────────●──●──●    integration; CI runs on pushes here
+            \  \             \
+   task 0.2 ─●  \             \      one task → one branch → one PR → studio/dev
+   task 0.3 ────●              \
+   task 0.4 ────────────────────●
+```
+
+- `studio/dev` → `main` at phase boundaries, or sooner when something there is needed by the model
+  side. **Merge `main` into `studio/dev` regularly** — the model and viz work moves independently,
+  and a long-lived branch that never pulls is how you get a conflicted merge nobody wants to do.
+  A conflicted PR is also silently untested: GitHub cannot build the merge ref, so no workflow runs
+  at all.
+- Task 0.1 pre-dates this and went straight into `main` (#59). Everything from 0.2 on goes through
+  `studio/dev`.
+- Short-lived task branches: `feat/<issue>-<slug>`, `fix/…`, `docs/…`, `chore/…`.
+- Every branch corresponds to an issue. Labels: `studio` plus `science`, `blocking`, `architecture`,
+  `frontend`, `backend`, `data`, `testing`, `docs`. **Do not use the `phase-N` labels** — those are
+  the coupled model's phases (issues #11–#28), not Studio's; name the Studio phase in the text.
 - Conventional commits. Small, coherent commits; no "wip" on shared branches.
 - **One task, one PR.** No scope creep.
-- **Model-side changes to `coupled/` go in their own PR**, with their own tests — never buried inside
-  an app feature.
-- Annotated tag at each phase completion (`v0.1.0-phase0`) with release notes.
+- **Model-side changes to `coupled/` go in their own PR against `main`**, with their own tests —
+  never buried inside an app feature, and never routed through `studio/dev`.
+- Annotated tag at each phase completion (`v0.1.0-phase0`) with release notes, cut from `main` after
+  the phase's `studio/dev` → `main` merge.
 
 ## PR checklist
 
+- [ ] Base branch is `studio/dev` (not `main`)
 - [ ] Linked issue; scope matches
 - [ ] New/changed schema fields carry unit, range, description, default, provenance
 - [ ] Any new `[ASSUMPTION]` added to `docs/studio/ASSUMPTIONS.md`

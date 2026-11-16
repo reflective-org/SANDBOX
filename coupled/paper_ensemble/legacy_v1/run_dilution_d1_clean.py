@@ -553,7 +553,7 @@ def main(nbins=40, replot=False, aerosol_to_j=True, days=10, control=False, bg="
         _OUT = os.path.join(os.path.dirname(__file__), "analyses", f"d1_clean_{nbins}bin{suffix}")
     os.makedirs(_OUT, exist_ok=True)
     sc = _scenario(nbins, aerosol_to_j=aerosol_to_j, days=days, control=control, bg=bg)
-    _write_inputs_md(sc, het_inputs(tb.initial_tomas_state(sc)))
+    _write_inputs_md(sc, het_inputs(tb.initial_tomas_state(sc), molar_so4=sc.molar_so4_transfer))
     _export_observations(sc)
 
     if replot:

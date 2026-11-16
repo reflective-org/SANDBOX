@@ -7,17 +7,26 @@ Configuration (per Ali, 2026-07-08):
     (doy 172), release at 06:00 local; alpha x1, nuc x1, coag x1; 1 t SO2 into V0.
   * Initial gas composition = frank-model 60-day CONTROL run state (30N, doy 172, sza
     photolysis, P = 60 hPa preset -> transferred as mixing ratios), sampled on the last day
-    at 06:00 (runs_60day/frank_control_ic.json). Overrides: SO2 -> the injection spike;
+    at 06:00. Two IC sets (CLI tag):
+      - ss20IC (default, 2026-09-24): the NO-INJECTION control, SO2 held at 20 ppt -- steady
+        state (<0.4 %/day drift) -> runs_60day/control_so2_20ppt_ic.json.
+      - frankIC (the 2026-07-08 runs): SO2 NOT held, so the P=60 preset's 954 ppb decays to
+        572 ppb and H2SO4 builds to 382 ppb; its HOx/O3/Cl partitioning is sulfur-perturbed
+        (O3 +15 %, OH -40 %, HO2 x4 vs ss20IC) -> runs_60day/frank_control_ic.json.
+    Overrides: SO2 -> the injection spike;
     gas H2SO4 and SO3 -> 0 (standalone-control accumulation artifacts: frank has no aerosol
     sink); H2O from the scenario WTR (RH = 3%).
   * days = 60 max, EARLY STOP when the wet SA has stayed within 10% of the background SA
     for 24 h straight (the t*-analysis criterion, enforced at run time).
-  * Dilution: D2 med and D1 low (cases 0 and 1).
+  * Dilution: D2 med and D1 low (cases 0 and 1); D3 high, D5 vhigh, burst (cases 2-4).
+  * Case 5 (noinj): same ICs/dilution but SO2 = 20 ppt background -- the coupled-model
+    no-injection baseline (36 d, no early stop).
 
-Output -> runs_60day/<case>/state.npz (same layout as the ensemble runs).
+Output -> runs_60day/30N_20km__sabr220__<regime>__60day_h06_<ic tag>/state.npz (same layout as the ensemble runs).
 
-CLI (from SANDBOX/): python -m coupled.paper_ensemble.run_60day <0|1>
+CLI (from SANDBOX/): python -m coupled.paper_ensemble.run_60day <0..5> [ss20IC|frankIC]
 """
+import dataclasses
 import json
 import os
 import sys
@@ -35,18 +44,21 @@ _OUT = os.path.join(_HERE, "runs_60day")
 _T, _P, _WTR = 210.0, 55.0, 6.9104
 _SO2_SPIKE = 6.273063291666667e15            # 1 t SO2 in V0 [molec/cm^3]
 _V0_CM3 = 1.5e12
+IC_SETS = {"ss20IC": "control_so2_20ppt_ic.json", "frankIC": "frank_control_ic.json"}
 
-CASES = [("D2med", "D2"), ("D1low", "D1")]
+CASES = [("D2med", "D2"), ("D1low", "D1"),
+         ("D3high", "D3"), ("D5vhigh", "D5"), ("burst", "burst"),   # 2-4 added 2026-09-24
+         ("noinj", "D1")]      # 5: NO-injection twin (SO2 = 20 ppt bg), 36 d, no stop
 
 
-def build_scenario(dil_regime):
+def build_scenario(dil_regime, inject=True, ic_tag="ss20IC"):
     M = air_number_density(_P, _T)
-    ic = json.load(open(os.path.join(_OUT, "frank_control_ic.json")))["ppt"]
+    ic = json.load(open(os.path.join(_OUT, IC_SETS[ic_tag])))["ppt"]
     conc = {k: float(v) for k, v in ic.items() if k in IDX}
     conc.pop("H2O", None)                       # H2O comes from WTR (RH = 3%)
     conc["H2SO4"] = 0.0                         # standalone-control artifacts (no aerosol sink)
     conc["SO3"] = 0.0
-    conc["SO2"] = _SO2_SPIKE / M * 1e12         # the injection spike
+    conc["SO2"] = _SO2_SPIKE / M * 1e12 if inject else 20.0   # the injection spike / bg
     return CoupledScenario(
         T=_T, P=_P, WTR=_WTR, latitude=30.0, longitude=0.0, day_of_year=172,
         start_utc_hour=6.0, days=60, DT=600.0, dt_couple=600.0, photolysis="tuvx",
@@ -78,15 +90,21 @@ def make_stop(sc):
     return stop
 
 
-def main(i):
+def main(i, ic_tag="ss20IC"):
     name, regime = CASES[i]
-    cid = f"30N_20km__sabr220__{name}__60day_h06_frankIC"
+    cid = f"30N_20km__sabr220__{name}__60day_h06_{ic_tag}"
     out = os.path.join(_OUT, cid)
+    if os.path.exists(os.path.join(out, "state.npz")):
+        print(f"SKIP {cid} (state.npz exists)", flush=True)
+        return
     os.makedirs(out, exist_ok=True)
-    sc = build_scenario(regime)
+    inject = name != "noinj"
+    sc = build_scenario(regime, inject=inject, ic_tag=ic_tag)
+    if not inject:                   # coupled-model baseline after the frank-model hand-off
+        sc = dataclasses.replace(sc, days=36)
     t, x, aero, st_final, sd, jrec = run_coupled(
         sc, return_aerosol=True, return_state=True, return_size_dist=True,
-        return_photolysis=True, stop_condition=make_stop(sc))
+        return_photolysis=True, stop_condition=make_stop(sc) if inject else None)
     M = air_number_density(sc.P, sc.T)
     V = dl.volume_ratio(t, sc.dilution_regime)
     from coupled.tomas_bridge import _bad
@@ -106,4 +124,4 @@ def main(i):
 
 
 if __name__ == "__main__":
-    main(int(sys.argv[1]))
+    main(int(sys.argv[1]), *sys.argv[2:3])

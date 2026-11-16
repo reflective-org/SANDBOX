@@ -23,7 +23,11 @@ if it's not obvious from first principles or the reference, it belongs here.
 - **a_W (water activity) stays thermodynamic** (`pH2O/p0`), not from TOMAS (AD-3.3).
 - **RH fed to TOMAS = gas-model water activity a_W** (AD-3.5), single-sourcing water across models.
 - **TOMAS `Mk[:,SRTSO4]` is H2SO4-equivalent mass** (MW 98), verified from the 1:1 condensation
-  transfer — so the budget uses MW 98 and no 96/98 conversion (AD-3.8).
+  transfer — so the budget uses MW 98 and no 96/98 conversion (AD-3.8). **Superseded when
+  `CoupledScenario.molar_so4_transfer=True`** (PI decision L13, 2026-10-28; the v2 paper runs): the slot
+  holds SO4 mass (MW 96), every TOMAS gas→particle transfer adds 96/98 kg SO4 per kg H2SO4 (moles of S
+  conserved), `particulate_S` uses MW 96 and `h2so4wp` converts the slot ×98/96 (pure acid →
+  `tabazadeh_h2so4_wt(T, RH)` exactly). The default `False` keeps the AD-3.8 behaviour bitwise.
 - **boxvol = 1 m³** (cancels for intensive outputs, AD-3.7); **schemes** = Marianna-validated
   ppm_jit / ricco_dunne / h2so4_tabazadeh (AD-3.6).
 - **Single TOMAS step per outer interval** (small `dt_couple`, AD-3.9) rather than an internal
