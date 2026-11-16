@@ -17,6 +17,10 @@ coupled/viz/cache/
 # paper-ensemble run outputs: per-case state.npz + generated figures (regenerable via the
 # runners and make_* scripts; see coupled/paper_ensemble/FIGURES.md)
 coupled/paper_ensemble/runs*/
+# run-tree archives (multi-GB) and the regenerated 4paper figures (make_4paper_plots)
+coupled/paper_ensemble/runs*.tar
+coupled/paper_ensemble/4paper/*.png
+coupled/paper_ensemble/4paper/*.pdf
 coupled/paper_ensemble/overnight_launch.log
 # archived MATLAB snapshots kept locally in the leftover gas_phase_chemistry/ dir
 # (the model itself moved to the stratchem-jax submodule)
